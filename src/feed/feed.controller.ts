@@ -12,7 +12,7 @@ import 'multer';
 
 @Controller('feed')
 export class FeedController {
-  constructor(private readonly feedService: FeedService) { }
+  constructor(private readonly feedService: FeedService) {}
 
   @Post()
   @UseInterceptors(
@@ -23,14 +23,9 @@ export class FeedController {
     }),
   )
   async createPost(
-    // @Body() dto: CreateFeedDto,
-    @Body() dto: any,
+    @Body() dto: CreateFeedDto,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
-    console.log('body:', dto);
-    console.log('music:', dto.music);
-    console.log('music type:', typeof dto.music);
-    
     return this.feedService.createFeed(dto, files ?? []);
   }
 }
