@@ -2,12 +2,12 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { RecordModule } from './record/record.module';
-import { PostModule } from './post/post.module';
+import { FeedModule } from './feed/feed.module';
 import { LetterModule } from './letter/letter.module';
 
 import { RecordEntity } from './record/entities/record.entity';
 import { RecordFileEntity } from './record/entities/record-file.entity';
-import { PostEntity } from './post/entities/post.entity';
+import { FeedEntity } from './feed/entities/feed.entity';
 import { LetterEntity } from './letter/entities/letter.entity';
 import { MusicModule } from './music/music.module';
 import { MusicEntity } from './music/entities/music.entity';
@@ -28,7 +28,7 @@ import { UserEntity } from './user/entities/user.entity';
         UserEntity,
         RecordEntity,
         RecordFileEntity,
-        PostEntity,
+        FeedEntity,
         LetterEntity,
         MusicEntity,
       ],
@@ -39,7 +39,7 @@ import { UserEntity } from './user/entities/user.entity';
 
     UserModule,
     RecordModule,
-    PostModule,
+    FeedModule,
     LetterModule,
     MusicModule,
     UserModule,

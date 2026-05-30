@@ -25,7 +25,7 @@ export class RecordEntity {
 
   @Column({
     type: 'varchar',
-    length: 140,
+    length: 2000,
     nullable: true,
   })
   text!: string | null;

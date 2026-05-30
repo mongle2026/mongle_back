@@ -8,7 +8,7 @@ import {
 } from 'class-validator';
 import { Visibility } from '../enums/visibility.enum';
 
-export class CreatePostDto {
+export class CreateFeedDto {
   @IsNumberString()
   userId!: string;
 

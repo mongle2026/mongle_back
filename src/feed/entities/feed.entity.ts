@@ -7,8 +7,8 @@ import {
 } from 'typeorm';
 import { Visibility } from '../enums/visibility.enum';
 
-@Entity('post')
-export class PostEntity {
+@Entity('feed')
+export class FeedEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id!: number;
 

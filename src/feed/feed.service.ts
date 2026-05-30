@@ -1,18 +1,18 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
-import { CreatePostDto } from './dto/create-post.dto';
-import { PostEntity } from './entities/post.entity';
+import { CreateFeedDto } from './dto/create-feed.dto';
+import { FeedEntity } from './entities/feed.entity';
 import { RecordService } from '../record/record.service';
 
 @Injectable()
-export class PostService {
+export class FeedService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly recordService: RecordService,
   ) { }
 
-  async createPost(dto: CreatePostDto, files: Express.Multer.File[]) {
+  async createFeed(dto: CreateFeedDto, files: Express.Multer.File[]) {
     const music = this.parseMusic(dto.music);
 
     return this.dataSource.transaction(async (manager) => {
@@ -23,17 +23,17 @@ export class PostService {
         files,
       });
 
-      const post = manager.create(PostEntity, {
+      const feed = manager.create(FeedEntity, {
         recordId: record.id,
         visibility: dto.visibility,
       });
 
-      const savedPost = await manager.save(PostEntity, post);
+      const savedFeed = await manager.save(FeedEntity, feed);
 
       return {
         message: '게시글이 생성되었습니다.',
         recordId: record.id,
-        postId: savedPost.id,
+        feedId: savedFeed.id,
       };
     });
   }
