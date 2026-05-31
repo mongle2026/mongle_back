@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { FeedEntity } from './entities/feed.entity';
 import { RecordService } from '../record/record.service';
+import { EntityManager } from 'typeorm';
+import { RecordFileEntity } from 'src/record/entities/record-file.entity';
 
 @Injectable()
 export class FeedService {
@@ -36,6 +38,31 @@ export class FeedService {
         feedId: savedFeed.id,
       };
     });
+  }
+
+
+  // 사진 파일 확인 용도 코드
+  // 음성도 이걸로 확인가능할듯 
+  async findRecordFileById(fileId: number) {
+    const file = await this.dataSource.manager.findOne(RecordFileEntity, {
+      where: {
+        id: fileId,
+      },
+    });
+
+    if (!file) {
+      throw new NotFoundException('파일을 찾을 수 없습니다.');
+    }
+
+    console.log('파일 조회 테스트:', {
+      id: file.id,
+      mimeType: file.mimeType,
+      originalName: file.originalName,
+      isBuffer: Buffer.isBuffer(file.fileData),
+      size: file.fileData?.length,
+    });
+
+    return file;
   }
 
   private parseMusic(music: string): CreateMusicDto {
