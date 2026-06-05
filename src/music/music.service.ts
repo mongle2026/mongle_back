@@ -29,9 +29,9 @@ export class MusicService {
   async searchMusic(keyword: string) {
     const trimmedKeyword = keyword?.trim();
 
-    if (!trimmedKeyword || trimmedKeyword.length < 2) {
-      throw new BadRequestException('검색어는 2글자 이상 입력해주세요.');
-    }
+    // if (!trimmedKeyword || trimmedKeyword.length < 2) {
+    //   throw new BadRequestException('검색어는 2글자 이상 입력해주세요.');
+    // }
 
     const response = await axios.get<ItunesSearchResponse>(
       'https://itunes.apple.com/search',
