@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { RecordModule } from './record/record.module';
 import { FeedModule } from './feed/feed.module';
@@ -13,9 +14,11 @@ import { MusicModule } from './music/music.module';
 import { MusicEntity } from './music/entities/music.entity';
 import { UserModule } from './user/user.module';
 import { UserEntity } from './user/entities/user.entity';
+import { PopularMusicEntity } from './music/entities/popular-music.entity';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRoot({
       type: 'mariadb',
       host: '127.0.0.1',
@@ -31,6 +34,7 @@ import { UserEntity } from './user/entities/user.entity';
         FeedEntity,
         LetterEntity,
         MusicEntity,
+        PopularMusicEntity,
       ],
 
       // 초반에만, 얼추되면 false 
@@ -42,7 +46,6 @@ import { UserEntity } from './user/entities/user.entity';
     FeedModule,
     LetterModule,
     MusicModule,
-    UserModule,
   ],
 })
 export class AppModule {}
