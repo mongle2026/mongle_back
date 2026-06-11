@@ -20,6 +20,24 @@ export class LetterEntity {
   receiverId!: number;
 
   @Column({
+    name: 'pattern',
+    type: 'varchar',
+  })
+  pattern!: string;
+
+  @Column({
+    name: 'color',
+    type: 'varchar',
+  })
+  color!: string;
+
+  @Column({
+    name: 'stamp',
+    type: 'varchar',
+  })
+  stamp!: string;
+
+  @Column({
     name: 'delivery_at',
     type: 'datetime',
     nullable: true,
