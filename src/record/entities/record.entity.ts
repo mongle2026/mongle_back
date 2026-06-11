@@ -2,9 +2,15 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { UserEntity } from 'src/user/entities/user.entity';
+import { RecordFileEntity } from './record-file.entity';
+import { MusicEntity } from 'src/music/entities/music.entity';
 
 @Entity('record')
 export class RecordEntity {
@@ -16,6 +22,10 @@ export class RecordEntity {
 
   @Column({ name: 'music_id', type: 'bigint' })
   musicId!: number;
+
+  @ManyToOne(() => MusicEntity)
+  @JoinColumn({ name: 'music_id' })
+  music!: MusicEntity;
 
   @Column({
     type: 'datetime',
@@ -29,6 +39,13 @@ export class RecordEntity {
     nullable: true,
   })
   text!: string | null;
+
+  @ManyToOne(() => UserEntity)
+  @JoinColumn({ name: 'user_id' })
+  user!: UserEntity;
+
+  @OneToMany(() => RecordFileEntity, (file) => file.record)
+  files!: RecordFileEntity[];
 
   @CreateDateColumn({
     name: 'created_at',

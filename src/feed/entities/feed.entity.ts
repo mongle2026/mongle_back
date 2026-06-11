@@ -2,10 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { Visibility } from '../enums/visibility.enum';
+import { RecordEntity } from 'src/record/entities/record.entity';
 
 @Entity('feed')
 export class FeedEntity {
@@ -14,6 +17,10 @@ export class FeedEntity {
 
   @Column({ name: 'record_id', type: 'bigint' })
   recordId!: number;
+
+  @ManyToOne(() => RecordEntity, { nullable: false })
+  @JoinColumn({ name: 'record_id' })
+  record!: RecordEntity;
 
   @Column({
     type: 'char',

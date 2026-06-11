@@ -2,17 +2,27 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { FileType } from '../enums/file-type.enum';
+import { RecordEntity } from './record.entity';
 
 @Entity('record_file')
-export class RecordFileEntity  {
+export class RecordFileEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id!: number;
 
   @Column({ name: 'record_id', type: 'bigint' })
   recordId!: number;
+
+  @ManyToOne(() => RecordEntity, (record) => record.files, {
+    nullable: false,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'record_id' })
+  record!: RecordEntity;
 
   @Column({
     name: 'file_type',
@@ -30,6 +40,7 @@ export class RecordFileEntity  {
   @Column({
     name: 'file_data',
     type: 'longblob',
+    select: false,
   })
   fileData!: Buffer;
 

@@ -37,6 +37,11 @@ export class FeedController {
     return this.feedService.createFeed(dto, files ?? []);
   }
 
+  @Get()
+  async getFeeds() {
+    return this.feedService.getFeeds();
+  }
+
   // 사진 업로드 확인 용 
   // 오디오도 이걸로 확인 가능할듯 
   // @Get('files/:fileId')

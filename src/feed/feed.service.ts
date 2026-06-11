@@ -40,6 +40,58 @@ export class FeedService {
     });
   }
 
+  async getFeeds() {
+    const feeds = await this.dataSource
+      .getRepository(FeedEntity)
+      .createQueryBuilder('feed')
+      .leftJoinAndSelect('feed.record', 'record')
+      .leftJoinAndSelect('record.user', 'user')
+      .leftJoinAndSelect('record.music', 'music')
+      .leftJoinAndSelect('record.files', 'files')
+      .orderBy('feed.createdAt', 'DESC')
+      .getMany();
+
+    return feeds.map((feed) => ({
+      feedId: feed.id,
+      visibility: feed.visibility,
+
+
+      user: {
+        userId: feed.record.user.id,
+        userCode: feed.record.user.userCode,
+        nickname: feed.record.user.nickname,
+        hasProfileImage: !!feed.record.user.imageMimeType,
+        profileImageUrl: feed.record.user.imageMimeType
+          ? `/user/${feed.record.user.id}/profile-image`
+          : null,
+      },
+
+      record: {
+        recordId: feed.record.id,
+        date: feed.record.date,
+        text: feed.record.text,
+      },
+
+      music: {
+        musicId: feed.record.music.id,
+        externalId: feed.record.music.externalId,
+        musicTitle: feed.record.music.musicTitle,
+        musicArtist: feed.record.music.musicArtist,
+        musicArtwork: feed.record.music.musicArtwork,
+      },
+
+      files: feed.record.files.map((file) => ({
+        fileId: file.id,
+        fileType: file.fileType,
+        mimeType: file.mimeType,
+        originalName: file.originalName,
+        fileSize: file.fileSize,
+        url: `/record-file/${file.id}`,
+      })),
+
+    }));
+  }
+
 
   // 사진 파일 확인 용도 코드
   // 음성도 이걸로 확인가능할듯 
