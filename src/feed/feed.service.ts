@@ -134,6 +134,13 @@ export class FeedService {
           .andWhere('myBookmark.userId = :userId');
       }, 'isBookmarkedCount')
 
+      .addSelect((subQuery) => {
+        return subQuery
+          .select('COUNT(bookmark.id)')
+          .from(BookmarkEntity, 'bookmark')
+          .where('bookmark.feedId = feed.id');
+      }, 'bookmarkCount')
+
       .where('feed.id = :feedId', { feedId })
       .setParameter('userId', userId)
       .getRawAndEntities();
@@ -148,6 +155,7 @@ export class FeedService {
 
     return this.formatFeedResponse(feed, {
       likeCount: Number(raw.likeCount ?? 0),
+      bookmarkCount: Number(raw.bookmarkCount ?? 0),
       isLiked: Number(raw.isLikedCount ?? 0) > 0,
       isBookmarked: Number(raw.isBookmarkedCount ?? 0) > 0,
     });
@@ -226,9 +234,76 @@ export class FeedService {
     });
   }
 
-  async bookmarkFeed(feedId: number, userId: number) { }
+  async bookmarkFeed(feedId: number, userId: number) {
+    return this.dataSource.transaction(async (manager) => {
+      const feed = await manager.findOne(FeedEntity, {
+        where: { id: feedId },
+      });
 
-  async unbookmarkFeed(feedId: number, userId: number) { }
+      if (!feed) {
+        throw new NotFoundException('피드를 찾을 수 없습니다.');
+      }
+
+      const existingBookmark = await manager.findOne(BookmarkEntity, {
+        where: {
+          feedId,
+          userId,
+        },
+      });
+
+      if (existingBookmark) {
+        return {
+          message: '이미 북마크한 피드입니다.',
+          isBookmarked: true,
+        };
+      }
+
+      const bookmark = manager.create(BookmarkEntity, {
+        feedId,
+        userId,
+      });
+
+      await manager.save(BookmarkEntity, bookmark);
+
+      return {
+        message: '북마크가 추가되었습니다.',
+        isBookmarked: true,
+      };
+    });
+  }
+
+  async unbookmarkFeed(feedId: number, userId: number) {
+    return this.dataSource.transaction(async (manager) => {
+      const feed = await manager.findOne(FeedEntity, {
+        where: { id: feedId },
+      });
+
+      if (!feed) {
+        throw new NotFoundException('피드를 찾을 수 없습니다.');
+      }
+
+      const existingBookmark = await manager.findOne(BookmarkEntity, {
+        where: {
+          feedId,
+          userId,
+        },
+      });
+
+      if (!existingBookmark) {
+        return {
+          message: '이미 북마크가 취소된 피드입니다.',
+          isBookmarked: false,
+        };
+      }
+
+      await manager.remove(BookmarkEntity, existingBookmark);
+
+      return {
+        message: '북마크가 취소되었습니다.',
+        isBookmarked: false,
+      };
+    });
+  }
 
   async getMyBookmarkedFeeds(userId: number) { }
 
@@ -269,6 +344,7 @@ export class FeedService {
     feed: FeedEntity,
     meta?: {
       likeCount?: number;
+      bookmarkCount?: number;
       isLiked?: boolean;
       isBookmarked?: boolean;
     },
@@ -314,6 +390,7 @@ export class FeedService {
       })) ?? [],
 
       likeCount: meta?.likeCount ?? 0,
+      bookmarkCount: meta?.bookmarkCount ?? 0,
       isLiked: meta?.isLiked ?? false,
       isBookmarked: meta?.isBookmarked ?? false,
     };

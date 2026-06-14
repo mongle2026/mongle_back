@@ -76,7 +76,7 @@ export class FeedController {
   @Post(':feedId/bookmark')
   async bookmarkFeed(
     @Param('feedId') feedId: string,
-    @Body('userId') userId: string,
+    @Query('userId') userId: string,
   ) {
     return this.feedService.bookmarkFeed(Number(feedId), Number(userId));
   }
@@ -84,11 +84,10 @@ export class FeedController {
   @Delete(':feedId/bookmark')
   async unbookmarkFeed(
     @Param('feedId') feedId: string,
-    @Body('userId') userId: string,
+    @Query('userId') userId: string,
   ) {
     return this.feedService.unbookmarkFeed(Number(feedId), Number(userId));
   }
-
   // 사진 업로드 확인 용 
   // 오디오도 이걸로 확인 가능할듯 
   // @Get('files/:fileId')
