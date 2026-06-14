@@ -3,7 +3,9 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
   Param,
+  Query,
   Res,
   UploadedFiles,
   UseInterceptors,
@@ -26,7 +28,7 @@ export class FeedController {
       },
     }),
   )
-  async createPost(
+  async createFeed(
     @Body() dto: CreateFeedDto,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
@@ -38,8 +40,53 @@ export class FeedController {
   }
 
   @Get()
-  async getFeeds() {
-    return this.feedService.getFeeds();
+  async getFeeds(@Query('userId') userId: string) {
+    return this.feedService.getFeeds(Number(userId));
+  }
+
+  @Get('bookmark/me')
+  async getMyBookmarkedFeeds(@Query('userId') userId: string) {
+    return this.feedService.getMyBookmarkedFeeds(Number(userId));
+  }
+
+  @Get(':feedId')
+  async getFeedDetail(
+    @Param('feedId') feedId: string,
+    @Query('userId') userId: string,
+  ) {
+    return this.feedService.getFeedDetail(Number(feedId), Number(userId));
+  }
+
+  @Post(':feedId/like')
+  async likeFeed(
+    @Param('feedId') feedId: string,
+    @Query('userId') userId: string,
+  ) {
+    return this.feedService.likeFeed(Number(feedId), Number(userId));
+  }
+
+  @Delete(':feedId/like')
+  async unlikeFeed(
+    @Param('feedId') feedId: string,
+    @Query('userId') userId: string,
+  ) {
+    return this.feedService.unlikeFeed(Number(feedId), Number(userId));
+  }
+
+  @Post(':feedId/bookmark')
+  async bookmarkFeed(
+    @Param('feedId') feedId: string,
+    @Body('userId') userId: string,
+  ) {
+    return this.feedService.bookmarkFeed(Number(feedId), Number(userId));
+  }
+
+  @Delete(':feedId/bookmark')
+  async unbookmarkFeed(
+    @Param('feedId') feedId: string,
+    @Body('userId') userId: string,
+  ) {
+    return this.feedService.unbookmarkFeed(Number(feedId), Number(userId));
   }
 
   // 사진 업로드 확인 용 

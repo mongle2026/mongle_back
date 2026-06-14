@@ -15,6 +15,10 @@ import { MusicEntity } from './music/entities/music.entity';
 import { UserModule } from './user/user.module';
 import { UserEntity } from './user/entities/user.entity';
 import { PopularMusicEntity } from './music/entities/popular-music.entity';
+import { LikeModule } from './like/like.module';
+import { BookmarkModule } from './bookmark/bookmark.module';
+import { FeedLikeEntity } from './like/entities/feed-like.entity';
+import { BookmarkEntity } from './bookmark/entities/bookmark.entity';
 
 @Module({
   imports: [
@@ -35,6 +39,8 @@ import { PopularMusicEntity } from './music/entities/popular-music.entity';
         LetterEntity,
         MusicEntity,
         PopularMusicEntity,
+        FeedLikeEntity,
+        BookmarkEntity,
       ],
 
       // 초반에만, 얼추되면 false 
@@ -46,6 +52,8 @@ import { PopularMusicEntity } from './music/entities/popular-music.entity';
     FeedModule,
     LetterModule,
     MusicModule,
+    LikeModule,
+    BookmarkModule,
   ],
 })
 export class AppModule {}
