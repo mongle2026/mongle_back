@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { RecordModule } from './record/record.module';
 import { FeedModule } from './feed/feed.module';
@@ -22,29 +23,35 @@ import { BookmarkEntity } from './bookmark/entities/bookmark.entity';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
     ScheduleModule.forRoot(),
-    TypeOrmModule.forRoot({
-      type: 'mariadb',
-      host: '127.0.0.1',
-      port: 3306,
-      username: 'root',
-      password: ***REMOVED***,
-      database: 'mongle',
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        type: 'mariadb',
+        host: configService.get<string>('DB_HOST'),
+        port: Number(configService.get<string>('DB_PORT')),
+        username: configService.get<string>('DB_USERNAME'),
+        password: configService.get<string>('DB_PASSWORD'),
+        database: configService.get<string>('DB_DATABASE'),
 
-      entities: [
-        UserEntity,
-        RecordEntity,
-        RecordFileEntity,
-        FeedEntity,
-        LetterEntity,
-        MusicEntity,
-        PopularMusicEntity,
-        FeedLikeEntity,
-        BookmarkEntity,
-      ],
+        entities: [
+          UserEntity,
+          RecordEntity,
+          RecordFileEntity,
+          FeedEntity,
+          LetterEntity,
+          MusicEntity,
+          PopularMusicEntity,
+          FeedLikeEntity,
+          BookmarkEntity,
+        ],
 
-      // 초반에만, 얼추되면 false 
-      synchronize: true,
+        // 초반에만, 얼추되면 false 
+        synchronize: true,
+      }),
     }),
 
     UserModule,
@@ -56,4 +63,4 @@ import { BookmarkEntity } from './bookmark/entities/bookmark.entity';
     BookmarkModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }
