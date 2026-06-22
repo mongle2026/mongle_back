@@ -1,12 +1,11 @@
 import {
   Column,
-  CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
-  UpdateDateColumn,
 } from 'typeorm';
 import { Visibility } from '../enums/visibility.enum';
 import { RecordEntity } from 'src/record/entities/record.entity';
@@ -32,17 +31,12 @@ export class FeedEntity {
   })
   visibility!: Visibility;
 
-  @CreateDateColumn({
-    name: 'created_at',
+  @DeleteDateColumn({
+    name: 'deleted_at',
     type: 'datetime',
+    nullable: true,
   })
-  createdAt!: Date;
-
-  @UpdateDateColumn({
-    name: 'updated_at',
-    type: 'datetime',
-  })
-  updatedAt!: Date;
+  deletedAt!: Date | null;
 
   @OneToMany(() => FeedLikeEntity, (like) => like.feed)
   likes!: FeedLikeEntity[];

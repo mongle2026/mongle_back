@@ -1,13 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, In, LessThan } from 'typeorm';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { FeedEntity } from './entities/feed.entity';
 import { RecordService } from '../record/record.service';
-import { EntityManager } from 'typeorm';
 import { RecordFileEntity } from 'src/record/entities/record-file.entity';
 import { FeedLikeEntity } from 'src/like/entities/feed-like.entity';
 import { BookmarkEntity } from 'src/bookmark/entities/bookmark.entity';
+import { RecordEntity } from 'src/record/entities/record.entity';
 
 @Injectable()
 export class FeedService {
@@ -78,7 +78,7 @@ export class FeedService {
       }, 'isBookmarkedCount')
 
       .setParameter('userId', userId)
-      .orderBy('feed.createdAt', 'DESC')
+      .orderBy('record.createdAt', 'DESC')
       .getRawAndEntities();
 
     const rawByFeedId = new Map<number, any>();
@@ -158,6 +158,105 @@ export class FeedService {
       bookmarkCount: Number(raw.bookmarkCount ?? 0),
       isLiked: Number(raw.isLikedCount ?? 0) > 0,
       isBookmarked: Number(raw.isBookmarkedCount ?? 0) > 0,
+    });
+  }
+
+  async deleteFeed(feedId: number, userId: number) {
+    if (!feedId || Number.isNaN(feedId)) {
+      throw new BadRequestException('feedId가 올바르지 않습니다.');
+    }
+
+    if (!userId || Number.isNaN(userId)) {
+      throw new BadRequestException('userId가 올바르지 않습니다.');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const feed = await manager
+        .getRepository(FeedEntity)
+        .createQueryBuilder('feed')
+        .leftJoinAndSelect('feed.record', 'record')
+        .where('feed.id = :feedId', { feedId })
+        .andWhere('record.userId = :userId', { userId })
+        .getOne();
+
+      if (!feed) {
+        throw new NotFoundException('삭제할 피드를 찾을 수 없습니다.');
+      }
+
+      await manager.delete(FeedLikeEntity, {
+        feedId,
+      });
+
+      await manager.delete(BookmarkEntity, {
+        feedId,
+      });
+
+      await manager.softDelete(FeedEntity, {
+        id: feedId,
+      });
+
+      return {
+        message: '피드가 삭제되었습니다.',
+        feedId,
+      };
+    });
+  }
+
+  async purgeDeletedFeeds(days = 30, limit = 100) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    return this.dataSource.transaction(async (manager) => {
+      const feeds = await manager
+        .getRepository(FeedEntity)
+        .createQueryBuilder('feed')
+        .withDeleted()
+        .where('feed.deletedAt IS NOT NULL')
+        .andWhere('feed.deletedAt <= :cutoff', { cutoff })
+        .orderBy('feed.deletedAt', 'ASC')
+        .limit(limit)
+        .getMany();
+
+      if (feeds.length === 0) {
+        return {
+          message: '물리 삭제할 피드가 없습니다.',
+          deletedFeedCount: 0,
+          deletedRecordFileCount: 0,
+          deletedRecordCount: 0,
+        };
+      }
+
+      const feedIds = feeds.map((feed) => Number(feed.id));
+      const recordIds = [
+        ...new Set(feeds.map((feed) => Number(feed.recordId))),
+      ];
+
+      await manager.delete(FeedLikeEntity, {
+        feedId: In(feedIds),
+      });
+
+      await manager.delete(BookmarkEntity, {
+        feedId: In(feedIds),
+      });
+
+      const feedDeleteResult = await manager.delete(FeedEntity, {
+        id: In(feedIds),
+      });
+
+      const recordFileDeleteResult = await manager.delete(RecordFileEntity, {
+        recordId: In(recordIds),
+      });
+
+      const recordDeleteResult = await manager.delete(RecordEntity, {
+        id: In(recordIds),
+      });
+
+      return {
+        message: '삭제 보관 기간이 지난 피드가 물리 삭제되었습니다.',
+        deletedFeedCount: feedDeleteResult.affected ?? 0,
+        deletedRecordFileCount: recordFileDeleteResult.affected ?? 0,
+        deletedRecordCount: recordDeleteResult.affected ?? 0,
+      };
     });
   }
 
@@ -352,6 +451,8 @@ export class FeedService {
     return {
       feedId: feed.id,
       visibility: feed.visibility,
+      createdAt: feed.record.createdAt,
+      updatedAt: feed.record.updatedAt,
 
       user: {
         userId: feed.record.user.id,

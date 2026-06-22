@@ -32,10 +32,6 @@ export class FeedController {
     @Body() dto: CreateFeedDto,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
-    // console.log('dto:', dto);
-    // console.log('files length:', files?.length);
-    // console.log('files:', files);
-    // console.log('first file buffer exists:', !!files?.[0]?.buffer);
     return this.feedService.createFeed(dto, files ?? []);
   }
 
@@ -55,6 +51,14 @@ export class FeedController {
     @Query('userId') userId: string,
   ) {
     return this.feedService.getFeedDetail(Number(feedId), Number(userId));
+  }
+
+  @Delete(':feedId')
+  async deleteFeed(
+    @Param('feedId') feedId: string,
+    @Query('userId') userId: string,
+  ) {
+    return this.feedService.deleteFeed(Number(feedId), Number(userId));
   }
 
   @Post(':feedId/like')
