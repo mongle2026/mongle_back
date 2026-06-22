@@ -13,14 +13,10 @@ export class CreateLetterDto {
   @IsString()
   music!: string;
 
-  // 엥? 텍스트는 record에 있잖아? 
-  // @IsOptional()
-  // @IsString()
-  // @MaxLength(140)
-  // text?: string;
-
-  // @IsNumberString()
-  // senderId!: string;
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  text?: string;
 
   @IsNumberString()
   receiverId!: string;

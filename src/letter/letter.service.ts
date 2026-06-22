@@ -19,7 +19,7 @@ export class LetterService {
       const record = await this.recordService.createBaseRecord(manager, {
         userId: Number(dto.userId),
         music,
-        // text: dto.text,
+        text: dto.text,
         files,
       });
 

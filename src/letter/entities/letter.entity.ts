@@ -2,8 +2,11 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { RecordEntity } from 'src/record/entities/record.entity';
 
 @Entity('letter')
 export class LetterEntity {
@@ -13,8 +16,9 @@ export class LetterEntity {
   @Column({ name: 'record_id', type: 'bigint' })
   recordId!: number;
 
-  // @Column({ name: 'sender_id', type: 'bigint' })
-  // senderId!: number;
+  @ManyToOne(() => RecordEntity, { nullable: false })
+  @JoinColumn({ name: 'record_id' })
+  record!: RecordEntity;
 
   @Column({ name: 'receiver_id', type: 'bigint' })
   receiverId!: number;
@@ -43,10 +47,4 @@ export class LetterEntity {
     nullable: true,
   })
   deliveryAt!: Date | null;
-
-  @CreateDateColumn({
-    name: 'created_at',
-    type: 'datetime',
-  })
-  createdAt!: Date;
 }
