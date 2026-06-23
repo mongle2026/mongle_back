@@ -28,12 +28,6 @@ export class RecordEntity {
   music!: MusicEntity;
 
   @Column({
-    type: 'datetime',
-    default: () => 'CURRENT_TIMESTAMP',
-  })
-  date!: Date;
-
-  @Column({
     type: 'varchar',
     length: 2000,
     nullable: true,

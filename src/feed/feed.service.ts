@@ -466,7 +466,6 @@ export class FeedService {
 
       record: {
         recordId: feed.record.id,
-        date: feed.record.date,
         text: feed.record.text,
       },
 
