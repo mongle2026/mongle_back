@@ -4,6 +4,7 @@ import {
   Post,
   Get,
   Delete,
+  Patch,
   Param,
   Query,
   Res,
@@ -13,6 +14,7 @@ import {
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { FeedService } from './feed.service';
 import { CreateFeedDto } from './dto/create-feed.dto';
+import { UpdateFeedDto } from './dto/update-feed.dto';
 import 'multer';
 import type { Response } from 'express';
 
@@ -51,6 +53,28 @@ export class FeedController {
     @Query('userId') userId: string,
   ) {
     return this.feedService.getFeedDetail(Number(feedId), Number(userId));
+  }
+
+  @Patch(':feedId')
+  @UseInterceptors(
+    FilesInterceptor('files', 5, {
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
+    }),
+  )
+  async updateFeed(
+    @Param('feedId') feedId: string,
+    @Query('userId') userId: string,
+    @Body() dto: UpdateFeedDto,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.feedService.updateFeed(
+      Number(feedId),
+      Number(userId),
+      dto,
+      files ?? [],
+    );
   }
 
   @Delete(':feedId')

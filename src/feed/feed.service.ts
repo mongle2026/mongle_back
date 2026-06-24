@@ -8,6 +8,8 @@ import { RecordFileEntity } from 'src/record/entities/record-file.entity';
 import { FeedLikeEntity } from 'src/like/entities/feed-like.entity';
 import { BookmarkEntity } from 'src/bookmark/entities/bookmark.entity';
 import { RecordEntity } from 'src/record/entities/record.entity';
+import { UpdateFeedDto } from './dto/update-feed.dto';
+import { Visibility } from './enums/visibility.enum';
 
 @Injectable()
 export class FeedService {
@@ -158,6 +160,72 @@ export class FeedService {
       bookmarkCount: Number(raw.bookmarkCount ?? 0),
       isLiked: Number(raw.isLikedCount ?? 0) > 0,
       isBookmarked: Number(raw.isBookmarkedCount ?? 0) > 0,
+    });
+  }
+
+  async updateFeed(
+    feedId: number,
+    userId: number,
+    dto: UpdateFeedDto,
+    files: Express.Multer.File[],
+  ) {
+    if (!feedId || Number.isNaN(feedId)) {
+      throw new BadRequestException('feedId가 올바르지 않습니다.');
+    }
+
+    if (!userId || Number.isNaN(userId)) {
+      throw new BadRequestException('userId가 올바르지 않습니다.');
+    }
+
+    if (
+      dto.visibility !== undefined &&
+      !Object.values(Visibility).includes(dto.visibility)
+    ) {
+      throw new BadRequestException('visibility 값이 올바르지 않습니다.');
+    }
+
+    const music = dto.music ? this.parseMusic(dto.music) : undefined;
+    const deleteFileIds = this.parseDeleteFileIds(dto.deleteFileIds);
+
+    return this.dataSource.transaction(async (manager) => {
+      const feed = await manager
+        .getRepository(FeedEntity)
+        .createQueryBuilder('feed')
+        .leftJoinAndSelect('feed.record', 'record')
+        .leftJoinAndSelect('record.files', 'files')
+        .where('feed.id = :feedId', { feedId })
+        .andWhere('record.userId = :userId', { userId })
+        .getOne();
+
+      if (!feed) {
+        throw new NotFoundException('수정할 피드를 찾을 수 없습니다.');
+      }
+
+      let isFeedChanged = false;
+
+      if (dto.visibility !== undefined) {
+        feed.visibility = dto.visibility;
+        isFeedChanged = true;
+      }
+
+      await this.recordService.updateBaseRecord(manager, feed.record, {
+        text: dto.text,
+        music,
+        files,
+        deleteFileIds,
+        maxFileCount: 5,
+        touch: isFeedChanged,
+      });
+
+      if (isFeedChanged) {
+        await manager.save(FeedEntity, feed);
+      }
+
+      return {
+        message: '피드가 수정되었습니다.',
+        feedId: feed.id,
+        recordId: feed.record.id,
+      };
     });
   }
 
@@ -494,5 +562,39 @@ export class FeedService {
       isLiked: meta?.isLiked ?? false,
       isBookmarked: meta?.isBookmarked ?? false,
     };
+  }
+
+  private parseDeleteFileIds(value?: string | string[]): number[] {
+    if (!value) {
+      return [];
+    }
+
+    let rawValues: unknown[];
+
+    if (Array.isArray(value)) {
+      rawValues = value;
+    } else {
+      const trimmed = value.trim();
+
+      if (!trimmed) {
+        return [];
+      }
+
+      try {
+        rawValues = trimmed.startsWith('[')
+          ? JSON.parse(trimmed)
+          : trimmed.split(',');
+      } catch {
+        throw new BadRequestException('deleteFileIds 형식이 올바르지 않습니다.');
+      }
+    }
+
+    const ids = rawValues.map((id) => Number(id));
+
+    if (ids.some((id) => !id || Number.isNaN(id))) {
+      throw new BadRequestException('deleteFileIds 값이 올바르지 않습니다.');
+    }
+
+    return [...new Set(ids)];
   }
 }
