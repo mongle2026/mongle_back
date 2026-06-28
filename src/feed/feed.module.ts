@@ -7,6 +7,7 @@ import { RecordModule } from '../record/record.module';
 import { FeedLikeEntity } from 'src/like/entities/feed-like.entity';
 import { BookmarkEntity } from 'src/bookmark/entities/bookmark.entity';
 import { FeedCleanupService } from './feed-cleanup.service';
+import { FeedCommentModule } from 'src/feed-comment/feed-comment.module';
 
 @Module({
   imports: [
@@ -16,8 +17,12 @@ import { FeedCleanupService } from './feed-cleanup.service';
       BookmarkEntity,
     ]),
     RecordModule,
+    FeedCommentModule,
   ],
   controllers: [FeedController],
-  providers: [FeedService, FeedCleanupService],
+  providers: [
+    FeedService,
+    FeedCleanupService,
+  ],
 })
-export class FeedModule {}
+export class FeedModule { }

@@ -11,6 +11,7 @@ import { Visibility } from '../enums/visibility.enum';
 import { RecordEntity } from 'src/record/entities/record.entity';
 import { FeedLikeEntity } from 'src/like/entities/feed-like.entity';
 import { BookmarkEntity } from 'src/bookmark/entities/bookmark.entity';
+import { FeedCommentEntity } from 'src/feed-comment/entities/feed-comment.entity';
 
 @Entity('feed')
 export class FeedEntity {
@@ -43,4 +44,7 @@ export class FeedEntity {
 
   @OneToMany(() => BookmarkEntity, (bookmark) => bookmark.feed)
   bookmarks!: BookmarkEntity[];
+
+  @OneToMany(() => FeedCommentEntity, (comment) => comment.feed)
+  comments!: FeedCommentEntity[];
 }

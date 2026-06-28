@@ -20,6 +20,7 @@ import { LikeModule } from './like/like.module';
 import { BookmarkModule } from './bookmark/bookmark.module';
 import { FeedLikeEntity } from './like/entities/feed-like.entity';
 import { BookmarkEntity } from './bookmark/entities/bookmark.entity';
+import { FeedCommentEntity } from './feed-comment/entities/feed-comment.entity';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { BookmarkEntity } from './bookmark/entities/bookmark.entity';
           PopularMusicEntity,
           FeedLikeEntity,
           BookmarkEntity,
+          FeedCommentEntity,
         ],
 
         // 초반에만, 얼추되면 false 

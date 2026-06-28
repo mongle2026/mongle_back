@@ -15,12 +15,17 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { FeedService } from './feed.service';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { UpdateFeedDto } from './dto/update-feed.dto';
+import { FeedCommentService } from 'src/feed-comment/feed-comment.service';
+import { CreateFeedCommentDto } from 'src/feed-comment/dto/create-feed-comment.dto';
 import 'multer';
 import type { Response } from 'express';
 
 @Controller('feed')
 export class FeedController {
-  constructor(private readonly feedService: FeedService) { }
+  constructor(
+    private readonly feedService: FeedService,
+    private readonly feedCommentService: FeedCommentService,
+  ) { }
 
   @Post()
   @UseInterceptors(
@@ -115,6 +120,40 @@ export class FeedController {
     @Query('userId') userId: string,
   ) {
     return this.feedService.unbookmarkFeed(Number(feedId), Number(userId));
+  }
+
+  @Post(':feedId/comments')
+  async createComment(
+    @Param('feedId') feedId: string,
+    @Query('userId') userId: string,
+    @Body() dto: CreateFeedCommentDto,
+  ) {
+    return this.feedCommentService.createComment(
+      Number(feedId),
+      Number(userId),
+      dto,
+    );
+  }
+
+  @Get(':feedId/comments')
+  async getComments(
+    @Param('feedId') feedId: string,
+    @Query('userId') userId: string,
+  ) {
+    return this.feedCommentService.getComments(Number(feedId), Number(userId));
+  }
+
+  @Delete(':feedId/comments/:commentId')
+  async deleteComment(
+    @Param('feedId') feedId: string,
+    @Param('commentId') commentId: string,
+    @Query('userId') userId: string,
+  ) {
+    return this.feedCommentService.deleteComment(
+      Number(feedId),
+      Number(commentId),
+      Number(userId),
+    );
   }
   // 사진 업로드 확인 용 
   // 오디오도 이걸로 확인 가능할듯 
