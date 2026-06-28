@@ -127,8 +127,17 @@ export class RecordService {
     }
 
     if (shouldUpdateRecord) {
-      record.updatedAt = new Date();
-      await manager.save(RecordEntity, record);
+      await manager.update(
+        RecordEntity,
+        {
+          id: record.id,
+        },
+        {
+          text: record.text,
+          musicId: record.musicId,
+          updatedAt: new Date(),
+        },
+      );
     }
 
     return record;

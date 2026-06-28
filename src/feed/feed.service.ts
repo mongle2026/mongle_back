@@ -211,10 +211,10 @@ export class FeedService {
       await this.recordService.updateBaseRecord(manager, feed.record, {
         text: dto.text,
         music,
-        files,
+        files: files ?? [],
         deleteFileIds,
         maxFileCount: 5,
-        touch: isFeedChanged,
+        touch: true,
       });
 
       if (isFeedChanged) {
@@ -487,14 +487,6 @@ export class FeedService {
     if (!file) {
       throw new NotFoundException('파일을 찾을 수 없습니다.');
     }
-
-    console.log('파일 조회 테스트:', {
-      id: file.id,
-      mimeType: file.mimeType,
-      originalName: file.originalName,
-      isBuffer: Buffer.isBuffer(file.fileData),
-      size: file.fileData?.length,
-    });
 
     return file;
   }
