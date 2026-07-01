@@ -10,12 +10,12 @@ export class UserService {
     private readonly userRepository: Repository<UserEntity>,
   ) { }
 
-  async searchUsers(keyword: string) {
-    if (!keyword || keyword.trim() === '') {
-      return [];
-    }
+  async searchUsers(keyword: string, currentUserId: number) {
+    const searchKeyword = keyword?.trim() ?? '';
 
-    const searchKeyword = keyword.trim();
+    if (!searchKeyword) {
+      return await this.getDefaultRecipients(currentUserId);
+    }
 
     const users = await this.userRepository
       .createQueryBuilder('user')
@@ -33,24 +33,61 @@ export class UserService {
       )
       .orderBy(
         `
-      CASE
-        WHEN user.nickname LIKE :prefixKeyword THEN 0
-        WHEN user.userCode LIKE :prefixKeyword THEN 1
-        WHEN user.nickname LIKE :keyword THEN 2
-        WHEN user.userCode LIKE :keyword THEN 3
-        ELSE 4
-      END
-      `,
+    CASE
+      WHEN user.id = :currentUserId THEN 0
+      ELSE 1
+    END
+    `,
+        'ASC',
+      )
+      .addOrderBy(
+        `
+    CASE
+      WHEN user.nickname LIKE :prefixKeyword THEN 0
+      WHEN user.userCode LIKE :prefixKeyword THEN 1
+      WHEN user.nickname LIKE :keyword THEN 2
+      WHEN user.userCode LIKE :keyword THEN 3
+      ELSE 4
+    END
+    `,
         'ASC',
       )
       .addOrderBy('user.nickname', 'ASC')
       .addOrderBy('user.userCode', 'ASC')
+      .setParameter('currentUserId', currentUserId)
       .setParameter('prefixKeyword', `${searchKeyword}%`)
       .setParameter('keyword', `%${searchKeyword}%`)
       .limit(20)
       .getMany();
 
-    return users.map((user) => ({
+    return users.map((user) =>
+      this.toRecipientResponse(user, currentUserId),
+    );
+  }
+
+  private async getDefaultRecipients(currentUserId: number) {
+    const me = await this.userRepository
+      .createQueryBuilder('user')
+      .select([
+        'user.id',
+        'user.userCode',
+        'user.nickname',
+        'user.imageMimeType',
+      ])
+      .where('user.id = :currentUserId', { currentUserId })
+      .getOne();
+
+    if (!me) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    return [
+      this.toRecipientResponse(me, currentUserId),
+    ];
+  }
+
+  private toRecipientResponse(user: UserEntity, currentUserId: number) {
+    return {
       id: user.id,
       userCode: user.userCode,
       nickname: user.nickname,
@@ -58,7 +95,8 @@ export class UserService {
       profileImageUrl: user.imageMimeType
         ? `/user/${user.id}/profile-image`
         : null,
-    }));
+      isMe: String(user.id) === String(currentUserId),
+    };
   }
 
   async getProfileImage(userId: number) {

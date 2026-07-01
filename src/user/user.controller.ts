@@ -1,4 +1,12 @@
-import { Controller, Get, Query, Param, Res, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Param,
+  Res,
+  ParseIntPipe,
+  BadRequestException,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { UserService } from './user.service';
 
@@ -7,8 +15,17 @@ export class UserController {
   constructor(private readonly userService: UserService) { }
 
   @Get('search')
-  async searchUsers(@Query('keyword') keyword: string) {
-    return await this.userService.searchUsers(keyword);
+  async searchUsers(
+    @Query('keyword') keyword: string = '',
+    @Query('currentUserId') currentUserId: string,
+  ) {
+    const parsedCurrentUserId = Number(currentUserId);
+
+    if (!parsedCurrentUserId) {
+      throw new BadRequestException('currentUserId가 필요합니다.');
+    }
+
+    return await this.userService.searchUsers(keyword, parsedCurrentUserId);
   }
 
   @Get(':id/profile-image')
