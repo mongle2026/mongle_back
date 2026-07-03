@@ -21,6 +21,7 @@ import { BookmarkModule } from './bookmark/bookmark.module';
 import { FeedLikeEntity } from './like/entities/feed-like.entity';
 import { BookmarkEntity } from './bookmark/entities/bookmark.entity';
 import { FeedCommentEntity } from './feed-comment/entities/feed-comment.entity';
+import { FollowModule } from './follow/follow.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { FeedCommentEntity } from './feed-comment/entities/feed-comment.entity';
     MusicModule,
     LikeModule,
     BookmarkModule,
+    FollowModule,
   ],
 })
 export class AppModule { }
