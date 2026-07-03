@@ -22,6 +22,7 @@ import { FeedLikeEntity } from './like/entities/feed-like.entity';
 import { BookmarkEntity } from './bookmark/entities/bookmark.entity';
 import { FeedCommentEntity } from './feed-comment/entities/feed-comment.entity';
 import { FollowModule } from './follow/follow.module';
+import { FollowEntity } from './follow/entities/follow.entity';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { FollowModule } from './follow/follow.module';
           FeedLikeEntity,
           BookmarkEntity,
           FeedCommentEntity,
+          FollowEntity,
         ],
 
         // 초반에만, 얼추되면 false 
