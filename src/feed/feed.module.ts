@@ -8,6 +8,7 @@ import { FeedLikeEntity } from 'src/like/entities/feed-like.entity';
 import { BookmarkEntity } from 'src/bookmark/entities/bookmark.entity';
 import { FeedCleanupService } from './feed-cleanup.service';
 import { FeedCommentModule } from 'src/feed-comment/feed-comment.module';
+import { FollowModule } from 'src/follow/follow.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { FeedCommentModule } from 'src/feed-comment/feed-comment.module';
       BookmarkEntity,
     ]),
     RecordModule,
+    FollowModule,
     FeedCommentModule,
   ],
   controllers: [FeedController],

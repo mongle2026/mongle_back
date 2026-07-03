@@ -10,12 +10,14 @@ import { BookmarkEntity } from 'src/bookmark/entities/bookmark.entity';
 import { RecordEntity } from 'src/record/entities/record.entity';
 import { UpdateFeedDto } from './dto/update-feed.dto';
 import { Visibility } from './enums/visibility.enum';
+import { FollowService } from 'src/follow/follow.service';
 
 @Injectable()
 export class FeedService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly recordService: RecordService,
+    private readonly followService: FollowService,
   ) { }
 
   async createFeed(dto: CreateFeedDto, files: Express.Multer.File[]) {
@@ -102,6 +104,112 @@ export class FeedService {
         isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
       });
     });
+  }
+
+  async getFollowingFeeds(params: {
+    userId: number;
+    cursor?: number;
+    limit?: number;
+    includeMe?: boolean;
+  }) {
+    const { userId, cursor, includeMe = false } = params;
+    const limit = params.limit ?? 20;
+
+    if (!userId || Number.isNaN(userId)) {
+      throw new BadRequestException('userId가 올바르지 않습니다.');
+    }
+
+    if (cursor !== undefined && (!cursor || Number.isNaN(cursor))) {
+      throw new BadRequestException('cursor 값이 올바르지 않습니다.');
+    }
+
+    if (!limit || Number.isNaN(limit)) {
+      throw new BadRequestException('limit 값이 올바르지 않습니다.');
+    }
+
+    const safeLimit = Math.min(Math.max(limit, 1), 50);
+
+    const followingIds = await this.followService.getFollowingIds(userId);
+
+    const authorIds = includeMe
+      ? Array.from(new Set([userId, ...followingIds]))
+      : followingIds;
+
+    if (authorIds.length === 0) {
+      return {
+        items: [],
+        nextCursor: null,
+        hasNext: false,
+      };
+    }
+
+    const result = await this.dataSource
+      .getRepository(FeedEntity)
+      .createQueryBuilder('feed')
+      .leftJoinAndSelect('feed.record', 'record')
+      .leftJoinAndSelect('record.user', 'user')
+      .leftJoinAndSelect('record.music', 'music')
+      .leftJoinAndSelect('record.files', 'files')
+
+      .addSelect((subQuery) => {
+        return subQuery
+          .select('COUNT(feedLike.id)')
+          .from(FeedLikeEntity, 'feedLike')
+          .where('feedLike.feedId = feed.id');
+      }, 'likeCount')
+
+      .addSelect((subQuery) => {
+        return subQuery
+          .select('COUNT(myLike.id)')
+          .from(FeedLikeEntity, 'myLike')
+          .where('myLike.feedId = feed.id')
+          .andWhere('myLike.userId = :userId');
+      }, 'isLikedCount')
+
+      .addSelect((subQuery) => {
+        return subQuery
+          .select('COUNT(myBookmark.id)')
+          .from(BookmarkEntity, 'myBookmark')
+          .where('myBookmark.feedId = feed.id')
+          .andWhere('myBookmark.userId = :userId');
+      }, 'isBookmarkedCount')
+
+      .where('record.userId IN (:...authorIds)', { authorIds })
+      .andWhere(cursor ? 'feed.id < :cursor' : '1=1', { cursor })
+      .setParameter('userId', userId)
+      .orderBy('feed.id', 'DESC')
+      .take(safeLimit + 1)
+      .getRawAndEntities();
+
+    const rawByFeedId = new Map<number, any>();
+
+    result.raw.forEach((raw) => {
+      const feedId = Number(raw.feed_id);
+
+      if (!rawByFeedId.has(feedId)) {
+        rawByFeedId.set(feedId, raw);
+      }
+    });
+
+    const feeds = result.entities.map((feed) => {
+      const raw = rawByFeedId.get(Number(feed.id));
+
+      return this.formatFeedResponse(feed, {
+        likeCount: Number(raw?.likeCount ?? 0),
+        isLiked: Number(raw?.isLikedCount ?? 0) > 0,
+        isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
+      });
+    });
+
+    const hasNext = feeds.length > safeLimit;
+    const items = hasNext ? feeds.slice(0, safeLimit) : feeds;
+    const lastItem = items[items.length - 1];
+
+    return {
+      items,
+      nextCursor: hasNext && lastItem ? lastItem.feedId : null,
+      hasNext,
+    };
   }
 
   async getFeedDetail(feedId: number, userId: number) {
