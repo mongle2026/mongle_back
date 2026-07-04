@@ -17,7 +17,7 @@ export class CreateFeedDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(140)
+  @MaxLength(2000)
   text?: string;
 
   @IsEnum(Visibility)
