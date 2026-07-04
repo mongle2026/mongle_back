@@ -18,7 +18,7 @@ export class FeedCommentService {
 
     @InjectRepository(FeedEntity)
     private readonly feedRepository: Repository<FeedEntity>,
-  ) {}
+  ) { }
 
   async createComment(
     feedId: number,
@@ -101,6 +101,9 @@ export class FeedCommentService {
       where: {
         feedId,
       },
+      relations: {
+        user: true,
+      },
       order: {
         createdAt: 'ASC',
         id: 'ASC',
@@ -182,6 +185,7 @@ export class FeedCommentService {
         commentId: Number(comment.id),
         feedId: Number(comment.feedId),
         userId: Number(comment.userId),
+        user: this.toCommentUser(comment.user),
         content: comment.content,
         parentCommentId: null,
         rootCommentId: null,
@@ -210,6 +214,7 @@ export class FeedCommentService {
         commentId: Number(comment.id),
         feedId: Number(comment.feedId),
         userId: Number(comment.userId),
+        user: this.toCommentUser(comment.user),
         content: comment.content,
         parentCommentId: Number(comment.parentCommentId),
         rootCommentId: rootId,
@@ -293,6 +298,22 @@ export class FeedCommentService {
         : null,
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
+    };
+  }
+
+  private toCommentUser(user: any) {
+    if (!user) {
+      return null;
+    }
+
+    return {
+      userId: Number(user.id),
+      nickname: user.nickname,
+      userCode: user.userCode,
+      hasProfileImage: !!user.imageMimeType,
+      profileImageUrl: user.imageMimeType
+        ? `/user/${user.id}/profile-image`
+        : null,
     };
   }
 }
