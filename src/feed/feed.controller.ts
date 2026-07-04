@@ -43,8 +43,16 @@ export class FeedController {
   }
 
   @Get()
-  async getFeeds(@Query('userId') userId: string) {
-    return this.feedService.getFeeds(Number(userId));
+  async getFeeds(
+    @Query('userId') userId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.feedService.getFeeds({
+      userId: Number(userId),
+      cursor: cursor ? Number(cursor) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @Get('following')
@@ -53,13 +61,10 @@ export class FeedController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
-    // 내 글 포함 => includeMe: true
-    // 내 글 미포함 => includeMe: false
     return this.feedService.getFollowingFeeds({
       userId: Number(userId),
       cursor: cursor ? Number(cursor) : undefined,
       limit: limit ? Number(limit) : undefined,
-      includeMe: false,
     });
   }
 

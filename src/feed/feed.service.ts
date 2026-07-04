@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, In, LessThan } from 'typeorm';
+import { Brackets, DataSource, In } from 'typeorm';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { FeedEntity } from './entities/feed.entity';
@@ -14,6 +14,11 @@ import { FollowService } from 'src/follow/follow.service';
 
 @Injectable()
 export class FeedService {
+  // includeMeInAllFeed       GET /feed           내 글 포함
+  // includeMeInFollowingFeed GET /feed/following 내 글 미포함 
+  private readonly includeMeInAllFeed = true;
+  private readonly includeMeInFollowingFeed = false;
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly recordService: RecordService,
@@ -46,8 +51,31 @@ export class FeedService {
     });
   }
 
-  async getFeeds(userId: number) {
-    const result = await this.dataSource
+  async getFeeds(params: {
+    userId: number;
+    cursor?: number;
+    limit?: number;
+  }) {
+    const { userId, cursor } = params;
+    const limit = params.limit ?? 20;
+
+    if (!userId || Number.isNaN(userId)) {
+      throw new BadRequestException('userId가 올바르지 않습니다.');
+    }
+
+    if (cursor !== undefined && (!cursor || Number.isNaN(cursor))) {
+      throw new BadRequestException('cursor 값이 올바르지 않습니다.');
+    }
+
+    if (!limit || Number.isNaN(limit)) {
+      throw new BadRequestException('limit 값이 올바르지 않습니다.');
+    }
+
+    const safeLimit = Math.min(Math.max(limit, 1), 50);
+
+    const followingIds = await this.followService.getFollowingIds(userId);
+
+    const queryBuilder = this.dataSource
       .getRepository(FeedEntity)
       .createQueryBuilder('feed')
       .leftJoinAndSelect('feed.record', 'record')
@@ -81,9 +109,40 @@ export class FeedService {
           .andWhere('myBookmark.userId = :userId');
       }, 'isBookmarkedCount')
 
+      .where(
+        new Brackets((qb) => {
+          qb.where('feed.visibility = :publicVisibility', {
+            publicVisibility: Visibility.PUBLIC,
+          });
+
+          if (followingIds.length > 0) {
+            qb.orWhere(
+              new Brackets((followQb) => {
+                followQb
+                  .where('feed.visibility = :followVisibility', {
+                    followVisibility: Visibility.FOLLOWER,
+                  })
+                  .andWhere('record.userId IN (:...followingIds)', {
+                    followingIds,
+                  });
+              }),
+            );
+          }
+        }),
+      )
       .setParameter('userId', userId)
-      .orderBy('record.createdAt', 'DESC')
-      .getRawAndEntities();
+      .orderBy('feed.id', 'DESC')
+      .take(safeLimit + 1);
+
+    if (cursor !== undefined) {
+      queryBuilder.andWhere('feed.id < :cursor', { cursor });
+    }
+
+    if (!this.includeMeInAllFeed) {
+      queryBuilder.andWhere('record.userId != :userId', { userId });
+    }
+
+    const result = await queryBuilder.getRawAndEntities();
 
     const rawByFeedId = new Map<number, any>();
 
@@ -95,7 +154,7 @@ export class FeedService {
       }
     });
 
-    return result.entities.map((feed) => {
+    const feeds = result.entities.map((feed) => {
       const raw = rawByFeedId.get(Number(feed.id));
 
       return this.formatFeedResponse(feed, {
@@ -104,15 +163,25 @@ export class FeedService {
         isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
       });
     });
+
+    const hasNext = feeds.length > safeLimit;
+    const items = hasNext ? feeds.slice(0, safeLimit) : feeds;
+    const lastItem = items[items.length - 1];
+
+    return {
+      items,
+      nextCursor: hasNext && lastItem ? lastItem.feedId : null,
+      hasNext,
+    };
   }
 
   async getFollowingFeeds(params: {
     userId: number;
     cursor?: number;
     limit?: number;
-    includeMe?: boolean;
   }) {
-    const { userId, cursor, includeMe = false } = params;
+    const { userId, cursor } = params;
+    const includeMe = this.includeMeInFollowingFeed;
     const limit = params.limit ?? 20;
 
     if (!userId || Number.isNaN(userId)) {
@@ -175,6 +244,9 @@ export class FeedService {
       }, 'isBookmarkedCount')
 
       .where('record.userId IN (:...authorIds)', { authorIds })
+      .andWhere('feed.visibility IN (:...visibleVisibilities)', {
+        visibleVisibilities: [Visibility.PUBLIC, Visibility.FOLLOWER],
+      })
       .andWhere(cursor ? 'feed.id < :cursor' : '1=1', { cursor })
       .setParameter('userId', userId)
       .orderBy('feed.id', 'DESC')
