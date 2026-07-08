@@ -693,6 +693,7 @@ export class FeedService {
       visibility: feed.visibility,
       createdAt: feed.record.createdAt,
       updatedAt: feed.record.updatedAt,
+      isEdited: this.isEdited(feed.record.createdAt, feed.record.updatedAt),
 
       user: {
         userId: feed.record.user.id,
@@ -734,6 +735,14 @@ export class FeedService {
       isLiked: meta?.isLiked ?? false,
       isBookmarked: meta?.isBookmarked ?? false,
     };
+  }
+
+  private isEdited(createdAt?: Date, updatedAt?: Date) {
+    if (!createdAt || !updatedAt) {
+      return false;
+    }
+
+    return new Date(updatedAt).getTime() > new Date(createdAt).getTime();
   }
 
   private parseDeleteFileIds(value?: string | string[]): number[] {
