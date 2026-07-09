@@ -47,4 +47,11 @@ export class LetterEntity {
     nullable: true,
   })
   deliveryAt!: Date | null;
+
+  @Column({
+    name: 'read_at',
+    type: 'datetime',
+    nullable: true,
+  })
+  readAt!: Date | null;
 }
