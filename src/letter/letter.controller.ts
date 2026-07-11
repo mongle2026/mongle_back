@@ -1,7 +1,11 @@
 import {
   Body,
   Controller,
+  Get,
+  Param,
+  ParseIntPipe,
   Post,
+  Query,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
@@ -12,7 +16,7 @@ import 'multer';
 
 @Controller('letter')
 export class LetterController {
-  constructor(private readonly letterService: LetterService) {}
+  constructor(private readonly letterService: LetterService) { }
 
   @Post()
   @UseInterceptors(
@@ -27,5 +31,16 @@ export class LetterController {
     @UploadedFiles() files: Express.Multer.File[],
   ) {
     return this.letterService.createLetter(dto, files ?? []);
+  }
+
+  @Get(':letterId')
+  async getLetterDetail(
+    @Param('letterId', ParseIntPipe) letterId: number,
+    @Query('userId', ParseIntPipe) userId: number,
+  ) {
+    return this.letterService.getLetterDetail({
+      letterId,
+      userId,
+    });
   }
 }
