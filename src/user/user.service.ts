@@ -10,12 +10,22 @@ export class UserService {
     private readonly userRepository: Repository<UserEntity>,
   ) { }
 
-  async searchUsers(keyword: string, currentUserId: number) {
+  async searchUsers(
+    keyword: string,
+    currentUserId: number,
+    page: number = 1,
+    limit: number = 20,
+  ) {
     const searchKeyword = keyword?.trim() ?? '';
 
     if (!searchKeyword) {
-      return await this.getDefaultRecipients(currentUserId);
+      return await this.getDefaultRecipients(
+        currentUserId,
+        page,
+      );
     }
+
+    const skip = (page - 1) * limit;
 
     const users = await this.userRepository
       .createQueryBuilder('user')
@@ -26,46 +36,79 @@ export class UserService {
         'user.imageMimeType',
       ])
       .where(
-        '(user.nickname LIKE :keyword OR user.userCode LIKE :keyword)',
+        `
+        (
+          user.nickname LIKE :keyword
+          OR user.userCode LIKE :keyword
+        )
+      `,
         {
           keyword: `%${searchKeyword}%`,
         },
       )
       .orderBy(
         `
-    CASE
-      WHEN user.id = :currentUserId THEN 0
-      ELSE 1
-    END
-    `,
+        CASE
+          WHEN user.id = :currentUserId THEN 0
+          ELSE 1
+        END
+      `,
         'ASC',
       )
       .addOrderBy(
         `
-    CASE
-      WHEN user.nickname LIKE :prefixKeyword THEN 0
-      WHEN user.userCode LIKE :prefixKeyword THEN 1
-      WHEN user.nickname LIKE :keyword THEN 2
-      WHEN user.userCode LIKE :keyword THEN 3
-      ELSE 4
-    END
-    `,
+        CASE
+          WHEN user.nickname LIKE :prefixKeyword THEN 0
+          WHEN user.userCode LIKE :prefixKeyword THEN 1
+          WHEN user.nickname LIKE :keyword THEN 2
+          WHEN user.userCode LIKE :keyword THEN 3
+          ELSE 4
+        END
+      `,
         'ASC',
       )
       .addOrderBy('user.nickname', 'ASC')
       .addOrderBy('user.userCode', 'ASC')
+      .addOrderBy('user.id', 'ASC')
       .setParameter('currentUserId', currentUserId)
-      .setParameter('prefixKeyword', `${searchKeyword}%`)
-      .setParameter('keyword', `%${searchKeyword}%`)
-      .limit(20)
+      .setParameter(
+        'prefixKeyword',
+        `${searchKeyword}%`,
+      )
+      .setParameter(
+        'keyword',
+        `%${searchKeyword}%`,
+      )
+      .skip(skip)
+      .take(limit + 1)
       .getMany();
 
-    return users.map((user) =>
-      this.toRecipientResponse(user, currentUserId),
-    );
+    const hasNextPage = users.length > limit;
+    const currentPageUsers = users.slice(0, limit);
+
+    return {
+      items: currentPageUsers.map((user) =>
+        this.toRecipientResponse(user, currentUserId),
+      ),
+      page,
+      nextPage: hasNextPage ? page + 1 : null,
+      hasNextPage,
+    };
   }
 
-  private async getDefaultRecipients(currentUserId: number) {
+  private async getDefaultRecipients(
+    currentUserId: number,
+    page: number,
+  ) {
+    if (page > 1) {
+      return {
+        items: [],
+        page,
+        nextPage: null,
+        hasNextPage: false,
+      };
+    }
+
     const me = await this.userRepository
       .createQueryBuilder('user')
       .select([
@@ -74,16 +117,28 @@ export class UserService {
         'user.nickname',
         'user.imageMimeType',
       ])
-      .where('user.id = :currentUserId', { currentUserId })
+      .where('user.id = :currentUserId', {
+        currentUserId,
+      })
       .getOne();
 
     if (!me) {
-      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+      throw new NotFoundException(
+        '사용자를 찾을 수 없습니다.',
+      );
     }
 
-    return [
-      this.toRecipientResponse(me, currentUserId),
-    ];
+    return {
+      items: [
+        this.toRecipientResponse(
+          me,
+          currentUserId,
+        ),
+      ],
+      page: 1,
+      nextPage: null,
+      hasNextPage: false,
+    };
   }
 
   private toRecipientResponse(user: UserEntity, currentUserId: number) {

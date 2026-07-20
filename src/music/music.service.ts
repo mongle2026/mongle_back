@@ -2,10 +2,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import axios from 'axios';
 import { MusicEntity } from './entities/music.entity';
 import { PopularMusicEntity } from './entities/popular-music.entity';
 import { CreateMusicDto } from './dto/create-music.dto';
-import axios from 'axios';
 
 interface ItunesSearchItem {
   trackId: number;
@@ -21,46 +21,152 @@ interface ItunesSearchResponse {
   results: ItunesSearchItem[];
 }
 
+export interface MusicSearchItem {
+  externalId: string;
+  musicTitle: string;
+  musicArtist: string;
+  musicGenre: string[];
+  musicArtwork?: string;
+  previewUrl?: string;
+}
+
+export interface MusicSearchResponse {
+  items: MusicSearchItem[];
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  nextPage: number | null;
+}
+
+interface SearchCacheEntry {
+  expiresAt: number;
+  items: MusicSearchItem[];
+}
+
+const ITUNES_MAX_RESULTS = 200;
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 50;
+const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+const SEARCH_CACHE_MAX_ENTRIES = 100;
+
 @Injectable()
 export class MusicService {
+  private readonly searchCache = new Map<string, SearchCacheEntry>();
+
   constructor(
     @InjectRepository(MusicEntity)
     private readonly musicRepository: Repository<MusicEntity>,
-  
+
     @InjectRepository(PopularMusicEntity)
     private readonly popularMusicRepository: Repository<PopularMusicEntity>,
 
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
-  async searchMusic(keyword: string) {
+  async searchMusic(
+    keyword: string,
+    page = 1,
+    limit = DEFAULT_PAGE_SIZE,
+  ): Promise<MusicSearchResponse> {
     const trimmedKeyword = keyword?.trim();
 
-    // if (!trimmedKeyword || trimmedKeyword.length < 2) {
-    //   throw new BadRequestException('검색어는 2글자 이상 입력해주세요.');
-    // }
+    if (!trimmedKeyword) {
+      throw new BadRequestException('검색어를 입력해주세요.');
+    }
+
+    if (!Number.isInteger(page) || page < 1) {
+      throw new BadRequestException('page는 1 이상의 정수여야 합니다.');
+    }
+
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) {
+      throw new BadRequestException(
+        `limit은 1 이상 ${MAX_PAGE_SIZE} 이하의 정수여야 합니다.`,
+      );
+    }
+
+    const cacheKey = trimmedKeyword.toLocaleLowerCase('ko-KR');
+    const allItems = await this.getSearchItems(cacheKey, trimmedKeyword);
+
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const items = allItems.slice(startIndex, endIndex);
+    const hasNextPage = endIndex < allItems.length;
+
+    return {
+      items,
+      page,
+      limit,
+      hasNextPage,
+      nextPage: hasNextPage ? page + 1 : null,
+    };
+  }
+
+  private async getSearchItems(
+    cacheKey: string,
+    keyword: string,
+  ): Promise<MusicSearchItem[]> {
+    const cached = this.searchCache.get(cacheKey);
+
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.items;
+    }
+
+    if (cached) {
+      this.searchCache.delete(cacheKey);
+    }
 
     const response = await axios.get<ItunesSearchResponse>(
       'https://itunes.apple.com/search',
       {
         params: {
-          term: trimmedKeyword,
+          term: keyword,
           country: 'KR',
           media: 'music',
           entity: 'song',
-          limit: 20,
+          limit: ITUNES_MAX_RESULTS,
         },
       },
     );
 
-    return response.data.results.map((item) => ({
-      externalId: String(item.trackId),
-      musicTitle: item.trackName,
-      musicArtist: item.artistName,
-      musicGenre: item.primaryGenreName ? [item.primaryGenreName] : [],
-      musicArtwork: item.artworkUrl100,
-      previewUrl: item.previewUrl,
-    }));
+    const itemMap = new Map<string, MusicSearchItem>();
+
+    for (const item of response.data.results) {
+      const externalId = String(item.trackId);
+
+      if (!itemMap.has(externalId)) {
+        itemMap.set(externalId, {
+          externalId,
+          musicTitle: item.trackName,
+          musicArtist: item.artistName,
+          musicGenre: item.primaryGenreName ? [item.primaryGenreName] : [],
+          musicArtwork: item.artworkUrl100,
+          previewUrl: item.previewUrl,
+        });
+      }
+    }
+
+    const items = Array.from(itemMap.values());
+
+    this.setSearchCache(cacheKey, items);
+
+    return items;
+  }
+
+  private setSearchCache(cacheKey: string, items: MusicSearchItem[]) {
+    if (this.searchCache.size >= SEARCH_CACHE_MAX_ENTRIES) {
+      const oldestKey = this.searchCache.keys().next().value as
+        | string
+        | undefined;
+
+      if (oldestKey) {
+        this.searchCache.delete(oldestKey);
+      }
+    }
+
+    this.searchCache.set(cacheKey, {
+      items,
+      expiresAt: Date.now() + SEARCH_CACHE_TTL_MS,
+    });
   }
 
   async findOrCreateMusic(dto: CreateMusicDto): Promise<MusicEntity> {

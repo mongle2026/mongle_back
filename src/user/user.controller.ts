@@ -6,6 +6,7 @@ import {
   Res,
   ParseIntPipe,
   BadRequestException,
+  DefaultValuePipe,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { UserService } from './user.service';
@@ -18,14 +19,36 @@ export class UserController {
   async searchUsers(
     @Query('keyword') keyword: string = '',
     @Query('currentUserId') currentUserId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe)
+    page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe)
+    limit: number,
   ) {
     const parsedCurrentUserId = Number(currentUserId);
 
-    if (!parsedCurrentUserId) {
+    if (
+      !Number.isInteger(parsedCurrentUserId) ||
+      parsedCurrentUserId <= 0
+    ) {
       throw new BadRequestException('currentUserId가 필요합니다.');
     }
 
-    return await this.userService.searchUsers(keyword, parsedCurrentUserId);
+    if (page < 1) {
+      throw new BadRequestException('page는 1 이상이어야 합니다.');
+    }
+
+    if (limit < 1 || limit > 50) {
+      throw new BadRequestException(
+        'limit은 1 이상 50 이하여야 합니다.',
+      );
+    }
+
+    return await this.userService.searchUsers(
+      keyword,
+      parsedCurrentUserId,
+      page,
+      limit,
+    );
   }
 
   @Get(':id/profile-image')
