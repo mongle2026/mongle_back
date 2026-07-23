@@ -111,10 +111,28 @@ export class FeedService {
 
       .where(
         new Brackets((qb) => {
+          // 1. 전체 공개 게시물
           qb.where('feed.visibility = :publicVisibility', {
             publicVisibility: Visibility.PUBLIC,
           });
 
+          // 2. 내 게시물
+          if (this.includeMeInAllFeed) {
+            qb.orWhere(
+              new Brackets((selfQb) => {
+                selfQb
+                  .where('record.userId = :userId')
+                  .andWhere('feed.visibility IN (:...selfVisibilities)', {
+                    selfVisibilities: [
+                      Visibility.PUBLIC,
+                      Visibility.FOLLOWER,
+                    ],
+                  });
+              }),
+            );
+          }
+
+          // 3. 내가 팔로우한 사용자의 팔로워 공개 게시물
           if (followingIds.length > 0) {
             qb.orWhere(
               new Brackets((followQb) => {
@@ -136,10 +154,6 @@ export class FeedService {
 
     if (cursor !== undefined) {
       queryBuilder.andWhere('feed.id < :cursor', { cursor });
-    }
-
-    if (!this.includeMeInAllFeed) {
-      queryBuilder.andWhere('record.userId != :userId', { userId });
     }
 
     const result = await queryBuilder.getRawAndEntities();
@@ -285,6 +299,18 @@ export class FeedService {
   }
 
   async getFeedDetail(feedId: number, userId: number) {
+    if (!Number.isInteger(feedId) || feedId < 1) {
+      throw new BadRequestException(
+        'feedId가 올바르지 않습니다.',
+      );
+    }
+
+    if (!Number.isInteger(userId) || userId < 1) {
+      throw new BadRequestException(
+        'userId가 올바르지 않습니다.',
+      );
+    }
+
     const result = await this.dataSource
       .getRepository(FeedEntity)
       .createQueryBuilder('feed')
@@ -331,6 +357,25 @@ export class FeedService {
 
     if (!feed) {
       throw new NotFoundException('피드를 찾을 수 없습니다.');
+    }
+
+    const authorId = Number(feed.record.user.id);
+    const isMine = authorId === userId;
+
+    if (
+      feed.visibility === Visibility.FOLLOWER &&
+      !isMine
+    ) {
+      const followingIds =
+        await this.followService.getFollowingIds(userId);
+
+      const canView = followingIds.includes(authorId);
+
+      if (!canView) {
+        throw new NotFoundException(
+          '피드를 찾을 수 없습니다.',
+        );
+      }
     }
 
     const raw = result.raw[0];

@@ -7,7 +7,6 @@ import {
   Patch,
   Param,
   Query,
-  Res,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
@@ -15,10 +14,10 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { FeedService } from './feed.service';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { UpdateFeedDto } from './dto/update-feed.dto';
+import { GetFeedQueryDto } from './dto/get-feed-query.dto';
 import { FeedCommentService } from 'src/feed-comment/feed-comment.service';
 import { CreateFeedCommentDto } from 'src/feed-comment/dto/create-feed-comment.dto';
 import 'multer';
-import type { Response } from 'express';
 
 @Controller('feed')
 export class FeedController {
@@ -43,28 +42,20 @@ export class FeedController {
   }
 
   @Get()
-  async getFeeds(
-    @Query('userId') userId: string,
-    @Query('cursor') cursor?: string,
-    @Query('limit') limit?: string,
-  ) {
+  async getFeeds(@Query() query: GetFeedQueryDto) {
     return this.feedService.getFeeds({
-      userId: Number(userId),
-      cursor: cursor ? Number(cursor) : undefined,
-      limit: limit ? Number(limit) : undefined,
+      userId: query.userId,
+      cursor: query.cursor,
+      limit: query.limit,
     });
   }
 
   @Get('following')
-  async getFollowingFeeds(
-    @Query('userId') userId: string,
-    @Query('cursor') cursor?: string,
-    @Query('limit') limit?: string,
-  ) {
+  async getFollowingFeeds(@Query() query: GetFeedQueryDto) {
     return this.feedService.getFollowingFeeds({
-      userId: Number(userId),
-      cursor: cursor ? Number(cursor) : undefined,
-      limit: limit ? Number(limit) : undefined,
+      userId: query.userId,
+      cursor: query.cursor,
+      limit: query.limit,
     });
   }
 
@@ -176,17 +167,4 @@ export class FeedController {
       Number(userId),
     );
   }
-  // 사진 업로드 확인 용 
-  // 오디오도 이걸로 확인 가능할듯 
-  // @Get('files/:fileId')
-  // async getRecordFile(
-  //   @Param('fileId') fileId: string,
-  //   @Res() res: Response,
-  // ) {
-  //   const file = await this.feedService.findRecordFileById(Number(fileId));
-
-  //   res.setHeader('Content-Type', file.mimeType);
-
-  //   return res.send(file.fileData);
-  // }
 }
