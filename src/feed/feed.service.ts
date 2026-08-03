@@ -4,13 +4,13 @@ import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { FeedEntity } from './entities/feed.entity';
 import { RecordService } from '../record/record.service';
-import { RecordFileEntity } from 'src/record/entities/record-file.entity';
-import { FeedLikeEntity } from 'src/like/entities/feed-like.entity';
-import { BookmarkEntity } from 'src/bookmark/entities/bookmark.entity';
-import { RecordEntity } from 'src/record/entities/record.entity';
+import { RecordFileEntity } from '../record/entities/record-file.entity';
+import { FeedLikeEntity } from '../like/entities/feed-like.entity';
+import { BookmarkEntity } from '../bookmark/entities/bookmark.entity';
+import { RecordEntity } from '../record/entities/record.entity';
 import { UpdateFeedDto } from './dto/update-feed.dto';
 import { Visibility } from './enums/visibility.enum';
-import { FollowService } from 'src/follow/follow.service';
+import { FollowService } from '../follow/follow.service';
 
 @Injectable()
 export class FeedService {

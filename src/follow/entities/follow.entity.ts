@@ -8,7 +8,7 @@ import {
   Unique,
   Column,
 } from 'typeorm';
-import { UserEntity } from 'src/user/entities/user.entity';
+import { UserEntity } from '../../user/entities/user.entity';
 
 @Entity('follow')
 @Unique('UQ_follow_follower_following', ['followerId', 'followingId'])

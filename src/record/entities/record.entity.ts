@@ -8,9 +8,9 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { UserEntity } from 'src/user/entities/user.entity';
+import { UserEntity } from '../../user/entities/user.entity';
 import { RecordFileEntity } from './record-file.entity';
-import { MusicEntity } from 'src/music/entities/music.entity';
+import { MusicEntity } from '../../music/entities/music.entity';
 
 @Entity('record')
 export class RecordEntity {

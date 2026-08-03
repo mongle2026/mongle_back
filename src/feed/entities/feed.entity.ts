@@ -8,10 +8,10 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Visibility } from '../enums/visibility.enum';
-import { RecordEntity } from 'src/record/entities/record.entity';
-import { FeedLikeEntity } from 'src/like/entities/feed-like.entity';
-import { BookmarkEntity } from 'src/bookmark/entities/bookmark.entity';
-import { FeedCommentEntity } from 'src/feed-comment/entities/feed-comment.entity';
+import { RecordEntity } from '../../record/entities/record.entity';
+import { FeedLikeEntity } from '../../like/entities/feed-like.entity';
+import { BookmarkEntity } from '../../bookmark/entities/bookmark.entity';
+import { FeedCommentEntity } from '../../feed-comment/entities/feed-comment.entity';
 
 @Entity('feed')
 export class FeedEntity {

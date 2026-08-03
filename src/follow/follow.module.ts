@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { FollowController } from './follow.controller';
 import { FollowService } from './follow.service';
 import { FollowEntity } from './entities/follow.entity';
-import { UserEntity } from 'src/user/entities/user.entity';
+import { UserEntity } from '../user/entities/user.entity';
 
 @Module({
   imports: [TypeOrmModule.forFeature([FollowEntity, UserEntity])],

@@ -9,8 +9,8 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { FeedEntity } from 'src/feed/entities/feed.entity';
-import { UserEntity } from 'src/user/entities/user.entity';
+import { FeedEntity } from '../../feed/entities/feed.entity';
+import { UserEntity } from '../../user/entities/user.entity';
 
 @Entity('feed_comment')
 export class FeedCommentEntity {

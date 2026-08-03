@@ -6,7 +6,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { RecordEntity } from 'src/record/entities/record.entity';
+import { RecordEntity } from '../../record/entities/record.entity';
 
 @Entity('letter')
 export class LetterEntity {

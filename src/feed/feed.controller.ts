@@ -15,8 +15,8 @@ import { FeedService } from './feed.service';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { UpdateFeedDto } from './dto/update-feed.dto';
 import { GetFeedQueryDto } from './dto/get-feed-query.dto';
-import { FeedCommentService } from 'src/feed-comment/feed-comment.service';
-import { CreateFeedCommentDto } from 'src/feed-comment/dto/create-feed-comment.dto';
+import { FeedCommentService } from '../feed-comment/feed-comment.service';
+import { CreateFeedCommentDto } from '../feed-comment/dto/create-feed-comment.dto';
 import 'multer';
 
 @Controller('feed')

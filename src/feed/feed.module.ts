@@ -4,11 +4,11 @@ import { FeedController } from './feed.controller';
 import { FeedService } from './feed.service';
 import { FeedEntity } from './entities/feed.entity';
 import { RecordModule } from '../record/record.module';
-import { FeedLikeEntity } from 'src/like/entities/feed-like.entity';
-import { BookmarkEntity } from 'src/bookmark/entities/bookmark.entity';
+import { FeedLikeEntity } from '../like/entities/feed-like.entity';
+import { BookmarkEntity } from '../bookmark/entities/bookmark.entity';
 import { FeedCleanupService } from './feed-cleanup.service';
-import { FeedCommentModule } from 'src/feed-comment/feed-comment.module';
-import { FollowModule } from 'src/follow/follow.module';
+import { FeedCommentModule } from '../feed-comment/feed-comment.module';
+import { FollowModule } from '../follow/follow.module';
 
 @Module({
   imports: [

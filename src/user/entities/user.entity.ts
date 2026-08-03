@@ -5,7 +5,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { RecordEntity } from 'src/record/entities/record.entity';
+import { RecordEntity } from '../../record/entities/record.entity';
 
 @Entity('user')
 export class UserEntity {

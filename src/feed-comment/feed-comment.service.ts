@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { FeedEntity } from 'src/feed/entities/feed.entity';
+import { FeedEntity } from '../feed/entities/feed.entity';
 import { FeedCommentEntity } from './entities/feed-comment.entity';
 import { CreateFeedCommentDto } from './dto/create-feed-comment.dto';
 
