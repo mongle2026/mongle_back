@@ -15,7 +15,7 @@ import { FollowService } from '../follow/follow.service';
 @Injectable()
 export class FeedService {
   // includeMeInAllFeed       GET /feed           내 글 포함
-  // includeMeInFollowingFeed GET /feed/following 내 글 미포함 
+  // includeMeInFollowingFeed GET /feed/following 내 글 미포함
   private readonly includeMeInAllFeed = true;
   private readonly includeMeInFollowingFeed = false;
 
@@ -23,12 +23,12 @@ export class FeedService {
     private readonly dataSource: DataSource,
     private readonly recordService: RecordService,
     private readonly followService: FollowService,
-  ) { }
+  ) {}
 
   async createFeed(dto: CreateFeedDto, files: Express.Multer.File[]) {
     const music = this.parseMusic(dto.music);
 
-    return this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async manager => {
       const record = await this.recordService.createBaseRecord(manager, {
         userId: Number(dto.userId),
         music,
@@ -72,7 +72,6 @@ export class FeedService {
     }
 
     const safeLimit = Math.min(Math.max(limit, 1), 50);
-
     const followingIds = await this.followService.getFollowingIds(userId);
 
     const queryBuilder = this.dataSource
@@ -84,7 +83,7 @@ export class FeedService {
       .leftJoinAndSelect('record.files', 'files')
 
       // 좋아요 총 개수
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(feedLike.id)')
           .from(FeedLikeEntity, 'feedLike')
@@ -92,7 +91,7 @@ export class FeedService {
       }, 'likeCount')
 
       // 내가 좋아요 눌렀는지
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(myLike.id)')
           .from(FeedLikeEntity, 'myLike')
@@ -101,7 +100,7 @@ export class FeedService {
       }, 'isLikedCount')
 
       // 내가 북마크했는지
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(myBookmark.id)')
           .from(BookmarkEntity, 'myBookmark')
@@ -110,7 +109,7 @@ export class FeedService {
       }, 'isBookmarkedCount')
 
       .where(
-        new Brackets((qb) => {
+        new Brackets(qb => {
           // 1. 전체 공개 게시물
           qb.where('feed.visibility = :publicVisibility', {
             publicVisibility: Visibility.PUBLIC,
@@ -119,7 +118,7 @@ export class FeedService {
           // 2. 내 게시물
           if (this.includeMeInAllFeed) {
             qb.orWhere(
-              new Brackets((selfQb) => {
+              new Brackets(selfQb => {
                 selfQb
                   .where('record.userId = :userId')
                   .andWhere('feed.visibility IN (:...selfVisibilities)', {
@@ -135,7 +134,7 @@ export class FeedService {
           // 3. 내가 팔로우한 사용자의 팔로워 공개 게시물
           if (followingIds.length > 0) {
             qb.orWhere(
-              new Brackets((followQb) => {
+              new Brackets(followQb => {
                 followQb
                   .where('feed.visibility = :followVisibility', {
                     followVisibility: Visibility.FOLLOWER,
@@ -157,10 +156,9 @@ export class FeedService {
     }
 
     const result = await queryBuilder.getRawAndEntities();
-
     const rawByFeedId = new Map<number, any>();
 
-    result.raw.forEach((raw) => {
+    result.raw.forEach(raw => {
       const feedId = Number(raw.feed_id);
 
       if (!rawByFeedId.has(feedId)) {
@@ -168,13 +166,15 @@ export class FeedService {
       }
     });
 
-    const feeds = result.entities.map((feed) => {
+    const feeds = result.entities.map(feed => {
       const raw = rawByFeedId.get(Number(feed.id));
+      const authorId = Number(feed.record.user.id);
 
       return this.formatFeedResponse(feed, {
         likeCount: Number(raw?.likeCount ?? 0),
         isLiked: Number(raw?.isLikedCount ?? 0) > 0,
         isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
+        isFollowing: followingIds.includes(authorId),
       });
     });
 
@@ -211,7 +211,6 @@ export class FeedService {
     }
 
     const safeLimit = Math.min(Math.max(limit, 1), 50);
-
     const followingIds = await this.followService.getFollowingIds(userId);
 
     const authorIds = includeMe
@@ -234,14 +233,14 @@ export class FeedService {
       .leftJoinAndSelect('record.music', 'music')
       .leftJoinAndSelect('record.files', 'files')
 
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(feedLike.id)')
           .from(FeedLikeEntity, 'feedLike')
           .where('feedLike.feedId = feed.id');
       }, 'likeCount')
 
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(myLike.id)')
           .from(FeedLikeEntity, 'myLike')
@@ -249,7 +248,7 @@ export class FeedService {
           .andWhere('myLike.userId = :userId');
       }, 'isLikedCount')
 
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(myBookmark.id)')
           .from(BookmarkEntity, 'myBookmark')
@@ -269,7 +268,7 @@ export class FeedService {
 
     const rawByFeedId = new Map<number, any>();
 
-    result.raw.forEach((raw) => {
+    result.raw.forEach(raw => {
       const feedId = Number(raw.feed_id);
 
       if (!rawByFeedId.has(feedId)) {
@@ -277,13 +276,15 @@ export class FeedService {
       }
     });
 
-    const feeds = result.entities.map((feed) => {
+    const feeds = result.entities.map(feed => {
       const raw = rawByFeedId.get(Number(feed.id));
+      const authorId = Number(feed.record.user.id);
 
       return this.formatFeedResponse(feed, {
         likeCount: Number(raw?.likeCount ?? 0),
         isLiked: Number(raw?.isLikedCount ?? 0) > 0,
         isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
+        isFollowing: followingIds.includes(authorId),
       });
     });
 
@@ -300,15 +301,11 @@ export class FeedService {
 
   async getFeedDetail(feedId: number, userId: number) {
     if (!Number.isInteger(feedId) || feedId < 1) {
-      throw new BadRequestException(
-        'feedId가 올바르지 않습니다.',
-      );
+      throw new BadRequestException('feedId가 올바르지 않습니다.');
     }
 
     if (!Number.isInteger(userId) || userId < 1) {
-      throw new BadRequestException(
-        'userId가 올바르지 않습니다.',
-      );
+      throw new BadRequestException('userId가 올바르지 않습니다.');
     }
 
     const result = await this.dataSource
@@ -319,14 +316,14 @@ export class FeedService {
       .leftJoinAndSelect('record.music', 'music')
       .leftJoinAndSelect('record.files', 'files')
 
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(feedLike.id)')
           .from(FeedLikeEntity, 'feedLike')
           .where('feedLike.feedId = feed.id');
       }, 'likeCount')
 
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(myLike.id)')
           .from(FeedLikeEntity, 'myLike')
@@ -334,7 +331,7 @@ export class FeedService {
           .andWhere('myLike.userId = :userId');
       }, 'isLikedCount')
 
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(myBookmark.id)')
           .from(BookmarkEntity, 'myBookmark')
@@ -342,7 +339,7 @@ export class FeedService {
           .andWhere('myBookmark.userId = :userId');
       }, 'isBookmarkedCount')
 
-      .addSelect((subQuery) => {
+      .addSelect(subQuery => {
         return subQuery
           .select('COUNT(bookmark.id)')
           .from(BookmarkEntity, 'bookmark')
@@ -362,19 +359,17 @@ export class FeedService {
     const authorId = Number(feed.record.user.id);
     const isMine = authorId === userId;
 
-    if (
-      feed.visibility === Visibility.FOLLOWER &&
-      !isMine
-    ) {
-      const followingIds =
-        await this.followService.getFollowingIds(userId);
+    let isFollowing = false;
 
-      const canView = followingIds.includes(authorId);
+    if (!isMine) {
+      const followingIds = await this.followService.getFollowingIds(userId);
+      isFollowing = followingIds.includes(authorId);
 
-      if (!canView) {
-        throw new NotFoundException(
-          '피드를 찾을 수 없습니다.',
-        );
+      if (
+        feed.visibility === Visibility.FOLLOWER &&
+        !isFollowing
+      ) {
+        throw new NotFoundException('피드를 찾을 수 없습니다.');
       }
     }
 
@@ -385,6 +380,7 @@ export class FeedService {
       bookmarkCount: Number(raw.bookmarkCount ?? 0),
       isLiked: Number(raw.isLikedCount ?? 0) > 0,
       isBookmarked: Number(raw.isBookmarkedCount ?? 0) > 0,
+      isFollowing,
     });
   }
 
@@ -412,7 +408,7 @@ export class FeedService {
     const music = dto.music ? this.parseMusic(dto.music) : undefined;
     const deleteFileIds = this.parseDeleteFileIds(dto.deleteFileIds);
 
-    return this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async manager => {
       const feed = await manager
         .getRepository(FeedEntity)
         .createQueryBuilder('feed')
@@ -463,7 +459,7 @@ export class FeedService {
       throw new BadRequestException('userId가 올바르지 않습니다.');
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async manager => {
       const feed = await manager
         .getRepository(FeedEntity)
         .createQueryBuilder('feed')
@@ -476,17 +472,9 @@ export class FeedService {
         throw new NotFoundException('삭제할 피드를 찾을 수 없습니다.');
       }
 
-      await manager.delete(FeedLikeEntity, {
-        feedId,
-      });
-
-      await manager.delete(BookmarkEntity, {
-        feedId,
-      });
-
-      await manager.softDelete(FeedEntity, {
-        id: feedId,
-      });
+      await manager.delete(FeedLikeEntity, { feedId });
+      await manager.delete(BookmarkEntity, { feedId });
+      await manager.softDelete(FeedEntity, { id: feedId });
 
       return {
         message: '피드가 삭제되었습니다.',
@@ -499,7 +487,7 @@ export class FeedService {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    return this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async manager => {
       const feeds = await manager
         .getRepository(FeedEntity)
         .createQueryBuilder('feed')
@@ -519,9 +507,9 @@ export class FeedService {
         };
       }
 
-      const feedIds = feeds.map((feed) => Number(feed.id));
+      const feedIds = feeds.map(feed => Number(feed.id));
       const recordIds = [
-        ...new Set(feeds.map((feed) => Number(feed.recordId))),
+        ...new Set(feeds.map(feed => Number(feed.recordId))),
       ];
 
       await manager.delete(FeedLikeEntity, {
@@ -554,7 +542,7 @@ export class FeedService {
   }
 
   async likeFeed(feedId: number, userId: number) {
-    return this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async manager => {
       const feed = await manager.findOne(FeedEntity, {
         where: { id: feedId },
       });
@@ -570,7 +558,6 @@ export class FeedService {
         },
       });
 
-      // 이미 좋아요를 눌렀으면 중복 생성하지 않음
       if (existingLike) {
         return {
           message: '이미 좋아요한 피드입니다.',
@@ -593,7 +580,7 @@ export class FeedService {
   }
 
   async unlikeFeed(feedId: number, userId: number) {
-    return this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async manager => {
       const feed = await manager.findOne(FeedEntity, {
         where: { id: feedId },
       });
@@ -609,7 +596,6 @@ export class FeedService {
         },
       });
 
-      // 좋아요가 없으면 삭제할 것도 없음
       if (!existingLike) {
         return {
           message: '이미 좋아요가 취소된 피드입니다.',
@@ -627,7 +613,7 @@ export class FeedService {
   }
 
   async bookmarkFeed(feedId: number, userId: number) {
-    return this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async manager => {
       const feed = await manager.findOne(FeedEntity, {
         where: { id: feedId },
       });
@@ -665,7 +651,7 @@ export class FeedService {
   }
 
   async unbookmarkFeed(feedId: number, userId: number) {
-    return this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async manager => {
       const feed = await manager.findOne(FeedEntity, {
         where: { id: feedId },
       });
@@ -697,11 +683,10 @@ export class FeedService {
     });
   }
 
-  async getMyBookmarkedFeeds(userId: number) { }
-
+  async getMyBookmarkedFeeds(userId: number) {}
 
   // 사진 파일 확인 용도 코드
-  // 음성도 이걸로 확인가능할듯 
+  // 음성도 이걸로 확인가능할듯
   async findRecordFileById(fileId: number) {
     const file = await this.dataSource.manager.findOne(RecordFileEntity, {
       where: {
@@ -731,6 +716,7 @@ export class FeedService {
       bookmarkCount?: number;
       isLiked?: boolean;
       isBookmarked?: boolean;
+      isFollowing?: boolean;
     },
   ) {
     return {
@@ -748,6 +734,7 @@ export class FeedService {
         profileImageUrl: feed.record.user.imageMimeType
           ? `/user/${feed.record.user.id}/profile-image`
           : null,
+        isFollowing: meta?.isFollowing ?? false,
       },
 
       record: {
@@ -766,14 +753,15 @@ export class FeedService {
         }
         : null,
 
-      files: feed.record.files?.map((file) => ({
-        fileId: file.id,
-        fileType: file.fileType,
-        mimeType: file.mimeType,
-        originalName: file.originalName,
-        fileSize: file.fileSize,
-        url: `/record-file/${file.id}`,
-      })) ?? [],
+      files:
+        feed.record.files?.map(file => ({
+          fileId: file.id,
+          fileType: file.fileType,
+          mimeType: file.mimeType,
+          originalName: file.originalName,
+          fileSize: file.fileSize,
+          url: `/record-file/${file.id}`,
+        })) ?? [],
 
       likeCount: meta?.likeCount ?? 0,
       bookmarkCount: meta?.bookmarkCount ?? 0,
@@ -815,9 +803,9 @@ export class FeedService {
       }
     }
 
-    const ids = rawValues.map((id) => Number(id));
+    const ids = rawValues.map(id => Number(id));
 
-    if (ids.some((id) => !id || Number.isNaN(id))) {
+    if (ids.some(id => !id || Number.isNaN(id))) {
       throw new BadRequestException('deleteFileIds 값이 올바르지 않습니다.');
     }
 
