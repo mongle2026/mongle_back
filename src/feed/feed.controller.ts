@@ -9,6 +9,7 @@ import {
   Query,
   UploadedFiles,
   UseInterceptors,
+  Header,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { FeedService } from './feed.service';
@@ -62,6 +63,18 @@ export class FeedController {
   @Get('bookmark/me')
   async getMyBookmarkedFeeds(@Query('userId') userId: string) {
     return this.feedService.getMyBookmarkedFeeds(Number(userId));
+  }
+
+  @Get('share/:feedId')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async getFeedSharePage(
+    @Param('feedId') feedId: string,
+  ) {
+    const meta = await this.feedService.getFeedShareMeta(
+      Number(feedId),
+    );
+
+    return this.createFeedShareHtml(meta);
   }
 
   @Get(':feedId')
@@ -165,6 +178,53 @@ export class FeedController {
       Number(feedId),
       Number(commentId),
       Number(userId),
+    );
+  }
+
+  private createFeedShareHtml(meta: {
+    title: string;
+    description: string;
+    imageUrl: string | null;
+    siteName: string;
+  }) {
+    const title = this.escapeHtml(meta.title);
+    const description = this.escapeHtml(meta.description);
+    const siteName = this.escapeHtml(meta.siteName);
+    const imageUrl = meta.imageUrl
+      ? this.escapeHtml(meta.imageUrl)
+      : null;
+
+    return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta property="og:type" content="website">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
+<meta property="og:site_name" content="${siteName}">
+${imageUrl ? `<meta property="og:image" content="${imageUrl}">` : ''}
+<title>${title}</title>
+</head>
+<body>
+<h1>${title}</h1>
+<p>${description}</p>
+</body>
+</html>`;
+  }
+
+  private escapeHtml(value: string) {
+    const characters: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    };
+
+    return value.replace(
+      /[&<>"']/g,
+      character => characters[character],
     );
   }
 }

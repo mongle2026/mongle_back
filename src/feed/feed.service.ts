@@ -23,7 +23,7 @@ export class FeedService {
     private readonly dataSource: DataSource,
     private readonly recordService: RecordService,
     private readonly followService: FollowService,
-  ) {}
+  ) { }
 
   async createFeed(dto: CreateFeedDto, files: Express.Multer.File[]) {
     const music = this.parseMusic(dto.music);
@@ -296,6 +296,79 @@ export class FeedService {
       items,
       nextCursor: hasNext && lastItem ? lastItem.feedId : null,
       hasNext,
+    };
+  }
+
+  async getFeedShareMeta(feedId: number) {
+    if (!Number.isInteger(feedId) || feedId < 1) {
+      throw new BadRequestException('feedId가 올바르지 않습니다.');
+    }
+
+    const feed = await this.dataSource
+      .getRepository(FeedEntity)
+      .createQueryBuilder('feed')
+      .leftJoinAndSelect('feed.record', 'record')
+      .leftJoinAndSelect('record.user', 'user')
+      .leftJoinAndSelect('record.music', 'music')
+      .where('feed.id = :feedId', { feedId })
+      .getOne();
+
+    if (!feed) {
+      throw new NotFoundException('피드를 찾을 수 없습니다.');
+    }
+
+    if (feed.visibility !== Visibility.PUBLIC) {
+      return {
+        title: 'mongle',
+        description: '공개 범위가 제한된 기록입니다.',
+        imageUrl: null,
+        siteName: 'mongle',
+      };
+    }
+
+    const userCode = feed.record.user.userCode?.trim();
+    const nickname = feed.record.user.nickname?.trim();
+
+    const authorLabel = userCode
+      ? `@${userCode}`
+      : nickname || '사용자';
+
+    const musicTitle =
+      feed.record.music?.musicTitle?.trim() ?? '';
+
+    const musicArtist =
+      feed.record.music?.musicArtist?.trim() ?? '';
+
+    const musicText = [
+      musicTitle,
+      musicArtist,
+    ]
+      .filter(Boolean)
+      .join(' - ');
+
+    const title = musicText
+      ? `[mongle] ${authorLabel}님의 기록\n${musicText}`
+      : `[mongle] ${authorLabel}님의 기록`;
+
+    const recordText =
+      feed.record.text
+        ?.trim()
+        .replace(/\s+/g, ' ') ?? '';
+
+    const maxDescriptionLength = 70;
+
+    const description =
+      recordText.length > maxDescriptionLength
+        ? `${recordText.slice(0, maxDescriptionLength)}…`
+        : recordText;
+
+    return {
+      title,
+      description:
+        description || '음악과 함께 남긴 기록입니다.',
+      imageUrl:
+        feed.record.music?.musicArtwork ?? null,
+      siteName: 'mongle',
     };
   }
 
@@ -683,7 +756,7 @@ export class FeedService {
     });
   }
 
-  async getMyBookmarkedFeeds(userId: number) {}
+  async getMyBookmarkedFeeds(userId: number) { }
 
   // 사진 파일 확인 용도 코드
   // 음성도 이걸로 확인가능할듯
