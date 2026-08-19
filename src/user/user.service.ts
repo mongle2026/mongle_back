@@ -96,6 +96,41 @@ export class UserService {
     };
   }
 
+  async getUserById(userId: number) {
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .select([
+        'user.id',
+        'user.userCode',
+        'user.nickname',
+        'user.imageMimeType',
+      ])
+      .where('user.id = :userId', {
+        userId,
+      })
+      .getOne();
+
+    if (!user) {
+      throw new NotFoundException(
+        '사용자를 찾을 수 없습니다.',
+      );
+    }
+
+    return {
+      userId: Number(user.id),
+      userCode: user.userCode,
+      nickname: user.nickname,
+
+      hasProfileImage:
+        !!user.imageMimeType,
+
+      profileImageUrl:
+        user.imageMimeType
+          ? `/user/${user.id}/profile-image`
+          : null,
+    };
+  }
+
   private async getDefaultRecipients(
     currentUserId: number,
     page: number,

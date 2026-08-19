@@ -51,6 +51,19 @@ export class UserController {
     );
   }
 
+  @Get(':id')
+  async getUser(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    if (id <= 0) {
+      throw new BadRequestException(
+        '사용자 id가 올바르지 않습니다.',
+      );
+    }
+
+    return this.userService.getUserById(id);
+  }
+
   @Get(':id/profile-image')
   async getProfileImage(
     @Param('id', ParseIntPipe) id: number,
