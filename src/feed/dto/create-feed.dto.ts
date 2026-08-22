@@ -7,6 +7,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Visibility } from '../enums/visibility.enum';
+import { FeedFont } from '../enums/feed-font.enum';
 
 export class CreateFeedDto {
   @IsNumberString()
@@ -22,4 +23,8 @@ export class CreateFeedDto {
 
   @IsEnum(Visibility)
   visibility!: Visibility;
+
+  @IsOptional()
+  @IsEnum(FeedFont)
+  font?: FeedFont;
 }

@@ -1,23 +1,10 @@
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
-import { Visibility } from '../enums/visibility.enum';
-import { PartialType } from '@nestjs/mapped-types';
+import { IsOptional } from 'class-validator';
+import { OmitType, PartialType } from '@nestjs/mapped-types';
 import { CreateFeedDto } from './create-feed.dto';
 
-export class UpdateFeedDto extends PartialType(CreateFeedDto) {
-  @IsOptional()
-  @IsString()
-  @MaxLength(2000)
-  text?: string;
-
-  @IsOptional()
-  @IsEnum(Visibility)
-  visibility?: Visibility;
-
-  @IsOptional()
-  @IsString()
-  music?: string;
-
-  // form-data에서는 "1,2" 또는 ["1", "2"] 형태가 될 수 있음
+export class UpdateFeedDto extends PartialType(
+  OmitType(CreateFeedDto, ['userId'] as const),
+) {
   @IsOptional()
   deleteFileIds?: string | string[];
 }
