@@ -5,6 +5,7 @@ import { RecordFileEntity } from './entities/record-file.entity';
 import { MusicEntity } from '../music/entities/music.entity';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { getFileType } from './utils/get-file-type.util';
+import { RecordFont } from './enums/record-font.enum';
 
 @Injectable()
 export class RecordService {
@@ -14,15 +15,21 @@ export class RecordService {
       userId: number;
       music: CreateMusicDto;
       text?: string;
+      font?: RecordFont;
       files: Express.Multer.File[];
     },
   ): Promise<RecordEntity> {
     const music = await this.findOrCreateMusic(manager, params.music);
 
+    const font = params.font ?? RecordFont.KYOBO;
+
+    this.validateFont(font);
+
     const record = manager.create(RecordEntity, {
       userId: params.userId,
       musicId: music.id,
       text: params.text ?? null,
+      font,
     });
 
     const savedRecord = await manager.save(RecordEntity, record);
@@ -51,6 +58,7 @@ export class RecordService {
     params: {
       text?: string;
       music?: CreateMusicDto;
+      font?: RecordFont;
       files: Express.Multer.File[];
       deleteFileIds: number[];
       maxFileCount: number;
@@ -71,6 +79,13 @@ export class RecordService {
       shouldUpdateRecord = true;
     }
 
+    if (params.font !== undefined) {
+      this.validateFont(params.font);
+
+      record.font = params.font;
+      shouldUpdateRecord = true;
+    }
+
     if (params.deleteFileIds.length > 0) {
       const deleteTargetCount = await manager.count(RecordFileEntity, {
         where: {
@@ -80,7 +95,9 @@ export class RecordService {
       });
 
       if (deleteTargetCount !== params.deleteFileIds.length) {
-        throw new BadRequestException('삭제할 수 없는 파일이 포함되어 있습니다.');
+        throw new BadRequestException(
+          '삭제할 수 없는 파일이 포함되어 있습니다.',
+        );
       }
 
       await manager.delete(RecordFileEntity, {
@@ -135,6 +152,7 @@ export class RecordService {
         {
           text: record.text,
           musicId: record.musicId,
+          font: record.font,
           updatedAt: new Date(),
         },
       );
@@ -167,5 +185,11 @@ export class RecordService {
     });
 
     return manager.save(MusicEntity, music);
+  }
+
+  private validateFont(font: RecordFont) {
+    if (!Object.values(RecordFont).includes(font)) {
+      throw new BadRequestException('font 값이 올바르지 않습니다.');
+    }
   }
 }

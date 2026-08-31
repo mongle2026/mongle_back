@@ -11,6 +11,7 @@ import {
 import { UserEntity } from '../../user/entities/user.entity';
 import { RecordFileEntity } from './record-file.entity';
 import { MusicEntity } from '../../music/entities/music.entity';
+import { RecordFont } from '../enums/record-font.enum';
 
 @Entity('record')
 export class RecordEntity {
@@ -33,6 +34,14 @@ export class RecordEntity {
     nullable: true,
   })
   text!: string | null;
+
+  @Column({
+    name: 'font',
+    type: 'varchar',
+    length: 20,
+    default: RecordFont.KYOBO,
+  })
+  font!: RecordFont;
 
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })

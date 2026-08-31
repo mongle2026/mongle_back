@@ -4,10 +4,9 @@ import {
   IsOptional,
   IsString,
   MaxLength,
-  ValidateNested,
 } from 'class-validator';
 import { Visibility } from '../enums/visibility.enum';
-import { FeedFont } from '../enums/feed-font.enum';
+import { RecordFont } from '../../record/enums/record-font.enum';
 
 export class CreateFeedDto {
   @IsNumberString()
@@ -25,6 +24,6 @@ export class CreateFeedDto {
   visibility!: Visibility;
 
   @IsOptional()
-  @IsEnum(FeedFont)
-  font?: FeedFont;
+  @IsEnum(RecordFont)
+  font?: RecordFont;
 }

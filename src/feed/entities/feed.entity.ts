@@ -8,7 +8,6 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Visibility } from '../enums/visibility.enum';
-import { FeedFont } from '../enums/feed-font.enum';
 import { RecordEntity } from '../../record/entities/record.entity';
 import { FeedLikeEntity } from '../../like/entities/feed-like.entity';
 import { BookmarkEntity } from '../../bookmark/entities/bookmark.entity';
@@ -32,14 +31,6 @@ export class FeedEntity {
     default: Visibility.PUBLIC,
   })
   visibility!: Visibility;
-
-  @Column({
-    name: 'font',
-    type: 'varchar',
-    length: 20,
-    default: FeedFont.KYOBO,
-  })
-  font!: FeedFont;
 
   @DeleteDateColumn({
     name: 'deleted_at',

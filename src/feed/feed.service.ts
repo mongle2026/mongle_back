@@ -10,7 +10,6 @@ import { BookmarkEntity } from '../bookmark/entities/bookmark.entity';
 import { RecordEntity } from '../record/entities/record.entity';
 import { UpdateFeedDto } from './dto/update-feed.dto';
 import { Visibility } from './enums/visibility.enum';
-import { FeedFont } from './enums/feed-font.enum';
 import { FollowService } from '../follow/follow.service';
 
 @Injectable()
@@ -34,13 +33,13 @@ export class FeedService {
         userId: Number(dto.userId),
         music,
         text: dto.text,
+        font: dto.font,
         files,
       });
 
       const feed = manager.create(FeedEntity, {
         recordId: record.id,
         visibility: dto.visibility,
-        font: dto.font ?? FeedFont.KYOBO,
       });
 
       const savedFeed = await manager.save(FeedEntity, feed);
@@ -480,13 +479,6 @@ export class FeedService {
       throw new BadRequestException('visibility 값이 올바르지 않습니다.');
     }
 
-    if (
-      dto.font !== undefined &&
-      !Object.values(FeedFont).includes(dto.font)
-    ) {
-      throw new BadRequestException('font 값이 올바르지 않습니다.');
-    }
-
     const music = dto.music ? this.parseMusic(dto.music) : undefined;
     const deleteFileIds = this.parseDeleteFileIds(dto.deleteFileIds);
 
@@ -511,14 +503,10 @@ export class FeedService {
         isFeedChanged = true;
       }
 
-      if (dto.font !== undefined) {
-        feed.font = dto.font;
-        isFeedChanged = true;
-      }
-
       await this.recordService.updateBaseRecord(manager, feed.record, {
         text: dto.text,
         music,
+        font: dto.font,
         files: files ?? [],
         deleteFileIds,
         maxFileCount: 5,
@@ -809,7 +797,7 @@ export class FeedService {
     return {
       feedId: feed.id,
       visibility: feed.visibility,
-      font: feed.font,
+      font: feed.record.font,
       createdAt: feed.record.createdAt,
       updatedAt: feed.record.updatedAt,
       isEdited: this.isEdited(feed.record.createdAt, feed.record.updatedAt),

@@ -1,4 +1,4 @@
-export enum FeedFont {
+export enum RecordFont {
   SUIT = 'SUIT',
   KYOBO = 'KYOBO',
 }
