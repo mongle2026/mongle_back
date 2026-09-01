@@ -9,15 +9,17 @@ import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateLetterDto } from './dto/create-letter.dto';
 import { LetterEntity } from './entities/letter.entity';
 import { RecordService } from '../record/record.service';
+import { R2Service } from '../storage/r2.service';
 
 @Injectable()
 export class LetterService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly recordService: RecordService,
+    private readonly r2Service: R2Service,
   ) { }
 
-  async createLetter(dto: CreateLetterDto, files: Express.Multer.File[]) {
+  async createLetter(dto: CreateLetterDto) {
     const music = this.parseMusic(dto.music);
 
     return this.dataSource.transaction(async (manager) => {
@@ -25,7 +27,6 @@ export class LetterService {
         userId: Number(dto.userId),
         music,
         text: dto.text,
-        files,
       });
 
       const letter = manager.create(LetterEntity, {
@@ -128,6 +129,7 @@ export class LetterService {
           files: letter.record.files?.map((file) => ({
             id: Number(file.id),
             recordId: Number(file.recordId),
+            url: this.r2Service.getPublicUrl(file.fileKey),
             fileType: file.fileType,
             fileSize: Number(file.fileSize),
             mimeType: file.mimeType,

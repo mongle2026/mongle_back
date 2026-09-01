@@ -37,12 +37,8 @@ export class RecordFileEntity {
   })
   fileSize!: number;
 
-  @Column({
-    name: 'file_data',
-    type: 'longblob',
-    select: false,
-  })
-  fileData!: Buffer;
+  @Column({ name: 'file_key', type: 'varchar', length: 500 })
+  fileKey!: string;
 
   @Column({
     name: 'mime_type',

@@ -2,6 +2,16 @@
 
 import { AppDataSource } from '../data-source';
 import { UserEntity } from '../../user/entities/user.entity';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+
+const s3Client = new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  },
+});
 
 const profileImageUrls = [
   'https://i.pravatar.cc/300?img=1',
@@ -31,12 +41,27 @@ async function seedUserImages() {
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    const user = await userRepository.findOne({ where: { userCode } });
+
+    if (!user) {
+      console.log(`${userCode} 사용자를 찾을 수 없어 건너뜁니다.`);
+      continue;
+    }
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: `profile/${user.id}.jpg`,
+        Body: buffer,
+        ContentType: 'image/jpeg',
+      }),
+    );
+
     await userRepository.update(
       { userCode },
       {
-        imageData: buffer,
-        imageMimeType: response.headers.get('content-type') ?? 'image/jpeg',
-        imageSize: buffer.length,
+        imageMimeType: 'image/jpeg',
+        imageUpdatedAt: new Date(),
       },
     );
 

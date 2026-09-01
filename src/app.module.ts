@@ -23,12 +23,14 @@ import { BookmarkEntity } from './bookmark/entities/bookmark.entity';
 import { FeedCommentEntity } from './feed-comment/entities/feed-comment.entity';
 import { FollowModule } from './follow/follow.module';
 import { FollowEntity } from './follow/entities/follow.entity';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    StorageModule,
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],

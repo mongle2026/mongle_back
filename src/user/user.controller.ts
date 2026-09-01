@@ -1,15 +1,16 @@
 import {
+  Body,
   Controller,
   Get,
+  Post,
   Query,
   Param,
-  Res,
   ParseIntPipe,
   BadRequestException,
   DefaultValuePipe,
 } from '@nestjs/common';
-import type { Response } from 'express';
 import { UserService } from './user.service';
+import { ConfirmProfileImageDto } from './dto/confirm-profile-image.dto';
 
 @Controller('user')
 export class UserController {
@@ -64,15 +65,17 @@ export class UserController {
     return this.userService.getUserById(id);
   }
 
-  @Get(':id/profile-image')
-  async getProfileImage(
-    @Param('id', ParseIntPipe) id: number,
-    @Res() res: Response,
-  ) {
-    const { imageData, imageMimeType } =
-      await this.userService.getProfileImage(id);
-
-    res.setHeader('Content-Type', imageMimeType);
-    return res.send(imageData);
+  @Post(':id/profile-image/upload-url')
+  async createProfileImageUploadUrl(@Param('id', ParseIntPipe) id: number) {
+    return this.userService.createProfileImageUploadUrl(id);
   }
+
+  @Post(':id/profile-image/confirm')
+  async confirmProfileImage(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ConfirmProfileImageDto,
+  ) {
+    return this.userService.confirmProfileImage(id, dto.mimeType);
+  }
+
 }

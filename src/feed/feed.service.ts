@@ -11,6 +11,7 @@ import { RecordEntity } from '../record/entities/record.entity';
 import { UpdateFeedDto } from './dto/update-feed.dto';
 import { Visibility } from './enums/visibility.enum';
 import { FollowService } from '../follow/follow.service';
+import { R2Service } from '../storage/r2.service';
 
 @Injectable()
 export class FeedService {
@@ -23,9 +24,10 @@ export class FeedService {
     private readonly dataSource: DataSource,
     private readonly recordService: RecordService,
     private readonly followService: FollowService,
+    private readonly r2Service: R2Service,
   ) { }
 
-  async createFeed(dto: CreateFeedDto, files: Express.Multer.File[]) {
+  async createFeed(dto: CreateFeedDto) {
     const music = this.parseMusic(dto.music);
 
     return this.dataSource.transaction(async manager => {
@@ -34,7 +36,6 @@ export class FeedService {
         music,
         text: dto.text,
         font: dto.font,
-        files,
       });
 
       const feed = manager.create(FeedEntity, {
@@ -462,7 +463,6 @@ export class FeedService {
     feedId: number,
     userId: number,
     dto: UpdateFeedDto,
-    files: Express.Multer.File[],
   ) {
     if (!feedId || Number.isNaN(feedId)) {
       throw new BadRequestException('feedId가 올바르지 않습니다.');
@@ -507,9 +507,7 @@ export class FeedService {
         text: dto.text,
         music,
         font: dto.font,
-        files: files ?? [],
         deleteFileIds,
-        maxFileCount: 5,
         touch: true,
       });
 
@@ -599,6 +597,10 @@ export class FeedService {
         id: In(feedIds),
       });
 
+      const filesToDelete = await manager.find(RecordFileEntity, {
+        where: { recordId: In(recordIds) },
+      });
+
       const recordFileDeleteResult = await manager.delete(RecordFileEntity, {
         recordId: In(recordIds),
       });
@@ -606,6 +608,12 @@ export class FeedService {
       const recordDeleteResult = await manager.delete(RecordEntity, {
         id: In(recordIds),
       });
+
+      await Promise.all(
+        filesToDelete.map((file) =>
+          this.r2Service.deleteObject(file.fileKey).catch(() => undefined),
+        ),
+      );
 
       return {
         message: '삭제 보관 기간이 지난 피드가 물리 삭제되었습니다.',
@@ -807,9 +815,11 @@ export class FeedService {
         userCode: feed.record.user.userCode,
         nickname: feed.record.user.nickname,
         hasProfileImage: !!feed.record.user.imageMimeType,
-        profileImageUrl: feed.record.user.imageMimeType
-          ? `/user/${feed.record.user.id}/profile-image`
-          : null,
+        profileImageUrl: this.r2Service.getProfileImageUrl(
+          feed.record.user.id,
+          feed.record.user.imageMimeType,
+          feed.record.user.imageUpdatedAt,
+        ),
         isFollowing: meta?.isFollowing ?? false,
       },
 
@@ -836,7 +846,7 @@ export class FeedService {
           mimeType: file.mimeType,
           originalName: file.originalName,
           fileSize: file.fileSize,
-          url: `/record-file/${file.id}`,
+          url: this.r2Service.getPublicUrl(file.fileKey),
         })) ?? [],
 
       likeCount: meta?.likeCount ?? 0,

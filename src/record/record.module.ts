@@ -3,8 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { RecordService } from './record.service';
 import { RecordEntity } from './entities/record.entity';
 import { RecordFileEntity } from './entities/record-file.entity';
-import { RecordFileController } from './record-file.controller';
-import { RecordFileService } from './record-file.service';
+import { RecordController } from './record.controller';
 
 @Module({
   imports: [
@@ -14,15 +13,13 @@ import { RecordFileService } from './record-file.service';
     ]),
   ],
   controllers: [
-    RecordFileController
+    RecordController,
   ],
   providers: [
     RecordService,
-    RecordFileService,
   ],
   exports: [
     RecordService,
-    RecordFileService,
   ],
 })
 export class RecordModule { }

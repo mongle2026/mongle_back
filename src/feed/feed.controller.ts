@@ -7,18 +7,14 @@ import {
   Patch,
   Param,
   Query,
-  UploadedFiles,
-  UseInterceptors,
   Header,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
 import { FeedService } from './feed.service';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { UpdateFeedDto } from './dto/update-feed.dto';
 import { GetFeedQueryDto } from './dto/get-feed-query.dto';
 import { FeedCommentService } from '../feed-comment/feed-comment.service';
 import { CreateFeedCommentDto } from '../feed-comment/dto/create-feed-comment.dto';
-import 'multer';
 
 @Controller('feed')
 export class FeedController {
@@ -28,18 +24,10 @@ export class FeedController {
   ) { }
 
   @Post()
-  @UseInterceptors(
-    FilesInterceptor('files', 5, {
-      limits: {
-        fileSize: 10 * 1024 * 1024,
-      },
-    }),
-  )
   async createFeed(
     @Body() dto: CreateFeedDto,
-    @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.feedService.createFeed(dto, files ?? []);
+    return this.feedService.createFeed(dto);
   }
 
   @Get()
@@ -86,24 +74,15 @@ export class FeedController {
   }
 
   @Patch(':feedId')
-  @UseInterceptors(
-    FilesInterceptor('files', 5, {
-      limits: {
-        fileSize: 10 * 1024 * 1024,
-      },
-    }),
-  )
   async updateFeed(
     @Param('feedId') feedId: string,
     @Query('userId') userId: string,
     @Body() dto: UpdateFeedDto,
-    @UploadedFiles() files: Express.Multer.File[],
   ) {
     return this.feedService.updateFeed(
       Number(feedId),
       Number(userId),
       dto,
-      files ?? [],
     );
   }
 

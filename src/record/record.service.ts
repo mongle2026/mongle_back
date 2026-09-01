@@ -6,9 +6,12 @@ import { MusicEntity } from '../music/entities/music.entity';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { getFileType } from './utils/get-file-type.util';
 import { RecordFont } from './enums/record-font.enum';
+import { R2Service } from '../storage/r2.service';
 
 @Injectable()
 export class RecordService {
+  constructor(private readonly r2Service: R2Service) {}
+
   async createBaseRecord(
     manager: EntityManager,
     params: {
@@ -16,7 +19,6 @@ export class RecordService {
       music: CreateMusicDto;
       text?: string;
       font?: RecordFont;
-      files: Express.Multer.File[];
     },
   ): Promise<RecordEntity> {
     const music = await this.findOrCreateMusic(manager, params.music);
@@ -34,21 +36,6 @@ export class RecordService {
 
     const savedRecord = await manager.save(RecordEntity, record);
 
-    if (params.files.length > 0) {
-      const recordFiles = params.files.map((file) =>
-        manager.create(RecordFileEntity, {
-          recordId: savedRecord.id,
-          fileType: getFileType(file.mimetype),
-          fileSize: file.size,
-          fileData: file.buffer,
-          mimeType: file.mimetype,
-          originalName: file.originalname,
-        }),
-      );
-
-      await manager.save(RecordFileEntity, recordFiles);
-    }
-
     return savedRecord;
   }
 
@@ -59,9 +46,7 @@ export class RecordService {
       text?: string;
       music?: CreateMusicDto;
       font?: RecordFont;
-      files: Express.Multer.File[];
       deleteFileIds: number[];
-      maxFileCount: number;
       touch?: boolean;
     },
   ): Promise<RecordEntity> {
@@ -87,14 +72,14 @@ export class RecordService {
     }
 
     if (params.deleteFileIds.length > 0) {
-      const deleteTargetCount = await manager.count(RecordFileEntity, {
+      const targetFiles = await manager.find(RecordFileEntity, {
         where: {
           id: In(params.deleteFileIds),
           recordId: record.id,
         },
       });
 
-      if (deleteTargetCount !== params.deleteFileIds.length) {
+      if (targetFiles.length !== params.deleteFileIds.length) {
         throw new BadRequestException(
           '삭제할 수 없는 파일이 포함되어 있습니다.',
         );
@@ -105,36 +90,11 @@ export class RecordService {
         recordId: record.id,
       });
 
-      shouldUpdateRecord = true;
-    }
-
-    const currentFileCount = await manager.count(RecordFileEntity, {
-      where: {
-        recordId: record.id,
-      },
-    });
-
-    const nextFileCount = currentFileCount + params.files.length;
-
-    if (nextFileCount > params.maxFileCount) {
-      throw new BadRequestException(
-        `파일은 최대 ${params.maxFileCount}개까지 첨부할 수 있습니다.`,
+      await Promise.all(
+        targetFiles.map((file) =>
+          this.r2Service.deleteObject(file.fileKey).catch(() => undefined),
+        ),
       );
-    }
-
-    if (params.files.length > 0) {
-      const recordFiles = params.files.map((file) =>
-        manager.create(RecordFileEntity, {
-          recordId: record.id,
-          fileType: getFileType(file.mimetype),
-          fileSize: file.size,
-          fileData: file.buffer,
-          mimeType: file.mimetype,
-          originalName: file.originalname,
-        }),
-      );
-
-      await manager.save(RecordFileEntity, recordFiles);
 
       shouldUpdateRecord = true;
     }
@@ -159,6 +119,39 @@ export class RecordService {
     }
 
     return record;
+  }
+
+  async attachFiles(
+    manager: EntityManager,
+    recordId: number,
+    files: { key: string; mimeType: string; size: number; originalName: string }[],
+    maxFileCount = 5,
+  ) {
+    const currentFileCount = await manager.count(RecordFileEntity, {
+      where: { recordId },
+    });
+
+    if (currentFileCount + files.length > maxFileCount) {
+      throw new BadRequestException(
+        `파일은 최대 ${maxFileCount}개까지 첨부할 수 있습니다.`,
+      );
+    }
+
+    const recordFiles = files.map((file) =>
+      manager.create(RecordFileEntity, {
+        recordId,
+        fileType: getFileType(file.mimeType),
+        fileSize: file.size,
+        fileKey: file.key,
+        mimeType: file.mimeType,
+        originalName: file.originalName,
+      }),
+    );
+
+    await manager.save(RecordFileEntity, recordFiles);
+    await manager.update(RecordEntity, { id: recordId }, { updatedAt: new Date() });
+
+    return recordFiles;
   }
 
   private async findOrCreateMusic(

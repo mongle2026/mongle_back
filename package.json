@@ -21,6 +21,8 @@
     "seed:user-images": "ts-node -r tsconfig-paths/register src/database/seed/seed-user-images.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1123.0",
+    "@aws-sdk/s3-request-presigner": "^3.1123.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
@@ -32,7 +34,6 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "dotenv": "^17.4.2",
-    "multer": "^2.1.1",
     "mysql2": "^3.22.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -46,7 +47,6 @@
     "@nestjs/testing": "^11.0.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
-    "@types/multer": "^2.1.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
     "eslint": "^9.18.0",

@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { FeedEntity } from '../feed/entities/feed.entity';
 import { FeedCommentEntity } from './entities/feed-comment.entity';
 import { CreateFeedCommentDto } from './dto/create-feed-comment.dto';
+import { R2Service } from '../storage/r2.service';
 
 @Injectable()
 export class FeedCommentService {
@@ -18,6 +19,8 @@ export class FeedCommentService {
 
     @InjectRepository(FeedEntity)
     private readonly feedRepository: Repository<FeedEntity>,
+
+    private readonly r2Service: R2Service,
   ) { }
 
   async createComment(
@@ -311,9 +314,11 @@ export class FeedCommentService {
       nickname: user.nickname,
       userCode: user.userCode,
       hasProfileImage: !!user.imageMimeType,
-      profileImageUrl: user.imageMimeType
-        ? `/user/${user.id}/profile-image`
-        : null,
+      profileImageUrl: this.r2Service.getProfileImageUrl(
+        user.id,
+        user.imageMimeType,
+        user.imageUpdatedAt,
+      ),
     };
   }
 }

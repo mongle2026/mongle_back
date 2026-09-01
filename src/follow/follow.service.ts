@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FollowEntity } from './entities/follow.entity';
 import { UserEntity } from '../user/entities/user.entity';
+import { R2Service } from '../storage/r2.service';
 
 @Injectable()
 export class FollowService {
@@ -16,6 +17,8 @@ export class FollowService {
 
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
+
+    private readonly r2Service: R2Service,
   ) {}
 
   async followUser(currentUserId: number, targetUserId: number) {
@@ -113,6 +116,7 @@ export class FollowService {
         'user.userCode',
         'user.nickname',
         'user.imageMimeType',
+        'user.imageUpdatedAt',
       ])
       .orderBy('follow.createdAt', 'DESC')
       .limit(50)
@@ -139,6 +143,7 @@ export class FollowService {
         'user.userCode',
         'user.nickname',
         'user.imageMimeType',
+        'user.imageUpdatedAt',
       ])
       .orderBy('follow.createdAt', 'DESC')
       .limit(50)
@@ -170,6 +175,7 @@ export class FollowService {
         'user.userCode',
         'user.nickname',
         'user.imageMimeType',
+        'user.imageUpdatedAt',
       ])
       .where('user.id = :currentUserId', { currentUserId })
       .getOne();
@@ -234,9 +240,11 @@ export class FollowService {
       userCode: user.userCode,
       nickname: user.nickname,
       hasProfileImage: !!user.imageMimeType,
-      profileImageUrl: user.imageMimeType
-        ? `/user/${user.id}/profile-image`
-        : null,
+      profileImageUrl: this.r2Service.getProfileImageUrl(
+        user.id,
+        user.imageMimeType,
+        user.imageUpdatedAt,
+      ),
       isMe: String(user.id) === String(currentUserId),
       isFollowing,
     };

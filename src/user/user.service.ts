@@ -1,13 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UserEntity } from './entities/user.entity';
+import { R2Service } from '../storage/r2.service';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
+    private readonly r2Service: R2Service,
   ) { }
 
   async searchUsers(
@@ -34,6 +36,7 @@ export class UserService {
         'user.userCode',
         'user.nickname',
         'user.imageMimeType',
+        'user.imageUpdatedAt',
       ])
       .where(
         `
@@ -104,6 +107,7 @@ export class UserService {
         'user.userCode',
         'user.nickname',
         'user.imageMimeType',
+        'user.imageUpdatedAt',
       ])
       .where('user.id = :userId', {
         userId,
@@ -124,10 +128,11 @@ export class UserService {
       hasProfileImage:
         !!user.imageMimeType,
 
-      profileImageUrl:
-        user.imageMimeType
-          ? `/user/${user.id}/profile-image`
-          : null,
+      profileImageUrl: this.r2Service.getProfileImageUrl(
+        user.id,
+        user.imageMimeType,
+        user.imageUpdatedAt,
+      ),
     };
   }
 
@@ -151,6 +156,7 @@ export class UserService {
         'user.userCode',
         'user.nickname',
         'user.imageMimeType',
+        'user.imageUpdatedAt',
       ])
       .where('user.id = :currentUserId', {
         currentUserId,
@@ -176,33 +182,42 @@ export class UserService {
     };
   }
 
+  async createProfileImageUploadUrl(userId: number) {
+    const key = this.r2Service.buildProfileImageKey(userId);
+    const mimeType = 'image/jpeg';
+
+    return {
+      key,
+      uploadUrl: await this.r2Service.createPresignedPutUrl(key, mimeType),
+    };
+  }
+
+  async confirmProfileImage(userId: number, mimeType: string) {
+    if (mimeType !== 'image/jpeg') {
+      throw new BadRequestException('프로필 이미지는 jpg 형식만 지원합니다.');
+    }
+
+    await this.userRepository.update(
+      { id: userId },
+      { imageMimeType: mimeType, imageUpdatedAt: new Date() },
+    );
+
+    return { message: '프로필 이미지가 업데이트되었습니다.' };
+  }
+
+
   private toRecipientResponse(user: UserEntity, currentUserId: number) {
     return {
       id: user.id,
       userCode: user.userCode,
       nickname: user.nickname,
       hasProfileImage: !!user.imageMimeType,
-      profileImageUrl: user.imageMimeType
-        ? `/user/${user.id}/profile-image`
-        : null,
+      profileImageUrl: this.r2Service.getProfileImageUrl(
+        user.id,
+        user.imageMimeType,
+        user.imageUpdatedAt,
+      ),
       isMe: String(user.id) === String(currentUserId),
-    };
-  }
-
-  async getProfileImage(userId: number) {
-    const user = await this.userRepository
-      .createQueryBuilder('user')
-      .addSelect('user.imageData')
-      .where('user.id = :userId', { userId })
-      .getOne();
-
-    if (!user || !user.imageData) {
-      throw new NotFoundException('프로필 이미지가 없습니다.');
-    }
-
-    return {
-      imageData: user.imageData,
-      imageMimeType: user.imageMimeType ?? 'image/jpeg',
     };
   }
 }
