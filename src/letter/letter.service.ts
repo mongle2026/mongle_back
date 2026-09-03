@@ -96,8 +96,8 @@ export class LetterService {
         throw new ForbiddenException('아직 열람할 수 없는 편지입니다.');
       }
 
-      if (isReceiver && letter.readAt === null) {
-        letter.readAt = now;
+      if (isReceiver && !letter.isRead) {
+        letter.isRead = true;
         await manager.save(LetterEntity, letter);
       }
 
@@ -110,7 +110,7 @@ export class LetterService {
           color: letter.color,
           stamp: letter.stamp,
           deliveryAt: letter.deliveryAt,
-          readAt: letter.readAt,
+          isRead: letter.isRead,
         },
         record: {
           id: Number(letter.record.id),

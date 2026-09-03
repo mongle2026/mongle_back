@@ -49,9 +49,9 @@ export class LetterEntity {
   deliveryAt!: Date | null;
 
   @Column({
-    name: 'read_at',
-    type: 'datetime',
-    nullable: true,
+    name: 'is_read',
+    type: 'boolean',
+    default: false,
   })
-  readAt!: Date | null;
+  isRead!: boolean;
 }
