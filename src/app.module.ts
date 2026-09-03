@@ -34,31 +34,46 @@ import { StorageModule } from './storage/storage.module';
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'mariadb',
-        host: configService.get<string>('DB_HOST'),
-        port: Number(configService.get<string>('DB_PORT')),
-        username: configService.get<string>('DB_USERNAME'),
-        password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_DATABASE'),
+      useFactory: (configService: ConfigService) => {
+        const isProduction =
+          configService.get<string>('NODE_ENV') === 'production';
+        const dbSslCa = configService.get<string>('DB_SSL_CA');
+        const useSsl = configService.get<string>('DB_SSL') === 'true';
 
-        entities: [
-          UserEntity,
-          RecordEntity,
-          RecordFileEntity,
-          FeedEntity,
-          LetterEntity,
-          MusicEntity,
-          PopularMusicEntity,
-          FeedLikeEntity,
-          BookmarkEntity,
-          FeedCommentEntity,
-          FollowEntity,
-        ],
+        return {
+          type: 'mariadb',
+          host: configService.get<string>('DB_HOST'),
+          port: Number(configService.get<string>('DB_PORT')),
+          username: configService.get<string>('DB_USERNAME'),
+          password: configService.get<string>('DB_PASSWORD'),
+          database: configService.get<string>('DB_DATABASE'),
+          // Aiven 플랜의 max connection 한도를 넘지 않도록 풀 크기 제한
+          poolSize: Number(configService.get<string>('DB_POOL_SIZE') ?? 5),
+          // Aiven은 SSL 연결을 강제하므로 DB_SSL(_CA) 환경변수로 활성화
+          ssl: dbSslCa
+            ? { ca: dbSslCa, rejectUnauthorized: true }
+            : useSsl
+              ? { rejectUnauthorized: false }
+              : undefined,
 
-        // 초반에만, 얼추되면 false 
-        synchronize: true,
-      }),
+          entities: [
+            UserEntity,
+            RecordEntity,
+            RecordFileEntity,
+            FeedEntity,
+            LetterEntity,
+            MusicEntity,
+            PopularMusicEntity,
+            FeedLikeEntity,
+            BookmarkEntity,
+            FeedCommentEntity,
+            FollowEntity,
+          ],
+
+          // 초반에만, 얼추되면 false
+          synchronize: !isProduction,
+        };
+      },
     }),
 
     UserModule,
