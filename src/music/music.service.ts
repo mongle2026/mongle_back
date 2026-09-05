@@ -120,7 +120,6 @@ export class MusicService {
       {
         params: {
           term: keyword,
-          country: 'KR',
           media: 'music',
           entity: 'song',
           limit: ITUNES_MAX_RESULTS,
@@ -225,7 +224,6 @@ export class MusicService {
       {
         params: {
           term: 'kpop',
-          country: 'KR',
           media: 'music',
           entity: 'song',
           limit: 10,
