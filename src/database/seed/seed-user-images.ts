@@ -34,7 +34,7 @@ async function seedUserImages() {
   const userRepository = AppDataSource.getRepository(UserEntity);
 
   for (let i = 0; i < profileImageUrls.length; i++) {
-    const userCode = `user_${i + 1}`;
+    const userCode = `user_${String(i + 1).padStart(3, '0')}`;
     const imageUrl = profileImageUrls[i];
 
     const response = await fetch(imageUrl);
