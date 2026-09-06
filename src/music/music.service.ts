@@ -1,24 +1,39 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { DataSource, Repository } from 'typeorm';
 import axios from 'axios';
 import { MusicEntity } from './entities/music.entity';
 import { PopularMusicEntity } from './entities/popular-music.entity';
 import { CreateMusicDto } from './dto/create-music.dto';
+import { AppleMusicTokenService } from './apple-music-token.service';
 
-interface ItunesSearchItem {
-  trackId: number;
-  trackName: string;
-  artistName: string;
-  primaryGenreName?: string;
-  artworkUrl100?: string;
-  previewUrl?: string;
+interface AppleMusicArtwork {
+  url: string;
+  width?: number;
+  height?: number;
 }
 
-interface ItunesSearchResponse {
-  resultCount: number;
-  results: ItunesSearchItem[];
+interface AppleMusicSongAttributes {
+  name: string;
+  artistName: string;
+  genreNames?: string[];
+  artwork?: AppleMusicArtwork;
+  previews?: { url: string }[];
+}
+
+interface AppleMusicSong {
+  id: string;
+  attributes: AppleMusicSongAttributes;
+}
+
+interface AppleMusicSearchResponse {
+  results?: {
+    songs?: {
+      data: AppleMusicSong[];
+    };
+  };
 }
 
 export interface MusicSearchItem {
@@ -43,7 +58,11 @@ interface SearchCacheEntry {
   items: MusicSearchItem[];
 }
 
-const ITUNES_MAX_RESULTS = 200;
+// 앨범아트 목표 해상도. 원본이 이보다 작으면 원본 크기로 낮춰서 요청한다.
+const ARTWORK_TARGET_SIZE = 1200;
+// Apple Music Catalog Search API는 한 요청당 최대 25건만 반환한다.
+const APPLE_MUSIC_API_PAGE_LIMIT = 25;
+const APPLE_MUSIC_SEARCH_TOTAL = 100;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -61,7 +80,44 @@ export class MusicService {
     private readonly popularMusicRepository: Repository<PopularMusicEntity>,
 
     private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
+    private readonly appleMusicTokenService: AppleMusicTokenService,
   ) { }
+
+  private getStorefront(): string {
+    return this.configService.get<string>('APPLE_MUSIC_STOREFRONT') ?? 'kr';
+  }
+
+  private getAuthHeaders() {
+    return {
+      Authorization: `Bearer ${this.appleMusicTokenService.getDeveloperToken()}`,
+    };
+  }
+
+  private resolveArtworkUrl(artwork?: AppleMusicArtwork): string | undefined {
+    if (!artwork) {
+      return undefined;
+    }
+
+    const size = Math.min(
+      ARTWORK_TARGET_SIZE,
+      artwork.width ?? ARTWORK_TARGET_SIZE,
+      artwork.height ?? ARTWORK_TARGET_SIZE,
+    );
+
+    return artwork.url.replace('{w}', String(size)).replace('{h}', String(size));
+  }
+
+  private toMusicSearchItem(song: AppleMusicSong): MusicSearchItem {
+    return {
+      externalId: song.id,
+      musicTitle: song.attributes.name,
+      musicArtist: song.attributes.artistName,
+      musicGenre: song.attributes.genreNames ?? [],
+      musicArtwork: this.resolveArtworkUrl(song.attributes.artwork),
+      previewUrl: song.attributes.previews?.[0]?.url,
+    };
+  }
 
   async searchMusic(
     keyword: string,
@@ -115,32 +171,38 @@ export class MusicService {
       this.searchCache.delete(cacheKey);
     }
 
-    const response = await axios.get<ItunesSearchResponse>(
-      'https://itunes.apple.com/search',
-      {
-        params: {
-          term: keyword,
-          media: 'music',
-          entity: 'song',
-          limit: ITUNES_MAX_RESULTS,
-        },
-      },
+    const storefront = this.getStorefront();
+    const offsets = Array.from(
+      { length: APPLE_MUSIC_SEARCH_TOTAL / APPLE_MUSIC_API_PAGE_LIMIT },
+      (_, i) => i * APPLE_MUSIC_API_PAGE_LIMIT,
+    );
+
+    const pages = await Promise.all(
+      offsets.map((offset) =>
+        axios.get<AppleMusicSearchResponse>(
+          `https://api.music.apple.com/v1/catalog/${storefront}/search`,
+          {
+            params: {
+              term: keyword,
+              types: 'songs',
+              limit: APPLE_MUSIC_API_PAGE_LIMIT,
+              offset,
+            },
+            headers: this.getAuthHeaders(),
+          },
+        ),
+      ),
     );
 
     const itemMap = new Map<string, MusicSearchItem>();
 
-    for (const item of response.data.results) {
-      const externalId = String(item.trackId);
+    for (const page of pages) {
+      const songs = page.data.results?.songs?.data ?? [];
 
-      if (!itemMap.has(externalId)) {
-        itemMap.set(externalId, {
-          externalId,
-          musicTitle: item.trackName,
-          musicArtist: item.artistName,
-          musicGenre: item.primaryGenreName ? [item.primaryGenreName] : [],
-          musicArtwork: item.artworkUrl100,
-          previewUrl: item.previewUrl,
-        });
+      for (const song of songs) {
+        if (!itemMap.has(song.id)) {
+          itemMap.set(song.id, this.toMusicSearchItem(song));
+        }
       }
     }
 
@@ -219,19 +281,21 @@ export class MusicService {
   }
 
   async refreshPopularMusics() {
-    const response = await axios.get<ItunesSearchResponse>(
-      'https://itunes.apple.com/search',
+    const storefront = this.getStorefront();
+
+    const response = await axios.get<AppleMusicSearchResponse>(
+      `https://api.music.apple.com/v1/catalog/${storefront}/search`,
       {
         params: {
           term: 'kpop',
-          media: 'music',
-          entity: 'song',
+          types: 'songs',
           limit: 10,
         },
+        headers: this.getAuthHeaders(),
       },
     );
 
-    const songs = response.data.results;
+    const songs = response.data.results?.songs?.data ?? [];
     const chartDate = new Date().toISOString().slice(0, 10);
 
     await this.dataSource.transaction(async (manager) => {
@@ -241,34 +305,32 @@ export class MusicService {
       await popularMusicRepository.clear();
 
       for (const [index, song] of songs.entries()) {
-        const externalId = String(song.trackId);
+        const item = this.toMusicSearchItem(song);
 
         let music = await musicRepository.findOne({
           where: {
-            externalId,
+            externalId: item.externalId,
           },
         });
 
         if (!music) {
           music = musicRepository.create({
-            externalId,
-            musicTitle: song.trackName,
-            musicArtist: song.artistName,
-            musicGenre: song.primaryGenreName ? [song.primaryGenreName] : null,
-            musicArtwork: song.artworkUrl100 ?? null,
-            previewUrl: song.previewUrl ?? null,
+            externalId: item.externalId,
+            musicTitle: item.musicTitle,
+            musicArtist: item.musicArtist,
+            musicGenre: item.musicGenre.length ? item.musicGenre : null,
+            musicArtwork: item.musicArtwork ?? null,
+            previewUrl: item.previewUrl ?? null,
           });
 
           music = await musicRepository.save(music);
         } else {
           musicRepository.merge(music, {
-            musicTitle: song.trackName,
-            musicArtist: song.artistName,
-            musicGenre: song.primaryGenreName
-              ? [song.primaryGenreName]
-              : music.musicGenre,
-            musicArtwork: song.artworkUrl100 ?? music.musicArtwork,
-            previewUrl: song.previewUrl ?? music.previewUrl,
+            musicTitle: item.musicTitle,
+            musicArtist: item.musicArtist,
+            musicGenre: item.musicGenre.length ? item.musicGenre : music.musicGenre,
+            musicArtwork: item.musicArtwork ?? music.musicArtwork,
+            previewUrl: item.previewUrl ?? music.previewUrl,
           });
 
           music = await musicRepository.save(music);
@@ -286,7 +348,7 @@ export class MusicService {
     });
 
     return {
-      message: 'iTunes 테스트 인기곡 10개가 갱신되었습니다.',
+      message: 'Apple Music 인기곡 10개가 갱신되었습니다.',
     };
   }
 }
