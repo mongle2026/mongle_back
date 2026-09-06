@@ -186,7 +186,7 @@ export class FeedController {
       this.configService.get<string>('IOS_APP_STORE_URL') ?? '';
     const androidStoreUrl =
       this.configService.get<string>('ANDROID_PLAY_STORE_URL') ?? '';
-    const deepLink = `${appScheme}://kakaolink?feedId=${encodeURIComponent(feedId)}&visibility=PUBLIC`;
+    const deepLink = `${appScheme}://share?feedId=${encodeURIComponent(feedId)}`;
 
     return `<!DOCTYPE html>
 <html lang="ko">
