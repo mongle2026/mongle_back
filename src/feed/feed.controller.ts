@@ -9,6 +9,7 @@ import {
   Query,
   Header,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FeedService } from './feed.service';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { UpdateFeedDto } from './dto/update-feed.dto';
@@ -21,6 +22,7 @@ export class FeedController {
   constructor(
     private readonly feedService: FeedService,
     private readonly feedCommentService: FeedCommentService,
+    private readonly configService: ConfigService,
   ) { }
 
   @Post()
@@ -62,7 +64,7 @@ export class FeedController {
       Number(feedId),
     );
 
-    return this.createFeedShareHtml(meta);
+    return this.createFeedShareHtml(feedId, meta);
   }
 
   @Get(':feedId')
@@ -160,18 +162,31 @@ export class FeedController {
     );
   }
 
-  private createFeedShareHtml(meta: {
-    title: string;
-    description: string;
-    imageUrl: string | null;
-    siteName: string;
-  }) {
+  private createFeedShareHtml(
+    feedId: string,
+    meta: {
+      title: string;
+      description: string;
+      imageUrl: string | null;
+      siteName: string;
+    },
+  ) {
     const title = this.escapeHtml(meta.title);
     const description = this.escapeHtml(meta.description);
     const siteName = this.escapeHtml(meta.siteName);
     const imageUrl = meta.imageUrl
       ? this.escapeHtml(meta.imageUrl)
       : null;
+
+    // 앱 미설치 시 스토어 링크는 출시 전까지 비어있을 수 있으므로,
+    // 값이 없으면 딥링크 실패 후에도 이 웹페이지에 그대로 머무른다.
+    const appScheme =
+      this.configService.get<string>('APP_SCHEME') ?? 'mongle';
+    const iosStoreUrl =
+      this.configService.get<string>('IOS_APP_STORE_URL') ?? '';
+    const androidStoreUrl =
+      this.configService.get<string>('ANDROID_PLAY_STORE_URL') ?? '';
+    const deepLink = `${appScheme}://kakaolink?feedId=${encodeURIComponent(feedId)}&visibility=PUBLIC`;
 
     return `<!DOCTYPE html>
 <html lang="ko">
@@ -188,6 +203,36 @@ ${imageUrl ? `<meta property="og:image" content="${imageUrl}">` : ''}
 <body>
 <h1>${title}</h1>
 <p>${description}</p>
+<script>
+(function () {
+  var deepLink = ${JSON.stringify(deepLink)};
+  var iosStoreUrl = ${JSON.stringify(iosStoreUrl)};
+  var androidStoreUrl = ${JSON.stringify(androidStoreUrl)};
+
+  var isAndroid = /Android/i.test(navigator.userAgent);
+  var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  if (!isAndroid && !isIOS) {
+    return;
+  }
+
+  var storeUrl = isAndroid ? androidStoreUrl : iosStoreUrl;
+
+  var fallbackTimer = setTimeout(function () {
+    if (storeUrl) {
+      window.location.href = storeUrl;
+    }
+  }, 1500);
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      clearTimeout(fallbackTimer);
+    }
+  });
+
+  window.location.href = deepLink;
+})();
+</script>
 </body>
 </html>`;
   }
