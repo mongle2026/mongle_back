@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import axios from 'axios';
 import { MusicEntity } from './entities/music.entity';
 import { PopularMusicEntity } from './entities/popular-music.entity';
@@ -230,27 +230,57 @@ export class MusicService {
     });
   }
 
-  async findOrCreateMusic(dto: CreateMusicDto): Promise<MusicEntity> {
-    const existingMusic = await this.musicRepository.findOne({
+  async findOrCreateMusic(
+    dto: CreateMusicDto,
+    manager?: EntityManager,
+  ): Promise<MusicEntity> {
+    const musicRepository = manager
+      ? manager.getRepository(MusicEntity)
+      : this.musicRepository;
+
+    const existingMusic = await musicRepository.findOne({
       where: {
         externalId: dto.externalId,
       },
     });
 
-    if (existingMusic) {
+    if (!existingMusic) {
+      const music = musicRepository.create({
+        externalId: dto.externalId,
+        musicTitle: dto.musicTitle,
+        musicArtist: dto.musicArtist,
+        musicGenre: dto.musicGenre ?? null,
+        musicArtwork: dto.musicArtwork ?? null,
+        previewUrl: dto.previewUrl ?? null,
+      });
+
+      return musicRepository.save(music);
+    }
+
+    const newGenre = dto.musicGenre?.length ? dto.musicGenre : existingMusic.musicGenre;
+    const newArtwork = dto.musicArtwork ?? existingMusic.musicArtwork;
+    const newPreviewUrl = dto.previewUrl ?? existingMusic.previewUrl;
+
+    const hasChanges =
+      existingMusic.musicTitle !== dto.musicTitle ||
+      existingMusic.musicArtist !== dto.musicArtist ||
+      existingMusic.musicArtwork !== newArtwork ||
+      existingMusic.previewUrl !== newPreviewUrl ||
+      JSON.stringify(existingMusic.musicGenre) !== JSON.stringify(newGenre);
+
+    if (!hasChanges) {
       return existingMusic;
     }
 
-    const music = this.musicRepository.create({
-      externalId: dto.externalId,
+    musicRepository.merge(existingMusic, {
       musicTitle: dto.musicTitle,
       musicArtist: dto.musicArtist,
-      musicGenre: dto.musicGenre ?? null,
-      musicArtwork: dto.musicArtwork ?? null,
-      previewUrl: dto.previewUrl ?? null,
+      musicGenre: newGenre,
+      musicArtwork: newArtwork,
+      previewUrl: newPreviewUrl,
     });
 
-    return this.musicRepository.save(music);
+    return musicRepository.save(existingMusic);
   }
 
   async findPopularMusics() {
@@ -299,7 +329,6 @@ export class MusicService {
     const chartDate = new Date().toISOString().slice(0, 10);
 
     await this.dataSource.transaction(async (manager) => {
-      const musicRepository = manager.getRepository(MusicEntity);
       const popularMusicRepository = manager.getRepository(PopularMusicEntity);
 
       await popularMusicRepository.clear();
@@ -307,34 +336,17 @@ export class MusicService {
       for (const [index, song] of songs.entries()) {
         const item = this.toMusicSearchItem(song);
 
-        let music = await musicRepository.findOne({
-          where: {
+        const music = await this.findOrCreateMusic(
+          {
             externalId: item.externalId,
+            musicTitle: item.musicTitle,
+            musicArtist: item.musicArtist,
+            musicGenre: item.musicGenre,
+            musicArtwork: item.musicArtwork,
+            previewUrl: item.previewUrl,
           },
-        });
-
-        if (!music) {
-          music = musicRepository.create({
-            externalId: item.externalId,
-            musicTitle: item.musicTitle,
-            musicArtist: item.musicArtist,
-            musicGenre: item.musicGenre.length ? item.musicGenre : null,
-            musicArtwork: item.musicArtwork ?? null,
-            previewUrl: item.previewUrl ?? null,
-          });
-
-          music = await musicRepository.save(music);
-        } else {
-          musicRepository.merge(music, {
-            musicTitle: item.musicTitle,
-            musicArtist: item.musicArtist,
-            musicGenre: item.musicGenre.length ? item.musicGenre : music.musicGenre,
-            musicArtwork: item.musicArtwork ?? music.musicArtwork,
-            previewUrl: item.previewUrl ?? music.previewUrl,
-          });
-
-          music = await musicRepository.save(music);
-        }
+          manager,
+        );
 
         const popularMusic = popularMusicRepository.create({
           rank: index + 1,

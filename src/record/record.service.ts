@@ -2,15 +2,18 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { EntityManager, In } from 'typeorm';
 import { RecordEntity } from './entities/record.entity';
 import { RecordFileEntity } from './entities/record-file.entity';
-import { MusicEntity } from '../music/entities/music.entity';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
+import { MusicService } from '../music/music.service';
 import { getFileType } from './utils/get-file-type.util';
 import { RecordFont } from './enums/record-font.enum';
 import { R2Service } from '../storage/r2.service';
 
 @Injectable()
 export class RecordService {
-  constructor(private readonly r2Service: R2Service) {}
+  constructor(
+    private readonly r2Service: R2Service,
+    private readonly musicService: MusicService,
+  ) {}
 
   async createBaseRecord(
     manager: EntityManager,
@@ -21,7 +24,7 @@ export class RecordService {
       font?: RecordFont;
     },
   ): Promise<RecordEntity> {
-    const music = await this.findOrCreateMusic(manager, params.music);
+    const music = await this.musicService.findOrCreateMusic(params.music, manager);
 
     const font = params.font ?? RecordFont.KYOBO;
 
@@ -58,7 +61,7 @@ export class RecordService {
     }
 
     if (params.music !== undefined) {
-      const music = await this.findOrCreateMusic(manager, params.music);
+      const music = await this.musicService.findOrCreateMusic(params.music, manager);
 
       record.musicId = music.id;
       shouldUpdateRecord = true;
@@ -152,32 +155,6 @@ export class RecordService {
     await manager.update(RecordEntity, { id: recordId }, { updatedAt: new Date() });
 
     return recordFiles;
-  }
-
-  private async findOrCreateMusic(
-    manager: EntityManager,
-    dto: CreateMusicDto,
-  ): Promise<MusicEntity> {
-    const existingMusic = await manager.findOne(MusicEntity, {
-      where: {
-        externalId: dto.externalId,
-      },
-    });
-
-    if (existingMusic) {
-      return existingMusic;
-    }
-
-    const music = manager.create(MusicEntity, {
-      externalId: dto.externalId,
-      musicTitle: dto.musicTitle,
-      musicArtist: dto.musicArtist,
-      musicGenre: dto.musicGenre ?? null,
-      musicArtwork: dto.musicArtwork ?? null,
-      previewUrl: dto.previewUrl ?? null,
-    });
-
-    return manager.save(MusicEntity, music);
   }
 
   private validateFont(font: RecordFont) {

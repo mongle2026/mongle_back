@@ -4,6 +4,7 @@ import { RecordService } from './record.service';
 import { RecordEntity } from './entities/record.entity';
 import { RecordFileEntity } from './entities/record-file.entity';
 import { RecordController } from './record.controller';
+import { MusicModule } from '../music/music.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { RecordController } from './record.controller';
       RecordEntity,
       RecordFileEntity,
     ]),
+    MusicModule,
   ],
   controllers: [
     RecordController,
