@@ -36,6 +36,10 @@ interface AppleMusicSearchResponse {
   };
 }
 
+interface AppleMusicLookupResponse {
+  data?: AppleMusicSong[];
+}
+
 export interface MusicSearchItem {
   externalId: string;
   musicTitle: string;
@@ -67,6 +71,13 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const SEARCH_CACHE_MAX_ENTRIES = 100;
+
+// 편지/피드에 쓰인 곡 중 이 기간 이상 갱신 안 된 것만 리프레시 대상으로 삼는다.
+const MUSIC_REFRESH_STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
+// 한 번의 리프레시 실행에서 처리할 최대 곡 수 (고유 곡 수 기준이라 편지 수와 무관하게 안전).
+const MUSIC_REFRESH_BATCH_SIZE = 200;
+// Apple Music Catalog lookup(ids=)도 search와 동일하게 한 요청당 최대 25건까지가 안전하다.
+const APPLE_MUSIC_LOOKUP_CHUNK_SIZE = 25;
 
 @Injectable()
 export class MusicService {
@@ -257,6 +268,15 @@ export class MusicService {
       return musicRepository.save(music);
     }
 
+    return this.mergeMusicFields(existingMusic, dto, musicRepository);
+  }
+
+  private async mergeMusicFields(
+    existingMusic: MusicEntity,
+    dto: CreateMusicDto,
+    musicRepository: Repository<MusicEntity>,
+    alwaysTouch = false,
+  ): Promise<MusicEntity> {
     const newGenre = dto.musicGenre?.length ? dto.musicGenre : existingMusic.musicGenre;
     const newArtwork = dto.musicArtwork ?? existingMusic.musicArtwork;
     const newPreviewUrl = dto.previewUrl ?? existingMusic.previewUrl;
@@ -268,7 +288,7 @@ export class MusicService {
       existingMusic.previewUrl !== newPreviewUrl ||
       JSON.stringify(existingMusic.musicGenre) !== JSON.stringify(newGenre);
 
-    if (!hasChanges) {
+    if (!hasChanges && !alwaysTouch) {
       return existingMusic;
     }
 
@@ -362,5 +382,88 @@ export class MusicService {
     return {
       message: 'Apple Music 인기곡 10개가 갱신되었습니다.',
     };
+  }
+
+  @Cron('0 30 4 * * 0', {
+    timeZone: 'Asia/Seoul',
+  })
+  async refreshStaleMusicBySchedule() {
+    await this.refreshStaleMusic();
+  }
+
+  async refreshStaleMusic(batchSize = MUSIC_REFRESH_BATCH_SIZE) {
+    const staleBefore = new Date(Date.now() - MUSIC_REFRESH_STALE_THRESHOLD_MS);
+
+    const staleMusics = await this.musicRepository
+      .createQueryBuilder('music')
+      .where('music.updatedAt < :staleBefore', { staleBefore })
+      .orderBy('music.updatedAt', 'ASC')
+      .take(batchSize)
+      .getMany();
+
+    if (staleMusics.length === 0) {
+      return { message: '갱신할 음악이 없습니다.', refreshedCount: 0 };
+    }
+
+    const storefront = this.getStorefront();
+    const chunks = this.chunkArray(staleMusics, APPLE_MUSIC_LOOKUP_CHUNK_SIZE);
+    let refreshedCount = 0;
+
+    for (const chunk of chunks) {
+      const ids = chunk.map((music) => music.externalId).join(',');
+
+      const response = await axios.get<AppleMusicLookupResponse>(
+        `https://api.music.apple.com/v1/catalog/${storefront}/songs`,
+        {
+          params: { ids },
+          headers: this.getAuthHeaders(),
+        },
+      );
+
+      const songsById = new Map(
+        (response.data.data ?? []).map((song) => [song.id, song]),
+      );
+
+      for (const music of chunk) {
+        const song = songsById.get(music.externalId);
+
+        if (!song) {
+          continue;
+        }
+
+        const item = this.toMusicSearchItem(song);
+
+        await this.mergeMusicFields(
+          music,
+          {
+            externalId: item.externalId,
+            musicTitle: item.musicTitle,
+            musicArtist: item.musicArtist,
+            musicGenre: item.musicGenre,
+            musicArtwork: item.musicArtwork,
+            previewUrl: item.previewUrl,
+          },
+          this.musicRepository,
+          true, // 값이 안 바뀌었어도 updatedAt은 갱신 — 안 그러면 매번 다시 stale 대상으로 잡혀 재조회됨
+        );
+
+        refreshedCount++;
+      }
+    }
+
+    return {
+      message: `${refreshedCount}개의 음악 정보가 갱신되었습니다.`,
+      refreshedCount,
+    };
+  }
+
+  private chunkArray<T>(items: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+
+    for (let i = 0; i < items.length; i += size) {
+      chunks.push(items.slice(i, i + size));
+    }
+
+    return chunks;
   }
 }

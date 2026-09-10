@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { LetterService } from './letter.service';
 import { CreateLetterDto } from './dto/create-letter.dto';
+import { GetLetterboxQueryDto } from './dto/get-letterbox-query.dto';
 
 @Controller('letter')
 export class LetterController {
@@ -19,6 +20,16 @@ export class LetterController {
     @Body() dto: CreateLetterDto,
   ) {
     return this.letterService.createLetter(dto);
+  }
+
+  @Get()
+  async getLetterbox(@Query() query: GetLetterboxQueryDto) {
+    return this.letterService.getLetterbox({
+      userId: query.userId,
+      tab: query.tab,
+      cursor: query.cursor,
+      limit: query.limit,
+    });
   }
 
   @Get(':letterId')

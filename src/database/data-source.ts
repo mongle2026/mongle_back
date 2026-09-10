@@ -41,6 +41,8 @@ export const AppDataSource = new DataSource({
         FollowEntity,
     ],
 
-    // 초반에만, 얼추되면 false 
+    migrations: [__dirname + '/migrations/*.ts'],
+
+    // 초반에만, 얼추되면 false
     synchronize: true,
 });

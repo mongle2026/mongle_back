@@ -4,10 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { Brackets, DataSource } from 'typeorm';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateLetterDto } from './dto/create-letter.dto';
 import { LetterEntity } from './entities/letter.entity';
+import { LetterboxTab } from './enums/letterbox-tab.enum';
 import { RecordService } from '../record/record.service';
 import { R2Service } from '../storage/r2.service';
 
@@ -31,6 +32,7 @@ export class LetterService {
 
       const letter = manager.create(LetterEntity, {
         recordId: record.id,
+        senderId: Number(dto.userId),
         receiverId: Number(dto.receiverId),
         deliveryAt: dto.deliveryAt ? new Date(dto.deliveryAt) : null,
         pattern: dto.pattern,
@@ -139,6 +141,126 @@ export class LetterService {
         },
       };
     });
+  }
+
+  async getLetterbox(params: {
+    userId: number;
+    tab: LetterboxTab;
+    cursor?: number;
+    limit?: number;
+  }) {
+    const { userId, tab, cursor } = params;
+
+    if (!userId || Number.isNaN(userId)) {
+      throw new BadRequestException('userId가 올바르지 않습니다.');
+    }
+
+    if (cursor !== undefined && (!cursor || Number.isNaN(cursor))) {
+      throw new BadRequestException('cursor 값이 올바르지 않습니다.');
+    }
+
+    const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
+    const now = new Date();
+
+    const qb = this.dataSource
+      .getRepository(LetterEntity)
+      .createQueryBuilder('letter')
+      .leftJoinAndSelect('letter.record', 'record')
+      .leftJoinAndSelect('record.user', 'sender')
+      .leftJoinAndSelect('record.music', 'music')
+      .orderBy('letter.id', 'DESC')
+      .take(safeLimit + 1)
+      .setParameter('userId', userId)
+      .setParameter('now', now);
+
+    switch (tab) {
+      case LetterboxTab.UNREAD:
+        qb.where('letter.receiverId = :userId')
+          .andWhere('letter.isRead = false')
+          .andWhere(
+            '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
+          );
+        break;
+      case LetterboxTab.RECEIVED:
+        qb.where('letter.receiverId = :userId').andWhere(
+          '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
+        );
+        break;
+      case LetterboxTab.SENT:
+        qb.where('letter.senderId = :userId');
+        break;
+      case LetterboxTab.SELF:
+        qb.where('letter.senderId = :userId')
+          .andWhere('letter.receiverId = :userId')
+          .andWhere(
+            '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
+          );
+        break;
+      case LetterboxTab.ALL:
+        qb.where(
+          new Brackets((w) => {
+            w.where('letter.senderId = :userId').orWhere(
+              'letter.receiverId = :userId',
+            );
+          }),
+        ).andWhere(
+          '(letter.receiverId != :userId OR letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
+        );
+        break;
+      default:
+        throw new BadRequestException('tab 값이 올바르지 않습니다.');
+    }
+
+    if (cursor !== undefined) {
+      qb.andWhere('letter.id < :cursor', { cursor });
+    }
+
+    const rows = await qb.getMany();
+    const hasNext = rows.length > safeLimit;
+    const items = (hasNext ? rows.slice(0, safeLimit) : rows).map((letter) =>
+      this.formatLetterboxItem(letter, userId),
+    );
+    const lastItem = items[items.length - 1];
+
+    return {
+      items,
+      nextCursor: hasNext && lastItem ? lastItem.letterId : null,
+      hasNext,
+    };
+  }
+
+  private formatLetterboxItem(letter: LetterEntity, userId: number) {
+    return {
+      letterId: Number(letter.id),
+      deliveryAt: letter.deliveryAt,
+      isRead: letter.isRead,
+      isSender: Number(letter.senderId) === userId,
+      isReceiver: Number(letter.receiverId) === userId,
+      envelope: {
+        pattern: letter.pattern,
+        color: letter.color,
+        stamp: letter.stamp,
+      },
+      sender: letter.record.user
+        ? {
+          userId: Number(letter.record.user.id),
+          nickname: letter.record.user.nickname,
+          profileImageUrl: this.r2Service.getProfileImageUrl(
+            letter.record.user.id,
+            letter.record.user.imageMimeType,
+            letter.record.user.imageUpdatedAt,
+          ),
+        }
+        : null,
+      music: letter.record.music
+        ? {
+          musicId: Number(letter.record.music.id),
+          musicTitle: letter.record.music.musicTitle,
+          musicArtist: letter.record.music.musicArtist,
+          musicArtwork: letter.record.music.musicArtwork,
+        }
+        : null,
+    };
   }
 
   private parseMusic(music: string): CreateMusicDto {

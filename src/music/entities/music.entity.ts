@@ -1,4 +1,10 @@
-import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('music')
 export class MusicEntity {
@@ -23,4 +29,7 @@ export class MusicEntity {
 
   @Column({ name: 'preview_url', type: 'varchar', length: 1000, nullable: true })
   previewUrl!: string | null;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'datetime' })
+  updatedAt!: Date;
 }
