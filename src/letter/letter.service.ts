@@ -189,12 +189,16 @@ export class LetterService {
           );
         break;
       case LetterboxTab.RECEIVED:
-        qb.where('letter.receiverId = :userId').andWhere(
-          '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
-        );
+        qb.where('letter.receiverId = :userId')
+          .andWhere('letter.senderId != :userId')
+          .andWhere(
+            '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
+          );
         break;
       case LetterboxTab.SENT:
-        qb.where('letter.senderId = :userId');
+        qb.where('letter.senderId = :userId').andWhere(
+          'letter.receiverId != :userId',
+        );
         break;
       case LetterboxTab.SELF:
         qb.where('letter.senderId = :userId')
