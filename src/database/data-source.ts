@@ -13,6 +13,7 @@ import { FeedLikeEntity } from '../like/entities/feed-like.entity';
 import { BookmarkEntity } from '../bookmark/entities/bookmark.entity';
 import { FeedCommentEntity } from '../feed-comment/entities/feed-comment.entity';
 import { FollowEntity } from '../follow/entities/follow.entity';
+import { StampEntity } from '../stamp/entities/stamp.entity';
 
 export const AppDataSource = new DataSource({
     type: 'mariadb',
@@ -39,6 +40,7 @@ export const AppDataSource = new DataSource({
         BookmarkEntity,
         FeedCommentEntity,
         FollowEntity,
+        StampEntity,
     ],
 
     migrations: [__dirname + '/migrations/*.ts'],

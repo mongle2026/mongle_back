@@ -24,6 +24,8 @@ import { FeedCommentEntity } from './feed-comment/entities/feed-comment.entity';
 import { FollowModule } from './follow/follow.module';
 import { FollowEntity } from './follow/entities/follow.entity';
 import { StorageModule } from './storage/storage.module';
+import { StampModule } from './stamp/stamp.module';
+import { StampEntity } from './stamp/entities/stamp.entity';
 
 @Module({
   imports: [
@@ -68,6 +70,7 @@ import { StorageModule } from './storage/storage.module';
             BookmarkEntity,
             FeedCommentEntity,
             FollowEntity,
+            StampEntity,
           ],
 
           // 초반에만, 얼추되면 false
@@ -84,6 +87,7 @@ import { StorageModule } from './storage/storage.module';
     LikeModule,
     BookmarkModule,
     FollowModule,
+    StampModule,
   ],
 })
 export class AppModule { }

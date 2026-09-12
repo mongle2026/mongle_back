@@ -1,5 +1,6 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   Index,
   JoinColumn,
@@ -7,10 +8,16 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { RecordEntity } from '../../record/entities/record.entity';
+import { StampEntity } from '../../stamp/entities/stamp.entity';
 
 @Index('idx_letter_receiver_read_id', ['receiverId', 'isRead', 'id'])
 @Index('idx_letter_receiver_id', ['receiverId', 'id'])
 @Index('idx_letter_sender_id', ['senderId', 'id'])
+@Index('idx_letter_receiver_stamp_created', [
+  'receiverId',
+  'stamp',
+  'createdAt',
+])
 @Entity('letter')
 export class LetterEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })
@@ -50,6 +57,10 @@ export class LetterEntity {
   })
   stamp!: string;
 
+  @ManyToOne(() => StampEntity, { nullable: false })
+  @JoinColumn({ name: 'stamp', referencedColumnName: 'code' })
+  stampCatalog!: StampEntity;
+
   @Column({
     name: 'delivery_at',
     type: 'datetime',
@@ -63,4 +74,10 @@ export class LetterEntity {
     default: false,
   })
   isRead!: boolean;
+
+  @CreateDateColumn({
+    name: 'created_at',
+    type: 'datetime',
+  })
+  createdAt!: Date;
 }
