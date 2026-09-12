@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { RecordEntity } from '../../record/entities/record.entity';
 import { StampEntity } from '../../stamp/entities/stamp.entity';
+import { UserEntity } from '../../user/entities/user.entity';
 
 @Index('idx_letter_receiver_read_id', ['receiverId', 'isRead', 'id'])
 @Index('idx_letter_receiver_id', ['receiverId', 'id'])
@@ -38,6 +39,9 @@ export class LetterEntity {
 
   @Column({ name: 'receiver_id', type: 'bigint' })
   receiverId!: number;
+
+  // 컬럼/관계가 아닌 조회용 필드. 편지함 목록에서 leftJoinAndMapOne 으로 채운다.
+  receiver?: UserEntity | null;
 
   @Column({
     name: 'pattern',

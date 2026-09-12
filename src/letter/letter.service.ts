@@ -9,6 +9,7 @@ import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateLetterDto } from './dto/create-letter.dto';
 import { LetterEntity } from './entities/letter.entity';
 import { LetterboxTab } from './enums/letterbox-tab.enum';
+import { UserEntity } from '../user/entities/user.entity';
 import { RecordService } from '../record/record.service';
 import { R2Service } from '../storage/r2.service';
 
@@ -168,6 +169,12 @@ export class LetterService {
       .leftJoinAndSelect('letter.record', 'record')
       .leftJoinAndSelect('record.user', 'sender')
       .leftJoinAndSelect('record.music', 'music')
+      .leftJoinAndMapOne(
+        'letter.receiver',
+        UserEntity,
+        'receiver',
+        'receiver.id = letter.receiverId',
+      )
       .orderBy('letter.id', 'DESC')
       .take(safeLimit + 1)
       .setParameter('userId', userId)
@@ -241,17 +248,8 @@ export class LetterService {
         color: letter.color,
         stamp: letter.stamp,
       },
-      sender: letter.record.user
-        ? {
-          userId: Number(letter.record.user.id),
-          nickname: letter.record.user.nickname,
-          profileImageUrl: this.r2Service.getProfileImageUrl(
-            letter.record.user.id,
-            letter.record.user.imageMimeType,
-            letter.record.user.imageUpdatedAt,
-          ),
-        }
-        : null,
+      sender: this.formatLetterboxUser(letter.record.user),
+      receiver: this.formatLetterboxUser(letter.receiver),
       music: letter.record.music
         ? {
           musicId: Number(letter.record.music.id),
@@ -260,6 +258,22 @@ export class LetterService {
           musicArtwork: letter.record.music.musicArtwork,
         }
         : null,
+    };
+  }
+
+  private formatLetterboxUser(user?: UserEntity | null) {
+    if (!user) {
+      return null;
+    }
+
+    return {
+      userId: Number(user.id),
+      nickname: user.nickname,
+      profileImageUrl: this.r2Service.getProfileImageUrl(
+        user.id,
+        user.imageMimeType,
+        user.imageUpdatedAt,
+      ),
     };
   }
 
