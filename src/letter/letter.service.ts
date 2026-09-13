@@ -126,6 +126,11 @@ export class LetterService {
             ? {
               id: Number(letter.record.user.id),
               nickname: letter.record.user.nickname,
+              profileImageUrl: this.r2Service.getProfileImageUrl(
+                letter.record.user.id,
+                letter.record.user.imageMimeType,
+                letter.record.user.imageUpdatedAt,
+              ),
             }
             : null,
           music: letter.record.music,
