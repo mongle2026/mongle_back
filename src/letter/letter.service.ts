@@ -243,6 +243,8 @@ export class LetterService {
   private formatLetterboxItem(letter: LetterEntity, userId: number) {
     return {
       letterId: Number(letter.id),
+      // 보낸 시각 = 작성해서 보낸 시각. letter와 record는 같은 트랜잭션에서 생성된다.
+      createdAt: letter.record.createdAt,
       deliveryAt: letter.deliveryAt,
       isRead: letter.isRead,
       isSender: Number(letter.senderId) === userId,

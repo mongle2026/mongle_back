@@ -1,6 +1,5 @@
 import {
   Column,
-  CreateDateColumn,
   Entity,
   Index,
   JoinColumn,
@@ -14,11 +13,7 @@ import { UserEntity } from '../../user/entities/user.entity';
 @Index('idx_letter_receiver_read_id', ['receiverId', 'isRead', 'id'])
 @Index('idx_letter_receiver_id', ['receiverId', 'id'])
 @Index('idx_letter_sender_id', ['senderId', 'id'])
-@Index('idx_letter_receiver_stamp_created', [
-  'receiverId',
-  'stamp',
-  'createdAt',
-])
+@Index('idx_letter_receiver_stamp', ['receiverId', 'stamp'])
 @Entity('letter')
 export class LetterEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })
@@ -78,10 +73,4 @@ export class LetterEntity {
     default: false,
   })
   isRead!: boolean;
-
-  @CreateDateColumn({
-    name: 'created_at',
-    type: 'datetime',
-  })
-  createdAt!: Date;
 }
