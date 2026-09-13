@@ -176,7 +176,9 @@ export class LetterService {
         'receiver.id = letter.receiverId',
       )
       .orderBy('letter.id', 'DESC')
-      .take(safeLimit + 1)
+      // 조인이 전부 N:1이라 행이 늘어나지 않는다. take()를 쓰면 TypeORM이 id만 뽑는
+      // DISTINCT 쿼리를 한 번 더 날리므로, 왕복 한 번으로 끝나는 limit()을 쓴다.
+      .limit(safeLimit + 1)
       .setParameter('userId', userId)
       .setParameter('now', now);
 
