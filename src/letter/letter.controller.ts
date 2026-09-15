@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -38,6 +39,17 @@ export class LetterController {
     @Query('userId', ParseIntPipe) userId: number,
   ) {
     return this.letterService.getLetterDetail({
+      letterId,
+      userId,
+    });
+  }
+
+  @Delete(':letterId')
+  async deleteLetter(
+    @Param('letterId', ParseIntPipe) letterId: number,
+    @Query('userId', ParseIntPipe) userId: number,
+  ) {
+    return this.letterService.deleteLetter({
       letterId,
       userId,
     });

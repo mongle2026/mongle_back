@@ -97,6 +97,10 @@ export class LetterService {
         throw new ForbiddenException('편지를 열람할 권한이 없습니다.');
       }
 
+      if (this.isDeletedByUser(letter, userId)) {
+        throw new NotFoundException('편지를 찾을 수 없습니다.');
+      }
+
       const now = new Date();
       const isDelivered =
         letter.deliveryAt === null || letter.deliveryAt <= now;
@@ -194,9 +198,11 @@ export class LetterService {
       .setParameter('userId', userId)
       .setParameter('now', now);
 
+    // 내가 삭제한 편지는 내 편지함에서만 빠진다 (sender/receiverDeletedAt)
     switch (tab) {
       case LetterboxTab.UNREAD:
         qb.where('letter.receiverId = :userId')
+          .andWhere('letter.receiverDeletedAt IS NULL')
           .andWhere('letter.isRead = false')
           .andWhere(
             '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
@@ -204,19 +210,21 @@ export class LetterService {
         break;
       case LetterboxTab.RECEIVED:
         qb.where('letter.receiverId = :userId')
+          .andWhere('letter.receiverDeletedAt IS NULL')
           .andWhere('letter.senderId != :userId')
           .andWhere(
             '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
           );
         break;
       case LetterboxTab.SENT:
-        qb.where('letter.senderId = :userId').andWhere(
-          'letter.receiverId != :userId',
-        );
+        qb.where('letter.senderId = :userId')
+          .andWhere('letter.senderDeletedAt IS NULL')
+          .andWhere('letter.receiverId != :userId');
         break;
       case LetterboxTab.SELF:
         qb.where('letter.senderId = :userId')
           .andWhere('letter.receiverId = :userId')
+          .andWhere('letter.senderDeletedAt IS NULL')
           .andWhere(
             '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
           );
@@ -224,8 +232,10 @@ export class LetterService {
       case LetterboxTab.ALL:
         qb.where(
           new Brackets((w) => {
-            w.where('letter.senderId = :userId').orWhere(
-              'letter.receiverId = :userId',
+            w.where(
+              '(letter.senderId = :userId AND letter.senderDeletedAt IS NULL)',
+            ).orWhere(
+              '(letter.receiverId = :userId AND letter.receiverDeletedAt IS NULL)',
             );
           }),
         ).andWhere(
@@ -252,6 +262,74 @@ export class LetterService {
       nextCursor: hasNext && lastItem ? lastItem.letterId : null,
       hasNext,
     };
+  }
+
+  // 편지 삭제. 삭제한 사람의 편지함에서만 숨기고, 상대방 편지함에는 그대로 남긴다.
+  // 단, 도착 전 편지를 보낸 사람이 삭제하면 받는 사람에게도 도착하지 않는다.
+  async deleteLetter(params: { letterId: number; userId: number }) {
+    const { letterId, userId } = params;
+
+    if (!letterId || Number.isNaN(letterId)) {
+      throw new BadRequestException('letterId가 올바르지 않습니다.');
+    }
+
+    if (!userId || Number.isNaN(userId)) {
+      throw new BadRequestException('userId가 올바르지 않습니다.');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const letter = await manager.findOne(LetterEntity, {
+        where: { id: letterId },
+      });
+
+      if (!letter) {
+        throw new NotFoundException('삭제할 편지를 찾을 수 없습니다.');
+      }
+
+      const isSender = Number(letter.senderId) === userId;
+      const isReceiver = Number(letter.receiverId) === userId;
+
+      if (!isSender && !isReceiver) {
+        throw new ForbiddenException('편지를 삭제할 권한이 없습니다.');
+      }
+
+      const now = new Date();
+      const isDelivered =
+        letter.deliveryAt === null || letter.deliveryAt <= now;
+
+      // 이미 삭제했거나, 받는 사람 입장에서 아직 도착하지 않은 편지는 편지함에 없는 편지다
+      if (this.isDeletedByUser(letter, userId) || (!isSender && !isDelivered)) {
+        throw new NotFoundException('삭제할 편지를 찾을 수 없습니다.');
+      }
+
+      // 도착 전에 보낸 사람이 삭제한 편지는 발송 취소로 보고, 받는 사람에게도 도착하지 않게
+      // 양쪽을 함께 삭제한다. 나에게 쓴 편지도 보낸/받은 쪽을 함께 삭제한다.
+      const deleteForReceiver = isReceiver || (isSender && !isDelivered);
+
+      await manager.update(
+        LetterEntity,
+        { id: letterId },
+        {
+          ...(isSender && { senderDeletedAt: now }),
+          ...(deleteForReceiver && { receiverDeletedAt: now }),
+        },
+      );
+
+      return {
+        message: '편지가 삭제되었습니다.',
+        letterId,
+      };
+    });
+  }
+
+  private isDeletedByUser(letter: LetterEntity, userId: number) {
+    const isSender = Number(letter.senderId) === userId;
+    const isReceiver = Number(letter.receiverId) === userId;
+
+    return (
+      (isSender && letter.senderDeletedAt !== null) ||
+      (isReceiver && letter.receiverDeletedAt !== null)
+    );
   }
 
   private formatLetterboxItem(letter: LetterEntity, userId: number) {

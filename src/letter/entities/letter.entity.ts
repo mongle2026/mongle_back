@@ -73,4 +73,20 @@ export class LetterEntity {
     default: false,
   })
   isRead!: boolean;
+
+  // 편지는 보낸 사람/받는 사람이 같이 보는 데이터라, 삭제는 각자 편지함에서만 숨긴다.
+  // 나에게 쓴 편지, 도착 전에 보낸 사람이 삭제한 편지(발송 취소)는 두 컬럼을 함께 채운다.
+  @Column({
+    name: 'sender_deleted_at',
+    type: 'datetime',
+    nullable: true,
+  })
+  senderDeletedAt!: Date | null;
+
+  @Column({
+    name: 'receiver_deleted_at',
+    type: 'datetime',
+    nullable: true,
+  })
+  receiverDeletedAt!: Date | null;
 }
