@@ -179,18 +179,7 @@ export class LetterService {
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
     const now = new Date();
 
-    const qb = this.dataSource
-      .getRepository(LetterEntity)
-      .createQueryBuilder('letter')
-      .leftJoinAndSelect('letter.record', 'record')
-      .leftJoinAndSelect('record.user', 'sender')
-      .leftJoinAndSelect('record.music', 'music')
-      .leftJoinAndMapOne(
-        'letter.receiver',
-        UserEntity,
-        'receiver',
-        'receiver.id = letter.receiverId',
-      )
+    const qb = this.createLetterboxQueryBuilder()
       .orderBy('letter.id', 'DESC')
       // 조인이 전부 N:1이라 행이 늘어나지 않는다. take()를 쓰면 TypeORM이 id만 뽑는
       // DISTINCT 쿼리를 한 번 더 날리므로, 왕복 한 번으로 끝나는 limit()을 쓴다.
@@ -264,6 +253,34 @@ export class LetterService {
     };
   }
 
+  // 우표 상세의 편지 목록. 이 우표가 붙은 "수집한 편지"를 도착 시각이 최근인 순으로 준다.
+  // 수집한 편지 = 나에게 도착한 편지(나에게 쓴 편지 포함), 내가 삭제한 편지는 제외.
+  // (StampService.getStampCollection의 count와 같은 조건)
+  async getCollectedLettersByStamp(params: { userId: number; stamp: string }) {
+    const { userId, stamp } = params;
+
+    const rows = await this.createLetterboxQueryBuilder()
+      .where('letter.receiverId = :userId', { userId })
+      .andWhere('letter.stamp = :stamp', { stamp })
+      .andWhere('letter.receiverDeletedAt IS NULL')
+      .andWhere('(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)', {
+        now: new Date(),
+      })
+      .getMany();
+
+    return rows
+      .map((letter) => ({
+        ...this.formatLetterboxItem(letter, userId),
+        // 도착 시각. 예약 없이 보낸 편지(deliveryAt null)는 보낸 즉시 도착한다.
+        arrivedAt: letter.deliveryAt ?? letter.record.createdAt,
+      }))
+      .sort(
+        (a, b) =>
+          b.arrivedAt.getTime() - a.arrivedAt.getTime() ||
+          b.letterId - a.letterId,
+      );
+  }
+
   // 편지 삭제. 삭제한 사람의 편지함에서만 숨기고, 상대방 편지함에는 그대로 남긴다.
   // 단, 도착 전 편지를 보낸 사람이 삭제하면 받는 사람에게도 도착하지 않는다.
   async deleteLetter(params: { letterId: number; userId: number }) {
@@ -320,6 +337,22 @@ export class LetterService {
         letterId,
       };
     });
+  }
+
+  // 편지함 목록 아이템(formatLetterboxItem)을 만들 때 필요한 조인
+  private createLetterboxQueryBuilder() {
+    return this.dataSource
+      .getRepository(LetterEntity)
+      .createQueryBuilder('letter')
+      .leftJoinAndSelect('letter.record', 'record')
+      .leftJoinAndSelect('record.user', 'sender')
+      .leftJoinAndSelect('record.music', 'music')
+      .leftJoinAndMapOne(
+        'letter.receiver',
+        UserEntity,
+        'receiver',
+        'receiver.id = letter.receiverId',
+      );
   }
 
   private isDeletedByUser(letter: LetterEntity, userId: number) {

@@ -12,5 +12,6 @@ import { RecordModule } from '../record/record.module';
   ],
   controllers: [LetterController],
   providers: [LetterService],
+  exports: [LetterService],
 })
 export class LetterModule {}
