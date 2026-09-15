@@ -73,6 +73,12 @@ export class LetterService {
         .leftJoinAndSelect('record.user', 'sender')
         .leftJoinAndSelect('record.music', 'music')
         .leftJoinAndSelect('record.files', 'files')
+        .leftJoinAndMapOne(
+          'letter.receiver',
+          UserEntity,
+          'receiver',
+          'receiver.id = letter.receiverId',
+        )
         .where('letter.id = :letterId', { letterId })
         .orderBy('files.id', 'ASC')
         .getOne();
@@ -109,6 +115,7 @@ export class LetterService {
           id: Number(letter.id),
           recordId: Number(letter.recordId),
           receiverId: Number(letter.receiverId),
+          receiver: this.formatLetterboxUser(letter.receiver),
           pattern: letter.pattern,
           color: letter.color,
           stamp: letter.stamp,
