@@ -1,10 +1,12 @@
 import {
   IsDateString,
+  IsEnum,
   IsNumberString,
   IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
+import { RecordFont } from '../../record/enums/record-font.enum';
 
 export class CreateLetterDto {
   @IsNumberString()
@@ -33,4 +35,8 @@ export class CreateLetterDto {
   @IsOptional()
   @IsDateString()
   deliveryAt?: string;
+
+  @IsOptional()
+  @IsEnum(RecordFont)
+  font?: RecordFont;
 }

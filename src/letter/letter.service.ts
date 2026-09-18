@@ -29,6 +29,7 @@ export class LetterService {
         userId: Number(dto.userId),
         music,
         text: dto.text,
+        font: dto.font,
       });
 
       const letter = manager.create(LetterEntity, {
@@ -131,6 +132,7 @@ export class LetterService {
           userId: Number(letter.record.userId),
           musicId: Number(letter.record.musicId),
           text: letter.record.text,
+          font: letter.record.font,
           createdAt: letter.record.createdAt,
           updatedAt: letter.record.updatedAt,
           user: letter.record.user
