@@ -110,6 +110,13 @@ export class FeedService {
           .andWhere('myBookmark.userId = :userId');
       }, 'isBookmarkedCount')
 
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(bookmark.id)')
+          .from(BookmarkEntity, 'bookmark')
+          .where('bookmark.feedId = feed.id');
+      }, 'bookmarkCount')
+
       .where(
         new Brackets(qb => {
           // 1. 전체 공개 게시물
@@ -174,6 +181,7 @@ export class FeedService {
 
       return this.formatFeedResponse(feed, {
         likeCount: Number(raw?.likeCount ?? 0),
+        bookmarkCount: Number(raw?.bookmarkCount ?? 0),
         isLiked: Number(raw?.isLikedCount ?? 0) > 0,
         isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
         isFollowing: followingIds.includes(authorId),
@@ -258,6 +266,13 @@ export class FeedService {
           .andWhere('myBookmark.userId = :userId');
       }, 'isBookmarkedCount')
 
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(bookmark.id)')
+          .from(BookmarkEntity, 'bookmark')
+          .where('bookmark.feedId = feed.id');
+      }, 'bookmarkCount')
+
       .where('record.userId IN (:...authorIds)', { authorIds })
       .andWhere('feed.visibility IN (:...visibleVisibilities)', {
         visibleVisibilities: [Visibility.PUBLIC, Visibility.FOLLOWER],
@@ -284,6 +299,7 @@ export class FeedService {
 
       return this.formatFeedResponse(feed, {
         likeCount: Number(raw?.likeCount ?? 0),
+        bookmarkCount: Number(raw?.bookmarkCount ?? 0),
         isLiked: Number(raw?.isLikedCount ?? 0) > 0,
         isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
         isFollowing: followingIds.includes(authorId),
