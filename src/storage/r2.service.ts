@@ -51,9 +51,11 @@ export class R2Service {
     return ext;
   }
 
-  buildRecordImageKey(userId: number, recordId: number, mimeType: string) {
+  // 레코드가 만들어지기 전에 업로드 URL을 발급하므로 키에 recordId를 넣지 않는다.
+  // 예전 키(records/{userId}/{recordId}/...)는 DB에 통째로 저장돼 있어 그대로 동작한다.
+  buildRecordImageKey(userId: number, mimeType: string) {
     const ext = this.resolveExtension(mimeType);
-    return `records/${userId}/${recordId}/${randomUUID()}.${ext}`;
+    return `records/${userId}/${randomUUID()}.${ext}`;
   }
 
   buildProfileImageKey(userId: number) {

@@ -38,6 +38,16 @@ export class FeedService {
         font: dto.font,
       });
 
+      /*
+       * 업로드가 끝난 파일을 같은 트랜잭션에서 붙입니다.
+       * 첨부가 실패하면 레코드도 함께 롤백되어 반쪽짜리 글이 남지 않습니다.
+       */
+      await this.recordService.attachFiles(manager, {
+        recordId: record.id,
+        userId: Number(dto.userId),
+        files: dto.files ?? [],
+      });
+
       const feed = manager.create(FeedEntity, {
         recordId: record.id,
         visibility: dto.visibility,
@@ -527,6 +537,15 @@ export class FeedService {
         touch: true,
       });
 
+      /*
+       * 삭제를 먼저 반영한 뒤에 붙여야 최대 개수 계산이 맞습니다.
+       */
+      await this.recordService.attachFiles(manager, {
+        recordId: feed.record.id,
+        userId,
+        files: dto.files ?? [],
+      });
+
       if (isFeedChanged) {
         await manager.save(FeedEntity, feed);
       }
@@ -613,6 +632,17 @@ export class FeedService {
         id: In(feedIds),
       });
 
+      const recordsToDelete = await manager.find(RecordEntity, {
+        where: { id: In(recordIds) },
+      });
+
+      const userIdByRecordId = new Map(
+        recordsToDelete.map((record) => [
+          Number(record.id),
+          Number(record.userId),
+        ]),
+      );
+
       const filesToDelete = await manager.find(RecordFileEntity, {
         where: { recordId: In(recordIds) },
       });
@@ -625,10 +655,17 @@ export class FeedService {
         id: In(recordIds),
       });
 
-      await Promise.all(
-        filesToDelete.map((file) =>
-          this.r2Service.deleteObject(file.fileKey).catch(() => undefined),
-        ),
+      /*
+       * R2 삭제는 크론에 맡깁니다.
+       * 여기서 바로 지우면 이 트랜잭션이 롤백됐을 때 객체만 사라집니다.
+       */
+      await this.recordService.detachFiles(
+        manager,
+        filesToDelete.map((file) => ({
+          userId: userIdByRecordId.get(Number(file.recordId)) ?? 0,
+          fileKey: file.fileKey,
+          mimeType: file.mimeType,
+        })),
       );
 
       return {

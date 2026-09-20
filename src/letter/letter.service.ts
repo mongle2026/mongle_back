@@ -32,6 +32,16 @@ export class LetterService {
         font: dto.font,
       });
 
+      /*
+       * 업로드가 끝난 파일을 같은 트랜잭션에서 붙입니다.
+       * 첨부가 실패하면 레코드도 함께 롤백되어 반쪽짜리 편지가 남지 않습니다.
+       */
+      await this.recordService.attachFiles(manager, {
+        recordId: record.id,
+        userId: Number(dto.userId),
+        files: dto.files ?? [],
+      });
+
       const letter = manager.create(LetterEntity, {
         recordId: record.id,
         senderId: Number(dto.userId),
