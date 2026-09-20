@@ -36,32 +36,35 @@ export class FeedCommentService {
     const feedAuthorId = Number(feed.record.userId);
     const isFeedAuthor = feedAuthorId === Number(userId);
 
-    let parentCommentId: number | null = null;
     let rootCommentId: number | null = null;
 
-    if (dto.parentCommentId) {
-      const parentComment = await this.feedCommentRepository.findOne({
+    if (dto.rootCommentId) {
+      const target = await this.feedCommentRepository.findOne({
         where: {
-          id: dto.parentCommentId,
+          id: dto.rootCommentId,
           feedId,
         },
       });
 
-      if (!parentComment) {
+      if (!target) {
         throw new NotFoundException('답글을 달 댓글을 찾을 수 없습니다.');
       }
 
-      const rootId = parentComment.rootCommentId
-        ? Number(parentComment.rootCommentId)
-        : Number(parentComment.id);
+      // 답글 id 가 넘어와도 그 원댓글로 묶는다 (답글의 답글은 만들지 않는다)
+      const rootId = target.rootCommentId
+        ? Number(target.rootCommentId)
+        : Number(target.id);
 
       if (!isFeedAuthor) {
-        const rootComment = await this.feedCommentRepository.findOne({
-          where: {
-            id: rootId,
-            feedId,
-          },
-        });
+        const rootComment =
+          rootId === Number(target.id)
+            ? target
+            : await this.feedCommentRepository.findOne({
+                where: {
+                  id: rootId,
+                  feedId,
+                },
+              });
 
         if (!rootComment) {
           throw new NotFoundException('원댓글을 찾을 수 없습니다.');
@@ -74,7 +77,6 @@ export class FeedCommentService {
         }
       }
 
-      parentCommentId = Number(parentComment.id);
       rootCommentId = rootId;
     }
 
@@ -82,7 +84,6 @@ export class FeedCommentService {
       feedId,
       userId,
       content: dto.content,
-      parentCommentId,
       rootCommentId,
     });
 
@@ -152,7 +153,7 @@ export class FeedCommentService {
       }
 
       // 내가 쓴 원댓글만 하나의 대화 묶음으로 인정
-      if (comment.parentCommentId === null) {
+      if (this.isRootComment(comment)) {
         myRootCommentIds.add(Number(comment.id));
       }
     });
@@ -180,7 +181,7 @@ export class FeedCommentService {
     const result: any[] = [];
 
     comments.forEach((comment) => {
-      if (comment.parentCommentId !== null) {
+      if (!this.isRootComment(comment)) {
         return;
       }
 
@@ -190,7 +191,6 @@ export class FeedCommentService {
         userId: Number(comment.userId),
         user: this.toCommentUser(comment.user),
         content: comment.content,
-        parentCommentId: null,
         rootCommentId: null,
         createdAt: comment.createdAt,
         updatedAt: comment.updatedAt,
@@ -202,7 +202,7 @@ export class FeedCommentService {
     });
 
     comments.forEach((comment) => {
-      if (comment.parentCommentId === null) {
+      if (this.isRootComment(comment)) {
         return;
       }
 
@@ -219,7 +219,6 @@ export class FeedCommentService {
         userId: Number(comment.userId),
         user: this.toCommentUser(comment.user),
         content: comment.content,
-        parentCommentId: Number(comment.parentCommentId),
         rootCommentId: rootId,
         createdAt: comment.createdAt,
         updatedAt: comment.updatedAt,
@@ -229,13 +228,13 @@ export class FeedCommentService {
     return result;
   }
 
+  private isRootComment(comment: FeedCommentEntity) {
+    return !comment.rootCommentId;
+  }
+
   private getRootId(comment: FeedCommentEntity) {
     if (comment.rootCommentId) {
       return Number(comment.rootCommentId);
-    }
-
-    if (comment.parentCommentId) {
-      return Number(comment.parentCommentId);
     }
 
     return Number(comment.id);
@@ -293,9 +292,6 @@ export class FeedCommentService {
       feedId: Number(comment.feedId),
       userId: Number(comment.userId),
       content: comment.content,
-      parentCommentId: comment.parentCommentId
-        ? Number(comment.parentCommentId)
-        : null,
       rootCommentId: comment.rootCommentId
         ? Number(comment.rootCommentId)
         : null,

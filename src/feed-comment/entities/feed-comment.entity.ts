@@ -42,30 +42,20 @@ export class FeedCommentEntity {
   })
   content!: string;
 
-  // 실제로 답글을 단 대상 댓글
-  @Column({ name: 'parent_comment_id', type: 'bigint', nullable: true })
-  parentCommentId!: number | null;
-
-  @ManyToOne(() => FeedCommentEntity, (comment) => comment.children, {
-    nullable: true,
-    onDelete: 'SET NULL',
-  })
-  @JoinColumn({ name: 'parent_comment_id' })
-  parentComment!: FeedCommentEntity | null;
-
-  @OneToMany(() => FeedCommentEntity, (comment) => comment.parentComment)
-  children!: FeedCommentEntity[];
-
-  // 화면에서 묶일 최상위 댓글
+  // 답글이 묶이는 원댓글. 원댓글 자신은 null 이다.
+  // 답글은 1단계뿐이라 "어떤 답글에 달았는지"는 따로 보관하지 않는다.
   @Column({ name: 'root_comment_id', type: 'bigint', nullable: true })
   rootCommentId!: number | null;
 
-  @ManyToOne(() => FeedCommentEntity, {
+  @ManyToOne(() => FeedCommentEntity, (comment) => comment.replies, {
     nullable: true,
     onDelete: 'SET NULL',
   })
   @JoinColumn({ name: 'root_comment_id' })
   rootComment!: FeedCommentEntity | null;
+
+  @OneToMany(() => FeedCommentEntity, (comment) => comment.rootComment)
+  replies!: FeedCommentEntity[];
 
   @CreateDateColumn({
     name: 'created_at',
