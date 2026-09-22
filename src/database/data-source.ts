@@ -15,6 +15,9 @@ import { BookmarkEntity } from '../bookmark/entities/bookmark.entity';
 import { FeedCommentEntity } from '../feed-comment/entities/feed-comment.entity';
 import { FollowEntity } from '../follow/entities/follow.entity';
 import { StampEntity } from '../stamp/entities/stamp.entity';
+import { NotificationEntity } from '../notification/entities/notification.entity';
+import { PushTokenEntity } from '../notification/entities/push-token.entity';
+import { NotificationSettingEntity } from '../notification/entities/notification-setting.entity';
 
 export const AppDataSource = new DataSource({
     type: 'mariadb',
@@ -43,6 +46,9 @@ export const AppDataSource = new DataSource({
         FeedCommentEntity,
         FollowEntity,
         StampEntity,
+        NotificationEntity,
+        PushTokenEntity,
+        NotificationSettingEntity,
     ],
 
     migrations: [__dirname + '/migrations/*.ts'],

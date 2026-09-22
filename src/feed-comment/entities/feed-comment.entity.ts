@@ -54,6 +54,10 @@ export class FeedCommentEntity {
   @JoinColumn({ name: 'root_comment_id' })
   rootComment!: FeedCommentEntity | null;
 
+  // 답글을 달 때 선택한 사람. 답글 알림은 이 사람에게만 간다. 원댓글은 null.
+  @Column({ name: 'reply_to_user_id', type: 'bigint', nullable: true })
+  replyToUserId!: number | null;
+
   @OneToMany(() => FeedCommentEntity, (comment) => comment.rootComment)
   replies!: FeedCommentEntity[];
 

@@ -26,7 +26,11 @@ import { FollowModule } from './follow/follow.module';
 import { FollowEntity } from './follow/entities/follow.entity';
 import { StorageModule } from './storage/storage.module';
 import { StampModule } from './stamp/stamp.module';
+import { NotificationModule } from './notification/notification.module';
 import { StampEntity } from './stamp/entities/stamp.entity';
+import { NotificationEntity } from './notification/entities/notification.entity';
+import { PushTokenEntity } from './notification/entities/push-token.entity';
+import { NotificationSettingEntity } from './notification/entities/notification-setting.entity';
 
 @Module({
   imports: [
@@ -73,6 +77,9 @@ import { StampEntity } from './stamp/entities/stamp.entity';
             FeedCommentEntity,
             FollowEntity,
             StampEntity,
+          NotificationEntity,
+          PushTokenEntity,
+          NotificationSettingEntity,
           ],
 
           // 초반에만, 얼추되면 false
@@ -90,6 +97,7 @@ import { StampEntity } from './stamp/entities/stamp.entity';
     BookmarkModule,
     FollowModule,
     StampModule,
+    NotificationModule,
   ],
 })
 export class AppModule { }

@@ -12,6 +12,10 @@ import { LetterboxTab } from './enums/letterbox-tab.enum';
 import { UserEntity } from '../user/entities/user.entity';
 import { RecordService } from '../record/record.service';
 import { R2Service } from '../storage/r2.service';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationStatus } from '../notification/enums/notification.enum';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class LetterService {
@@ -19,12 +23,28 @@ export class LetterService {
     private readonly dataSource: DataSource,
     private readonly recordService: RecordService,
     private readonly r2Service: R2Service,
+    private readonly notificationService: NotificationService,
   ) { }
 
   async createLetter(dto: CreateLetterDto) {
     const music = this.parseMusic(dto.music);
 
-    return this.dataSource.transaction(async (manager) => {
+    const now = new Date();
+    const senderId = Number(dto.userId);
+    const receiverId = Number(dto.receiverId);
+    const deliveryAt = dto.deliveryAt ? new Date(dto.deliveryAt) : null;
+    const isDelivered = deliveryAt === null || deliveryAt <= now;
+
+    // 알림 크론(LetterNotificationScheduler)이 볼 필요 없는 알림은 만들 때 처리 표시를 해 둔다.
+    // - 바로 도착하는 편지: 도착 알림은 아래에서 바로 보낸다
+    // - 도착 예정 알림: 나에게 쓴 편지이거나 도착까지 24시간이 안 남았으면 보내지 않는다
+    const skipArrivingSoon =
+      deliveryAt === null ||
+      isDelivered ||
+      senderId === receiverId ||
+      deliveryAt.getTime() - now.getTime() < DAY_MS;
+
+    const result = await this.dataSource.transaction(async (manager) => {
       const record = await this.recordService.createBaseRecord(manager, {
         userId: Number(dto.userId),
         music,
@@ -44,12 +64,14 @@ export class LetterService {
 
       const letter = manager.create(LetterEntity, {
         recordId: record.id,
-        senderId: Number(dto.userId),
-        receiverId: Number(dto.receiverId),
-        deliveryAt: dto.deliveryAt ? new Date(dto.deliveryAt) : null,
+        senderId,
+        receiverId,
+        deliveryAt,
         pattern: dto.pattern,
         color: dto.color,
         stamp: dto.stamp,
+        receivedNotifiedAt: isDelivered ? now : null,
+        arrivingSoonNotifiedAt: skipArrivingSoon ? now : null,
       });
 
       const savedLetter = await manager.save(LetterEntity, letter);
@@ -60,6 +82,18 @@ export class LetterService {
         letterId: savedLetter.id,
       };
     });
+
+    // 커밋된 뒤에 보낸다. 알림이 실패해도 편지 작성은 성공으로 응답한다.
+    if (isDelivered) {
+      void this.notificationService.notify({
+        userId: receiverId,
+        status: NotificationStatus.RECEIVE,
+        actorId: senderId,
+        letterId: Number(result.letterId),
+      });
+    }
+
+    return result;
   }
 
   async getLetterDetail(params: {

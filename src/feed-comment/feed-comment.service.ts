@@ -10,6 +10,8 @@ import { FeedEntity } from '../feed/entities/feed.entity';
 import { FeedCommentEntity } from './entities/feed-comment.entity';
 import { CreateFeedCommentDto } from './dto/create-feed-comment.dto';
 import { R2Service } from '../storage/r2.service';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationStatus } from '../notification/enums/notification.enum';
 
 @Injectable()
 export class FeedCommentService {
@@ -21,6 +23,7 @@ export class FeedCommentService {
     private readonly feedRepository: Repository<FeedEntity>,
 
     private readonly r2Service: R2Service,
+    private readonly notificationService: NotificationService,
   ) { }
 
   async createComment(
@@ -37,6 +40,7 @@ export class FeedCommentService {
     const isFeedAuthor = feedAuthorId === Number(userId);
 
     let rootCommentId: number | null = null;
+    let replyToUserId: number | null = null;
 
     if (dto.rootCommentId) {
       const target = await this.feedCommentRepository.findOne({
@@ -55,29 +59,33 @@ export class FeedCommentService {
         ? Number(target.rootCommentId)
         : Number(target.id);
 
-      if (!isFeedAuthor) {
-        const rootComment =
-          rootId === Number(target.id)
-            ? target
-            : await this.feedCommentRepository.findOne({
-                where: {
-                  id: rootId,
-                  feedId,
-                },
-              });
+      const rootComment =
+        rootId === Number(target.id)
+          ? target
+          : await this.feedCommentRepository.findOne({
+              where: {
+                id: rootId,
+                feedId,
+              },
+            });
 
-        if (!rootComment) {
-          throw new NotFoundException('원댓글을 찾을 수 없습니다.');
-        }
+      if (!rootComment) {
+        throw new NotFoundException('원댓글을 찾을 수 없습니다.');
+      }
 
-        if (Number(rootComment.userId) !== Number(userId)) {
-          throw new ForbiddenException(
-            '내 댓글 묶음 안에서만 답글을 작성할 수 있습니다.',
-          );
-        }
+      if (!isFeedAuthor && Number(rootComment.userId) !== Number(userId)) {
+        throw new ForbiddenException(
+          '내 댓글 묶음 안에서만 답글을 작성할 수 있습니다.',
+        );
       }
 
       rootCommentId = rootId;
+      replyToUserId = this.resolveReplyToUserId({
+        requestedUserId: dto.replyToUserId,
+        userId,
+        feedAuthorId,
+        rootCommentAuthorId: Number(rootComment.userId),
+      });
     }
 
     const comment = this.feedCommentRepository.create({
@@ -85,11 +93,54 @@ export class FeedCommentService {
       userId,
       content: dto.content,
       rootCommentId,
+      replyToUserId,
     });
 
     const savedComment = await this.feedCommentRepository.save(comment);
 
+    // 원댓글은 글 작성자에게, 답글은 답글 대상으로 선택한 사람에게만 알린다
+    const notifyUserId = rootCommentId ? replyToUserId : feedAuthorId;
+
+    if (notifyUserId && notifyUserId !== Number(userId)) {
+      void this.notificationService.notify({
+        userId: notifyUserId,
+        status: rootCommentId
+          ? NotificationStatus.REPLY
+          : NotificationStatus.COMMENT,
+        actorId: Number(userId),
+        feedId: Number(feedId),
+        commentId: Number(savedComment.id),
+        content: savedComment.content,
+      });
+    }
+
     return this.toCommentResponse(savedComment);
+  }
+
+  /*
+   * 댓글 묶음 안에서는 글 작성자와 원댓글 작성자 둘만 답글을 단다.
+   * 요청한 대상이 둘 중 나 아닌 사람이면 그대로 쓰고,
+   * 비어 있거나 올바르지 않으면 묶음의 상대방으로 정한다. (글 작성자가 자기 글에 단 묶음이면 없음)
+   */
+  private resolveReplyToUserId(params: {
+    requestedUserId?: number;
+    userId: number;
+    feedAuthorId: number;
+    rootCommentAuthorId: number;
+  }) {
+    const userId = Number(params.userId);
+    const participants = [params.feedAuthorId, params.rootCommentAuthorId];
+    const requested = params.requestedUserId
+      ? Number(params.requestedUserId)
+      : null;
+
+    if (requested && requested !== userId && participants.includes(requested)) {
+      return requested;
+    }
+
+    return (
+      participants.find((participantId) => participantId !== userId) ?? null
+    );
   }
 
   async getComments(feedId: number, userId: number) {

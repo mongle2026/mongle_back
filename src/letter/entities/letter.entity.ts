@@ -14,6 +14,8 @@ import { UserEntity } from '../../user/entities/user.entity';
 @Index('idx_letter_receiver_id', ['receiverId', 'id'])
 @Index('idx_letter_sender_id', ['senderId', 'id'])
 @Index('idx_letter_receiver_stamp', ['receiverId', 'stamp'])
+@Index('idx_letter_received_notified', ['receivedNotifiedAt', 'deliveryAt'])
+@Index('idx_letter_arriving_soon_notified', ['arrivingSoonNotifiedAt', 'deliveryAt'])
 @Entity('letter')
 export class LetterEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })
@@ -89,4 +91,21 @@ export class LetterEntity {
     nullable: true,
   })
   receiverDeletedAt!: Date | null;
+
+  // 알림 크론이 이미 처리한 편지인지 표시한다. 알림을 보냈거나 보내지 않기로 한 시각.
+  // 받은 편지 알림: 받는 사람에게 "편지 도착"
+  @Column({
+    name: 'received_notified_at',
+    type: 'datetime',
+    nullable: true,
+  })
+  receivedNotifiedAt!: Date | null;
+
+  // 도착 예정 알림: 보낸 사람에게 도착 24시간 전 "내일 도착 예정"
+  @Column({
+    name: 'arriving_soon_notified_at',
+    type: 'datetime',
+    nullable: true,
+  })
+  arrivingSoonNotifiedAt!: Date | null;
 }
