@@ -48,7 +48,7 @@ import { NotificationSettingEntity } from './notification/entities/notification-
         const useSsl = configService.get<string>('DB_SSL') === 'true';
 
         return {
-          type: 'mariadb',
+          type: 'mysql',
           host: configService.get<string>('DB_HOST'),
           port: Number(configService.get<string>('DB_PORT')),
           username: configService.get<string>('DB_USERNAME'),

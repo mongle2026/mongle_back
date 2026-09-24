@@ -20,7 +20,7 @@ import { PushTokenEntity } from '../notification/entities/push-token.entity';
 import { NotificationSettingEntity } from '../notification/entities/notification-setting.entity';
 
 export const AppDataSource = new DataSource({
-    type: 'mariadb',
+    type: 'mysql',
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT),
     username: process.env.DB_USERNAME,
@@ -53,6 +53,6 @@ export const AppDataSource = new DataSource({
 
     migrations: [__dirname + '/migrations/*.ts'],
 
-    // 초반에만, 얼추되면 false
-    synchronize: true,
+    // 마이그레이션 CLI 전용 - 스키마 변경은 마이그레이션으로만 반영
+    synchronize: false,
 });
