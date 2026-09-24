@@ -13,6 +13,9 @@ import { Visibility } from './enums/visibility.enum';
 import { FollowService } from '../follow/follow.service';
 import { R2Service } from '../storage/r2.service';
 
+// 보관함 장르별 기록에서 빼는 장르. 한국/영어 스토어프런트 표기를 모두 둔다
+const EXCLUDED_ARCHIVE_GENRES = ['음악', 'Music'];
+
 @Injectable()
 export class FeedService {
   // includeMeInAllFeed       GET /feed           내 글 포함
@@ -819,6 +822,196 @@ export class FeedService {
     });
   }
 
+  /*
+   * 보관함 - 내 기록 목록 (최근 기록, 장르 상세, 월 상세 공용)
+   * 내 글이므로 공개 범위와 상관없이 모두 보여줍니다.
+   * genre: 음악 장르 배열에 포함된 글만 / month: 한국 시간 기준 'YYYY-MM'
+   */
+  async getMyFeeds(params: {
+    userId: number;
+    cursor?: number;
+    limit?: number;
+    genre?: string;
+    month?: string;
+  }) {
+    const { userId, cursor, genre, month } = params;
+    const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
+
+    const queryBuilder = this.dataSource
+      .getRepository(FeedEntity)
+      .createQueryBuilder('feed')
+      .leftJoinAndSelect('feed.record', 'record')
+      .leftJoinAndSelect('record.user', 'user')
+      .leftJoinAndSelect('record.music', 'music')
+      .leftJoinAndSelect('record.files', 'files')
+
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(feedLike.id)')
+          .from(FeedLikeEntity, 'feedLike')
+          .where('feedLike.feedId = feed.id');
+      }, 'likeCount')
+
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(myLike.id)')
+          .from(FeedLikeEntity, 'myLike')
+          .where('myLike.feedId = feed.id')
+          .andWhere('myLike.userId = :userId');
+      }, 'isLikedCount')
+
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(myBookmark.id)')
+          .from(BookmarkEntity, 'myBookmark')
+          .where('myBookmark.feedId = feed.id')
+          .andWhere('myBookmark.userId = :userId');
+      }, 'isBookmarkedCount')
+
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(bookmark.id)')
+          .from(BookmarkEntity, 'bookmark')
+          .where('bookmark.feedId = feed.id');
+      }, 'bookmarkCount')
+
+      .where('record.userId = :userId')
+      .setParameter('userId', userId)
+      .orderBy('feed.id', 'DESC')
+      .take(safeLimit + 1);
+
+    if (cursor !== undefined) {
+      queryBuilder.andWhere('feed.id < :cursor', { cursor });
+    }
+
+    if (genre !== undefined) {
+      queryBuilder.andWhere('JSON_CONTAINS(music.musicGenre, JSON_QUOTE(:genre))', { genre });
+    }
+
+    if (month !== undefined) {
+      const { start, end } = this.getKstMonthRange(month);
+
+      queryBuilder
+        .andWhere('record.createdAt >= :monthStart', { monthStart: start })
+        .andWhere('record.createdAt < :monthEnd', { monthEnd: end });
+    }
+
+    const result = await queryBuilder.getRawAndEntities();
+    const rawByFeedId = new Map<number, any>();
+
+    result.raw.forEach(raw => {
+      const feedId = Number(raw.feed_id);
+
+      if (!rawByFeedId.has(feedId)) {
+        rawByFeedId.set(feedId, raw);
+      }
+    });
+
+    const feeds = result.entities.map(feed => {
+      const raw = rawByFeedId.get(Number(feed.id));
+
+      return this.formatFeedResponse(feed, {
+        likeCount: Number(raw?.likeCount ?? 0),
+        bookmarkCount: Number(raw?.bookmarkCount ?? 0),
+        isLiked: Number(raw?.isLikedCount ?? 0) > 0,
+        isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
+      });
+    });
+
+    const hasNext = feeds.length > safeLimit;
+    const items = hasNext ? feeds.slice(0, safeLimit) : feeds;
+    const lastItem = items[items.length - 1];
+
+    return {
+      items,
+      nextCursor: hasNext && lastItem ? lastItem.feedId : null,
+      hasNext,
+    };
+  }
+
+  /*
+   * 보관함 - 장르별 기록
+   * 한 곡에 장르가 여러 개면 그 글은 모든 장르에 들어갑니다.
+   * 커버는 프론트가 artworks 중 하나를 고르므로 후보를 모두 내려줍니다.
+   * 정렬: 글 수 많은 순 → 최근에 쓴 장르 순
+   * Apple Music 이 거의 모든 곡에 붙이는 '음악'(Music) 은 장르로 보지 않습니다.
+   */
+  async getMyFeedGenres(userId: number, limit = 8) {
+    const rows: Array<{
+      genre: string;
+      feedCount: number | string;
+      artworks: unknown;
+    }> = await this.dataSource.query(
+      `
+      SELECT
+        jt.genre AS genre,
+        COUNT(DISTINCT feed.id) AS feedCount,
+        MAX(feed.id) AS latestFeedId,
+        JSON_ARRAYAGG(music.music_artwork) AS artworks
+      FROM feed
+      JOIN record ON record.id = feed.record_id
+      JOIN music ON music.id = record.music_id
+      JOIN JSON_TABLE(
+        music.music_genre,
+        '$[*]' COLUMNS (genre VARCHAR(100) PATH '$')
+      ) AS jt
+      WHERE record.user_id = ?
+        AND feed.deleted_at IS NULL
+        AND jt.genre IS NOT NULL
+        AND jt.genre <> ''
+        AND jt.genre NOT IN (?)
+      GROUP BY jt.genre
+      ORDER BY feedCount DESC, latestFeedId DESC
+      LIMIT ?
+      `,
+      [userId, EXCLUDED_ARCHIVE_GENRES, limit],
+    );
+
+    return {
+      items: rows.map(row => ({
+        genre: row.genre,
+        feedCount: Number(row.feedCount),
+        artworks: this.toArtworkList(row.artworks),
+      })),
+    };
+  }
+
+  /*
+   * 보관함 - 모든 기록의 월 목록
+   * 글을 쓴 달만 내려갑니다. 월은 한국 시간 기준 'YYYY-MM', 최신 달부터.
+   */
+  async getMyFeedMonths(userId: number, limit?: number) {
+    const rows: Array<{
+      month: string;
+      feedCount: number | string;
+      artworks: unknown;
+    }> = await this.dataSource.query(
+      `
+      SELECT
+        DATE_FORMAT(CONVERT_TZ(record.created_at, '+00:00', '+09:00'), '%Y-%m') AS month,
+        COUNT(*) AS feedCount,
+        JSON_ARRAYAGG(music.music_artwork) AS artworks
+      FROM feed
+      JOIN record ON record.id = feed.record_id
+      JOIN music ON music.id = record.music_id
+      WHERE record.user_id = ?
+        AND feed.deleted_at IS NULL
+      GROUP BY month
+      ORDER BY month DESC
+      ${limit ? 'LIMIT ?' : ''}
+      `,
+      limit ? [userId, limit] : [userId],
+    );
+
+    return {
+      items: rows.map(row => ({
+        month: row.month,
+        feedCount: Number(row.feedCount),
+        artworks: this.toArtworkList(row.artworks),
+      })),
+    };
+  }
+
   async getMyBookmarkedFeeds(userId: number) { }
 
   // 사진 파일 확인 용도 코드
@@ -907,6 +1100,48 @@ export class FeedService {
       isLiked: meta?.isLiked ?? false,
       isBookmarked: meta?.isBookmarked ?? false,
     };
+  }
+
+  /*
+   * 한국 시간 'YYYY-MM' 한 달을 DB(UTC) datetime 범위로 바꿉니다.
+   * created_at 에 함수를 씌우지 않아야 인덱스를 탈 수 있습니다.
+   */
+  private getKstMonthRange(month: string) {
+    const [year, monthIndex] = month.split('-').map(Number);
+    const kstOffsetMs = 9 * 60 * 60 * 1000;
+    const toDbDatetime = (date: Date) =>
+      date.toISOString().slice(0, 19).replace('T', ' ');
+
+    return {
+      start: toDbDatetime(new Date(Date.UTC(year, monthIndex - 1, 1) - kstOffsetMs)),
+      end: toDbDatetime(new Date(Date.UTC(year, monthIndex, 1) - kstOffsetMs)),
+    };
+  }
+
+  // JSON_ARRAYAGG 결과(드라이버에 따라 문자열/배열) → 중복·빈 값 없는 커버 URL 목록
+  private toArtworkList(value: unknown): string[] {
+    let list: unknown = value;
+
+    if (typeof value === 'string') {
+      try {
+        list = JSON.parse(value);
+      } catch {
+        return [];
+      }
+    }
+
+    if (!Array.isArray(list)) {
+      return [];
+    }
+
+    return [
+      ...new Set(
+        list.filter(
+          (artwork): artwork is string =>
+            typeof artwork === 'string' && artwork.trim() !== '',
+        ),
+      ),
+    ];
   }
 
   private isEdited(createdAt?: Date, updatedAt?: Date) {

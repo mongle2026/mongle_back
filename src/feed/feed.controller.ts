@@ -14,6 +14,10 @@ import { FeedService } from './feed.service';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { UpdateFeedDto } from './dto/update-feed.dto';
 import { GetFeedQueryDto } from './dto/get-feed-query.dto';
+import {
+  GetMyFeedGroupQueryDto,
+  GetMyFeedQueryDto,
+} from './dto/get-my-feed-query.dto';
 import { FeedCommentService } from '../feed-comment/feed-comment.service';
 import { CreateFeedCommentDto } from '../feed-comment/dto/create-feed-comment.dto';
 
@@ -48,6 +52,28 @@ export class FeedController {
       cursor: query.cursor,
       limit: query.limit,
     });
+  }
+
+  // 보관함 - 내 기록. ':feedId' 보다 위에 있어야 'me' 가 feedId 로 잡히지 않는다
+  @Get('me')
+  async getMyFeeds(@Query() query: GetMyFeedQueryDto) {
+    return this.feedService.getMyFeeds({
+      userId: query.userId,
+      cursor: query.cursor,
+      limit: query.limit,
+      genre: query.genre,
+      month: query.month,
+    });
+  }
+
+  @Get('me/genres')
+  async getMyFeedGenres(@Query() query: GetMyFeedGroupQueryDto) {
+    return this.feedService.getMyFeedGenres(query.userId, query.limit);
+  }
+
+  @Get('me/months')
+  async getMyFeedMonths(@Query() query: GetMyFeedGroupQueryDto) {
+    return this.feedService.getMyFeedMonths(query.userId, query.limit);
   }
 
   @Get('bookmark/me')
