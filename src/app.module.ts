@@ -56,6 +56,8 @@ import { NotificationSettingEntity } from './notification/entities/notification-
           database: configService.get<string>('DB_DATABASE'),
           // Aiven 플랜의 max connection 한도를 넘지 않도록 풀 크기 제한
           poolSize: Number(configService.get<string>('DB_POOL_SIZE') ?? 5),
+          // DB 는 UTC 로 저장한다. 서버가 도는 컴퓨터의 시간대와 상관없이 UTC 로 읽고 쓰도록 고정
+          timezone: 'Z',
           // Aiven은 SSL 연결을 강제하므로 DB_SSL(_CA) 환경변수로 활성화
           ssl: dbSslCa
             ? { ca: dbSslCa, rejectUnauthorized: true }

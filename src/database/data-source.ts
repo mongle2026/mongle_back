@@ -26,6 +26,8 @@ export const AppDataSource = new DataSource({
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
+    // DB 는 UTC 로 저장한다. 실행 환경의 시간대와 상관없이 UTC 로 읽고 쓰도록 고정
+    timezone: 'Z',
     ssl: process.env.DB_SSL_CA
         ? { ca: process.env.DB_SSL_CA, rejectUnauthorized: true }
         : process.env.DB_SSL === 'true'
