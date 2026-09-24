@@ -78,6 +78,9 @@ const MUSIC_REFRESH_STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 const MUSIC_REFRESH_BATCH_SIZE = 200;
 // Apple Music Catalog lookup(ids=)도 search와 동일하게 한 요청당 최대 25건까지가 안전하다.
 const APPLE_MUSIC_LOOKUP_CHUNK_SIZE = 25;
+// 곡 정보(제목·장르 등)를 받을 언어. 지정하지 않으면 스토어프런트 기본 언어로 와서
+// 같은 장르가 '록' / 'Rock' 처럼 다른 이름으로 저장될 수 있다.
+const APPLE_MUSIC_LANGUAGE = 'ko';
 
 @Injectable()
 export class MusicService {
@@ -198,6 +201,7 @@ export class MusicService {
               types: 'songs',
               limit: APPLE_MUSIC_API_PAGE_LIMIT,
               offset,
+              l: APPLE_MUSIC_LANGUAGE,
             },
             headers: this.getAuthHeaders(),
           },
@@ -340,13 +344,15 @@ export class MusicService {
           term: 'kpop',
           types: 'songs',
           limit: 10,
+          l: APPLE_MUSIC_LANGUAGE,
         },
         headers: this.getAuthHeaders(),
       },
     );
 
     const songs = response.data.results?.songs?.data ?? [];
-    const chartDate = new Date().toISOString().slice(0, 10);
+    // 한국 시간 기준 날짜 (크론이 한국 새벽 4시에 돌아서 UTC 로 자르면 전날이 된다)
+    const chartDate = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
     await this.dataSource.transaction(async (manager) => {
       const popularMusicRepository = manager.getRepository(PopularMusicEntity);
@@ -415,7 +421,7 @@ export class MusicService {
       const response = await axios.get<AppleMusicLookupResponse>(
         `https://api.music.apple.com/v1/catalog/${storefront}/songs`,
         {
-          params: { ids },
+          params: { ids, l: APPLE_MUSIC_LANGUAGE },
           headers: this.getAuthHeaders(),
         },
       );
