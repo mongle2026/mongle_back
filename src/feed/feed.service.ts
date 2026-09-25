@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Brackets, DataSource, In } from 'typeorm';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
@@ -9,12 +10,24 @@ import { FeedLikeEntity } from '../like/entities/feed-like.entity';
 import { BookmarkEntity } from '../bookmark/entities/bookmark.entity';
 import { RecordEntity } from '../record/entities/record.entity';
 import { UpdateFeedDto } from './dto/update-feed.dto';
+import { MyFeedSort } from './dto/get-my-feed-query.dto';
 import { Visibility } from './enums/visibility.enum';
 import { FollowService } from '../follow/follow.service';
 import { R2Service } from '../storage/r2.service';
 
 // 보관함 장르별 기록에서 빼는 장르. 한국/영어 스토어프런트 표기를 모두 둔다
 const EXCLUDED_ARCHIVE_GENRES = ['음악', 'Music'];
+
+// 보관함 음악순: 제목 첫 글자로 묶어 한글 → 영문 → 숫자 → 기호·기타 언어 순으로 둔다.
+// 묶음 안에서는 DB collation 순서 (가~하, 대소문자 구분 없이 A~Z)
+const MUSIC_TITLE_GROUP_SQL = `
+  CASE
+    WHEN music.music_title REGEXP '^[가-힣ㄱ-ㅎㅏ-ㅣ]' THEN 0
+    WHEN music.music_title REGEXP '^[A-Za-z]' THEN 1
+    WHEN music.music_title REGEXP '^[0-9]' THEN 2
+    ELSE 3
+  END
+`;
 
 @Injectable()
 export class FeedService {
@@ -826,6 +839,8 @@ export class FeedService {
    * 보관함 - 내 기록 목록 (최근 기록, 장르 상세, 월 상세 공용)
    * 내 글이므로 공개 범위와 상관없이 모두 보여줍니다.
    * genre: 음악 장르 배열에 포함된 글만 / month: 한국 시간 기준 'YYYY-MM'
+   * sort: latest(기본) / oldest 는 feedId 커서, music 은 제목이 겹칠 수 있어 offset 커서를 씁니다.
+   * 프론트는 nextCursor 를 그대로 다시 보내면 됩니다.
    */
   async getMyFeeds(params: {
     userId: number;
@@ -833,10 +848,60 @@ export class FeedService {
     limit?: number;
     genre?: string;
     month?: string;
+    sort?: MyFeedSort;
   }) {
-    const { userId, cursor, genre, month } = params;
+    const { userId, cursor, genre, month, sort = 'latest' } = params;
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
+    const offset = sort === 'music' ? cursor ?? 0 : 0;
 
+    // 1) 정렬·페이지에 해당하는 feedId 만 먼저 고른다
+    const pageQuery = this.dataSource
+      .getRepository(FeedEntity)
+      .createQueryBuilder('feed')
+      .innerJoin('feed.record', 'record')
+      .leftJoin('record.music', 'music')
+      .select('feed.id', 'feedId')
+      .where('record.userId = :userId', { userId })
+      .limit(safeLimit + 1);
+
+    if (genre !== undefined) {
+      pageQuery.andWhere('JSON_CONTAINS(music.musicGenre, JSON_QUOTE(:genre))', { genre });
+    }
+
+    if (month !== undefined) {
+      const { start, end } = this.getKstMonthRange(month);
+
+      pageQuery
+        .andWhere('record.createdAt >= :monthStart', { monthStart: start })
+        .andWhere('record.createdAt < :monthEnd', { monthEnd: end });
+    }
+
+    if (sort === 'music') {
+      pageQuery
+        .addSelect(MUSIC_TITLE_GROUP_SQL, 'titleGroup')
+        .orderBy('titleGroup', 'ASC')
+        .addOrderBy('music.musicTitle', 'ASC')
+        .addOrderBy('feed.id', 'DESC')
+        .offset(offset);
+    } else {
+      const isOldest = sort === 'oldest';
+
+      pageQuery.orderBy('feed.id', isOldest ? 'ASC' : 'DESC');
+
+      if (cursor !== undefined) {
+        pageQuery.andWhere(isOldest ? 'feed.id > :cursor' : 'feed.id < :cursor', { cursor });
+      }
+    }
+
+    const pageRows: Array<{ feedId: number | string }> = await pageQuery.getRawMany();
+    const hasNext = pageRows.length > safeLimit;
+    const pageFeedIds = pageRows.slice(0, safeLimit).map(row => Number(row.feedId));
+
+    if (pageFeedIds.length === 0) {
+      return { items: [], nextCursor: null, hasNext: false };
+    }
+
+    // 2) 고른 글의 상세를 불러와 1) 의 순서대로 맞춘다
     const queryBuilder = this.dataSource
       .getRepository(FeedEntity)
       .createQueryBuilder('feed')
@@ -875,26 +940,8 @@ export class FeedService {
           .where('bookmark.feedId = feed.id');
       }, 'bookmarkCount')
 
-      .where('record.userId = :userId')
-      .setParameter('userId', userId)
-      .orderBy('feed.id', 'DESC')
-      .take(safeLimit + 1);
-
-    if (cursor !== undefined) {
-      queryBuilder.andWhere('feed.id < :cursor', { cursor });
-    }
-
-    if (genre !== undefined) {
-      queryBuilder.andWhere('JSON_CONTAINS(music.musicGenre, JSON_QUOTE(:genre))', { genre });
-    }
-
-    if (month !== undefined) {
-      const { start, end } = this.getKstMonthRange(month);
-
-      queryBuilder
-        .andWhere('record.createdAt >= :monthStart', { monthStart: start })
-        .andWhere('record.createdAt < :monthEnd', { monthEnd: end });
-    }
+      .where('feed.id IN (:...pageFeedIds)', { pageFeedIds })
+      .setParameter('userId', userId);
 
     const result = await queryBuilder.getRawAndEntities();
     const rawByFeedId = new Map<number, any>();
@@ -907,24 +954,35 @@ export class FeedService {
       }
     });
 
-    const feeds = result.entities.map(feed => {
-      const raw = rawByFeedId.get(Number(feed.id));
+    const feedById = new Map(result.entities.map(feed => [Number(feed.id), feed]));
 
-      return this.formatFeedResponse(feed, {
-        likeCount: Number(raw?.likeCount ?? 0),
-        bookmarkCount: Number(raw?.bookmarkCount ?? 0),
-        isLiked: Number(raw?.isLikedCount ?? 0) > 0,
-        isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
-      });
+    const items = pageFeedIds.flatMap(feedId => {
+      const feed = feedById.get(feedId);
+      if (!feed) return [];
+
+      const raw = rawByFeedId.get(feedId);
+
+      return [
+        this.formatFeedResponse(feed, {
+          likeCount: Number(raw?.likeCount ?? 0),
+          bookmarkCount: Number(raw?.bookmarkCount ?? 0),
+          isLiked: Number(raw?.isLikedCount ?? 0) > 0,
+          isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
+        }),
+      ];
     });
 
-    const hasNext = feeds.length > safeLimit;
-    const items = hasNext ? feeds.slice(0, safeLimit) : feeds;
-    const lastItem = items[items.length - 1];
+    let nextCursor: number | null = null;
+
+    if (hasNext) {
+      nextCursor = sort === 'music'
+        ? offset + safeLimit
+        : pageFeedIds[pageFeedIds.length - 1];
+    }
 
     return {
       items,
-      nextCursor: hasNext && lastItem ? lastItem.feedId : null,
+      nextCursor,
       hasNext,
     };
   }
@@ -932,11 +990,13 @@ export class FeedService {
   /*
    * 보관함 - 장르별 기록
    * 한 곡에 장르가 여러 개면 그 글은 모든 장르에 들어갑니다.
-   * 커버는 프론트가 artworks 중 하나를 고르므로 후보를 모두 내려줍니다.
+   * 커버는 그 장르 곡들 커버 중 하나만 내려줍니다. 프론트가 앱 실행마다 만든 coverSeed 가 같으면
+   * 보관함 홈·장르별 기록 어디서 불러도 같은 커버가 나옵니다. (월 목록도 같은 방식)
    * 정렬: 글 수 많은 순 → 최근에 쓴 장르 순
    * Apple Music 이 거의 모든 곡에 붙이는 '음악'(Music) 은 장르로 보지 않습니다.
+   * limit 이 없으면 모든 장르를 내려줍니다.
    */
-  async getMyFeedGenres(userId: number, limit = 8) {
+  async getMyFeedGenres(userId: number, limit?: number, coverSeed = '') {
     const rows: Array<{
       genre: string;
       feedCount: number | string;
@@ -962,16 +1022,18 @@ export class FeedService {
         AND jt.genre NOT IN (?)
       GROUP BY jt.genre
       ORDER BY feedCount DESC, latestFeedId DESC
-      LIMIT ?
+      ${limit ? 'LIMIT ?' : ''}
       `,
-      [userId, EXCLUDED_ARCHIVE_GENRES, limit],
+      limit
+        ? [userId, EXCLUDED_ARCHIVE_GENRES, limit]
+        : [userId, EXCLUDED_ARCHIVE_GENRES],
     );
 
     return {
       items: rows.map(row => ({
         genre: row.genre,
         feedCount: Number(row.feedCount),
-        artworks: this.toArtworkList(row.artworks),
+        artwork: this.pickSeededArtwork(this.toArtworkList(row.artworks), coverSeed),
       })),
     };
   }
@@ -979,8 +1041,9 @@ export class FeedService {
   /*
    * 보관함 - 모든 기록의 월 목록
    * 글을 쓴 달만 내려갑니다. 월은 한국 시간 기준 'YYYY-MM', 최신 달부터.
+   * 커버는 장르별 기록과 같이 coverSeed 로 그 달 곡들 커버 중 하나만 내려줍니다.
    */
-  async getMyFeedMonths(userId: number, limit?: number) {
+  async getMyFeedMonths(userId: number, limit?: number, coverSeed = '') {
     const rows: Array<{
       month: string;
       feedCount: number | string;
@@ -1007,7 +1070,7 @@ export class FeedService {
       items: rows.map(row => ({
         month: row.month,
         feedCount: Number(row.feedCount),
-        artworks: this.toArtworkList(row.artworks),
+        artwork: this.pickSeededArtwork(this.toArtworkList(row.artworks), coverSeed),
       })),
     };
   }
@@ -1116,6 +1179,24 @@ export class FeedService {
       start: toDbDatetime(new Date(Date.UTC(year, monthIndex - 1, 1) - kstOffsetMs)),
       end: toDbDatetime(new Date(Date.UTC(year, monthIndex, 1) - kstOffsetMs)),
     };
+  }
+
+  // seed + 커버마다 해시를 내서 가장 작은 커버를 고른다.
+  // seed 가 같으면 항상 같은 커버이고, 글이 추가·삭제돼도 고른 커버가 빠지거나 새 커버가 더 작을 때만 바뀐다.
+  private pickSeededArtwork(artworks: string[], seed: string): string | null {
+    let pickedArtwork: string | null = null;
+    let pickedHash = '';
+
+    for (const artwork of artworks) {
+      const hash = createHash('md5').update(`${seed}:${artwork}`).digest('hex');
+
+      if (pickedArtwork === null || hash < pickedHash) {
+        pickedArtwork = artwork;
+        pickedHash = hash;
+      }
+    }
+
+    return pickedArtwork;
   }
 
   // JSON_ARRAYAGG 결과(드라이버에 따라 문자열/배열) → 중복·빈 값 없는 커버 URL 목록

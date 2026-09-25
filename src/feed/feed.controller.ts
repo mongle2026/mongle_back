@@ -63,17 +63,18 @@ export class FeedController {
       limit: query.limit,
       genre: query.genre,
       month: query.month,
+      sort: query.sort,
     });
   }
 
   @Get('me/genres')
   async getMyFeedGenres(@Query() query: GetMyFeedGroupQueryDto) {
-    return this.feedService.getMyFeedGenres(query.userId, query.limit);
+    return this.feedService.getMyFeedGenres(query.userId, query.limit, query.coverSeed);
   }
 
   @Get('me/months')
   async getMyFeedMonths(@Query() query: GetMyFeedGroupQueryDto) {
-    return this.feedService.getMyFeedMonths(query.userId, query.limit);
+    return this.feedService.getMyFeedMonths(query.userId, query.limit, query.coverSeed);
   }
 
   @Get('bookmark/me')
