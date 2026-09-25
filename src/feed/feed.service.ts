@@ -1029,11 +1029,16 @@ export class FeedService {
         : [userId, EXCLUDED_ARCHIVE_GENRES],
     );
 
+    const covers = this.pickSeededCovers(
+      rows.map(row => ({ key: `genre:${row.genre}`, artworks: this.toArtworkList(row.artworks) })),
+      coverSeed,
+    );
+
     return {
-      items: rows.map(row => ({
+      items: rows.map((row, index) => ({
         genre: row.genre,
         feedCount: Number(row.feedCount),
-        artwork: this.pickSeededArtwork(this.toArtworkList(row.artworks), coverSeed),
+        artwork: covers[index],
       })),
     };
   }
@@ -1066,11 +1071,16 @@ export class FeedService {
       limit ? [userId, limit] : [userId],
     );
 
+    const covers = this.pickSeededCovers(
+      rows.map(row => ({ key: `month:${row.month}`, artworks: this.toArtworkList(row.artworks) })),
+      coverSeed,
+    );
+
     return {
-      items: rows.map(row => ({
+      items: rows.map((row, index) => ({
         month: row.month,
         feedCount: Number(row.feedCount),
-        artwork: this.pickSeededArtwork(this.toArtworkList(row.artworks), coverSeed),
+        artwork: covers[index],
       })),
     };
   }
@@ -1181,22 +1191,33 @@ export class FeedService {
     };
   }
 
-  // seed + 커버마다 해시를 내서 가장 작은 커버를 고른다.
-  // seed 가 같으면 항상 같은 커버이고, 글이 추가·삭제돼도 고른 커버가 빠지거나 새 커버가 더 작을 때만 바뀐다.
-  private pickSeededArtwork(artworks: string[], seed: string): string | null {
-    let pickedArtwork: string | null = null;
-    let pickedHash = '';
+  /*
+   * 장르·월 카드마다 커버를 하나씩 고른다. groups 는 화면에 보이는 순서대로 넘긴다.
+   * - seed + 카드 key + 커버로 해시를 내서 작은 순으로 고른다 → seed 가 같으면 항상 같은 커버
+   * - 앞 카드가 이미 쓴 커버는 피한다 (K-Pop·팝처럼 후보가 같은 장르가 같은 커버가 되지 않도록).
+   *   후보를 다 앞 카드가 썼으면 그중 해시가 가장 작은 커버를 쓴다.
+   * - 앞에서부터 고르므로 limit 이 달라도 앞쪽 카드 커버는 같다 (보관함 홈 8개 = 장르별 기록 앞 8개)
+   */
+  private pickSeededCovers(
+    groups: Array<{ key: string; artworks: string[] }>,
+    seed: string,
+  ): Array<string | null> {
+    const usedArtworks = new Set<string>();
 
-    for (const artwork of artworks) {
-      const hash = createHash('md5').update(`${seed}:${artwork}`).digest('hex');
+    return groups.map(({ key, artworks }) => {
+      const ranked = artworks
+        .map(artwork => ({
+          artwork,
+          hash: createHash('md5').update(`${seed}:${key}:${artwork}`).digest('hex'),
+        }))
+        .sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0));
 
-      if (pickedArtwork === null || hash < pickedHash) {
-        pickedArtwork = artwork;
-        pickedHash = hash;
-      }
-    }
+      const picked = ranked.find(({ artwork }) => !usedArtworks.has(artwork)) ?? ranked[0];
+      if (!picked) return null;
 
-    return pickedArtwork;
+      usedArtworks.add(picked.artwork);
+      return picked.artwork;
+    });
   }
 
   // JSON_ARRAYAGG 결과(드라이버에 따라 문자열/배열) → 중복·빈 값 없는 커버 URL 목록
