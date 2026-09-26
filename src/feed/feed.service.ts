@@ -1047,17 +1047,21 @@ export class FeedService {
    * 보관함 - 모든 기록의 월 목록
    * 글을 쓴 달만 내려갑니다. 월은 한국 시간 기준 'YYYY-MM', 최신 달부터.
    * 커버는 장르별 기록과 같이 coverSeed 로 그 달 곡들 커버 중 하나만 내려줍니다.
+   * latestFeedId: 그 달의 가장 최신 글. 프론트는 cursor = latestFeedId + 1 로 GET /feed/me 를 불러
+   * 중간 글을 건너뛰고 그 달부터 목록을 시작합니다.
    */
   async getMyFeedMonths(userId: number, limit?: number, coverSeed = '') {
     const rows: Array<{
       month: string;
       feedCount: number | string;
+      latestFeedId: number | string;
       artworks: unknown;
     }> = await this.dataSource.query(
       `
       SELECT
         DATE_FORMAT(CONVERT_TZ(record.created_at, '+00:00', '+09:00'), '%Y-%m') AS month,
         COUNT(*) AS feedCount,
+        MAX(feed.id) AS latestFeedId,
         JSON_ARRAYAGG(music.music_artwork) AS artworks
       FROM feed
       JOIN record ON record.id = feed.record_id
@@ -1080,6 +1084,7 @@ export class FeedService {
       items: rows.map((row, index) => ({
         month: row.month,
         feedCount: Number(row.feedCount),
+        latestFeedId: Number(row.latestFeedId),
         artwork: covers[index],
       })),
     };
