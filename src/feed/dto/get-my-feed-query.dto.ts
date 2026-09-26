@@ -10,8 +10,8 @@ import {
   Min,
 } from 'class-validator';
 
-// latest: 최신순(기본) / oldest: 오래된순 / music: 노래 제목순 (한글 → 영문 → 숫자·기호)
-export const MY_FEED_SORTS = ['latest', 'oldest', 'music'] as const;
+// latest: 최신순(기본) / oldest: 오래된순 / title: 노래 제목순 (한글 → 영문 → 숫자·기호)
+export const MY_FEED_SORTS = ['latest', 'oldest', 'title'] as const;
 export type MyFeedSort = (typeof MY_FEED_SORTS)[number];
 
 // GET /feed/me - 보관함 내 기록 목록 (genre / month 로 좁힐 수 있음)

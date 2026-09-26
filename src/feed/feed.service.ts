@@ -18,9 +18,9 @@ import { R2Service } from '../storage/r2.service';
 // 보관함 장르별 기록에서 빼는 장르. 한국/영어 스토어프런트 표기를 모두 둔다
 const EXCLUDED_ARCHIVE_GENRES = ['음악', 'Music'];
 
-// 보관함 음악순: 제목 첫 글자로 묶어 한글 → 영문 → 숫자 → 기호·기타 언어 순으로 둔다.
+// 보관함 제목순: 노래 제목 첫 글자로 묶어 한글 → 영문 → 숫자 → 기호·기타 언어 순으로 둔다.
 // 묶음 안에서는 DB collation 순서 (가~하, 대소문자 구분 없이 A~Z)
-const MUSIC_TITLE_GROUP_SQL = `
+const TITLE_GROUP_SQL = `
   CASE
     WHEN music.music_title REGEXP '^[가-힣ㄱ-ㅎㅏ-ㅣ]' THEN 0
     WHEN music.music_title REGEXP '^[A-Za-z]' THEN 1
@@ -839,7 +839,7 @@ export class FeedService {
    * 보관함 - 내 기록 목록 (최근 기록, 장르 상세, 월 상세 공용)
    * 내 글이므로 공개 범위와 상관없이 모두 보여줍니다.
    * genre: 음악 장르 배열에 포함된 글만 / month: 한국 시간 기준 'YYYY-MM'
-   * sort: latest(기본) / oldest 는 feedId 커서, music 은 제목이 겹칠 수 있어 offset 커서를 씁니다.
+   * sort: latest(기본) / oldest 는 feedId 커서, title 은 제목이 겹칠 수 있어 offset 커서를 씁니다.
    * 프론트는 nextCursor 를 그대로 다시 보내면 됩니다.
    */
   async getMyFeeds(params: {
@@ -852,7 +852,7 @@ export class FeedService {
   }) {
     const { userId, cursor, genre, month, sort = 'latest' } = params;
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
-    const offset = sort === 'music' ? cursor ?? 0 : 0;
+    const offset = sort === 'title' ? cursor ?? 0 : 0;
 
     // 1) 정렬·페이지에 해당하는 feedId 만 먼저 고른다
     const pageQuery = this.dataSource
@@ -876,9 +876,9 @@ export class FeedService {
         .andWhere('record.createdAt < :monthEnd', { monthEnd: end });
     }
 
-    if (sort === 'music') {
+    if (sort === 'title') {
       pageQuery
-        .addSelect(MUSIC_TITLE_GROUP_SQL, 'titleGroup')
+        .addSelect(TITLE_GROUP_SQL, 'titleGroup')
         .orderBy('titleGroup', 'ASC')
         .addOrderBy('music.musicTitle', 'ASC')
         .addOrderBy('feed.id', 'DESC')
@@ -975,7 +975,7 @@ export class FeedService {
     let nextCursor: number | null = null;
 
     if (hasNext) {
-      nextCursor = sort === 'music'
+      nextCursor = sort === 'title'
         ? offset + safeLimit
         : pageFeedIds[pageFeedIds.length - 1];
     }
