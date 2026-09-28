@@ -18,6 +18,7 @@ import {
   GetMyFeedGroupQueryDto,
   GetMyFeedQueryDto,
 } from './dto/get-my-feed-query.dto';
+import { GetBookmarkFeedQueryDto } from './dto/get-bookmark-feed-query.dto';
 import { FeedCommentService } from '../feed-comment/feed-comment.service';
 import { CreateFeedCommentDto } from '../feed-comment/dto/create-feed-comment.dto';
 
@@ -77,9 +78,16 @@ export class FeedController {
     return this.feedService.getMyFeedMonths(query.userId, query.limit, query.coverSeed);
   }
 
+  // 보관함 - 북마크
   @Get('bookmark/me')
-  async getMyBookmarkedFeeds(@Query('userId') userId: string) {
-    return this.feedService.getMyBookmarkedFeeds(Number(userId));
+  async getMyBookmarkedFeeds(@Query() query: GetBookmarkFeedQueryDto) {
+    return this.feedService.getMyBookmarkedFeeds({
+      userId: query.userId,
+      cursor: query.cursor,
+      limit: query.limit,
+      filter: query.filter,
+      sort: query.sort,
+    });
   }
 
   @Get('share/:feedId')

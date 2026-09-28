@@ -11,6 +11,7 @@ import { BookmarkEntity } from '../bookmark/entities/bookmark.entity';
 import { RecordEntity } from '../record/entities/record.entity';
 import { UpdateFeedDto } from './dto/update-feed.dto';
 import { MyFeedSort } from './dto/get-my-feed-query.dto';
+import { BookmarkFeedFilter, BookmarkFeedSort } from './dto/get-bookmark-feed-query.dto';
 import { Visibility } from './enums/visibility.enum';
 import { FollowService } from '../follow/follow.service';
 import { R2Service } from '../storage/r2.service';
@@ -1106,7 +1107,173 @@ export class FeedService {
     };
   }
 
-  async getMyBookmarkedFeeds(userId: number) { }
+  /*
+   * 보관함 - 북마크 목록
+   * filter: all(기본) / following(내가 팔로우한 사람 글만, 내 글 제외)
+   * sort: latest(기본, 최근에 북마크한 순) / oldest. 커서는 bookmark.id 입니다.
+   * 북마크한 뒤 공개 범위가 바뀌거나 언팔로우해 지금 볼 수 없는 글, 삭제된 글은 빠집니다.
+   */
+  async getMyBookmarkedFeeds(params: {
+    userId: number;
+    cursor?: number;
+    limit?: number;
+    filter?: BookmarkFeedFilter;
+    sort?: BookmarkFeedSort;
+  }) {
+    const { userId, cursor, filter = 'all', sort = 'latest' } = params;
+    const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
+    const followingIds = await this.followService.getFollowingIds(userId);
+
+    if (filter === 'following' && followingIds.length === 0) {
+      return { items: [], nextCursor: null, hasNext: false };
+    }
+
+    // 1) 정렬·페이지에 해당하는 북마크만 먼저 고른다
+    const pageQuery = this.dataSource
+      .getRepository(BookmarkEntity)
+      .createQueryBuilder('bookmark')
+      .innerJoin('bookmark.feed', 'feed')
+      .innerJoin('feed.record', 'record')
+      .select('bookmark.id', 'bookmarkId')
+      .addSelect('feed.id', 'feedId')
+      .where('bookmark.userId = :userId', { userId })
+      .andWhere('feed.deletedAt IS NULL')
+      .limit(safeLimit + 1);
+
+    if (filter === 'following') {
+      pageQuery
+        .andWhere('record.userId IN (:...followingIds)', { followingIds })
+        .andWhere('feed.visibility IN (:...followVisibilities)', {
+          followVisibilities: [Visibility.PUBLIC, Visibility.FOLLOWER],
+        });
+    } else {
+      // GET /feed 와 같은 공개 범위: 전체 공개 / 내 글 / 팔로우한 사람의 팔로워 공개
+      pageQuery.andWhere(
+        new Brackets(qb => {
+          qb.where('feed.visibility = :publicVisibility', {
+            publicVisibility: Visibility.PUBLIC,
+          });
+
+          qb.orWhere(
+            new Brackets(selfQb => {
+              selfQb
+                .where('record.userId = :userId')
+                .andWhere('feed.visibility IN (:...selfVisibilities)', {
+                  selfVisibilities: [Visibility.PUBLIC, Visibility.FOLLOWER],
+                });
+            }),
+          );
+
+          if (followingIds.length > 0) {
+            qb.orWhere(
+              new Brackets(followQb => {
+                followQb
+                  .where('feed.visibility = :followVisibility', {
+                    followVisibility: Visibility.FOLLOWER,
+                  })
+                  .andWhere('record.userId IN (:...followingIds)', { followingIds });
+              }),
+            );
+          }
+        }),
+      );
+    }
+
+    const isOldest = sort === 'oldest';
+
+    pageQuery.orderBy('bookmark.id', isOldest ? 'ASC' : 'DESC');
+
+    if (cursor !== undefined) {
+      pageQuery.andWhere(isOldest ? 'bookmark.id > :cursor' : 'bookmark.id < :cursor', { cursor });
+    }
+
+    const pageRows: Array<{ bookmarkId: number | string; feedId: number | string }> =
+      await pageQuery.getRawMany();
+    const hasNext = pageRows.length > safeLimit;
+    const pageItems = pageRows.slice(0, safeLimit).map(row => ({
+      bookmarkId: Number(row.bookmarkId),
+      feedId: Number(row.feedId),
+    }));
+
+    if (pageItems.length === 0) {
+      return { items: [], nextCursor: null, hasNext: false };
+    }
+
+    const pageFeedIds = pageItems.map(item => item.feedId);
+
+    // 2) 고른 글의 상세를 불러와 1) 의 순서대로 맞춘다
+    const result = await this.dataSource
+      .getRepository(FeedEntity)
+      .createQueryBuilder('feed')
+      .leftJoinAndSelect('feed.record', 'record')
+      .leftJoinAndSelect('record.user', 'user')
+      .leftJoinAndSelect('record.music', 'music')
+      .leftJoinAndSelect('record.files', 'files')
+
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(feedLike.id)')
+          .from(FeedLikeEntity, 'feedLike')
+          .where('feedLike.feedId = feed.id');
+      }, 'likeCount')
+
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(myLike.id)')
+          .from(FeedLikeEntity, 'myLike')
+          .where('myLike.feedId = feed.id')
+          .andWhere('myLike.userId = :userId');
+      }, 'isLikedCount')
+
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(bookmark.id)')
+          .from(BookmarkEntity, 'bookmark')
+          .where('bookmark.feedId = feed.id');
+      }, 'bookmarkCount')
+
+      .where('feed.id IN (:...pageFeedIds)', { pageFeedIds })
+      .setParameter('userId', userId)
+      .getRawAndEntities();
+
+    const rawByFeedId = new Map<number, any>();
+
+    result.raw.forEach(raw => {
+      const feedId = Number(raw.feed_id);
+
+      if (!rawByFeedId.has(feedId)) {
+        rawByFeedId.set(feedId, raw);
+      }
+    });
+
+    const feedById = new Map(result.entities.map(feed => [Number(feed.id), feed]));
+
+    const items = pageItems.flatMap(({ bookmarkId, feedId }) => {
+      const feed = feedById.get(feedId);
+      if (!feed) return [];
+
+      const raw = rawByFeedId.get(feedId);
+
+      return [
+        {
+          ...this.formatFeedResponse(feed, {
+            likeCount: Number(raw?.likeCount ?? 0),
+            bookmarkCount: Number(raw?.bookmarkCount ?? 0),
+            isLiked: Number(raw?.isLikedCount ?? 0) > 0,
+            isBookmarked: true,
+            isFollowing: followingIds.includes(Number(feed.record.user.id)),
+          }),
+          bookmarkId,
+        },
+      ];
+    });
+
+    return {
+      items,
+      nextCursor: hasNext ? pageItems[pageItems.length - 1].bookmarkId : null,
+      hasNext,
+    };
+  }
 
   // 사진 파일 확인 용도 코드
   // 음성도 이걸로 확인가능할듯
