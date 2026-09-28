@@ -71,10 +71,26 @@ export class FeedService {
 
       const savedFeed = await manager.save(FeedEntity, feed);
 
+      /*
+       * 목록과 같은 형태로 새 글을 돌려주면
+       * 앱이 다시 조회하지 않고 피드 맨 앞에 바로 넣을 수 있습니다.
+       * 새 글이라 좋아요·북마크는 모두 0이고 내 글이라 팔로우 여부도 없습니다.
+       */
+      const createdFeed = await manager
+        .getRepository(FeedEntity)
+        .createQueryBuilder('feed')
+        .leftJoinAndSelect('feed.record', 'record')
+        .leftJoinAndSelect('record.user', 'user')
+        .leftJoinAndSelect('record.music', 'music')
+        .leftJoinAndSelect('record.files', 'files')
+        .where('feed.id = :feedId', { feedId: savedFeed.id })
+        .getOneOrFail();
+
       return {
         message: '게시글이 생성되었습니다.',
         recordId: record.id,
         feedId: savedFeed.id,
+        feed: this.formatFeedResponse(createdFeed),
       };
     });
   }
