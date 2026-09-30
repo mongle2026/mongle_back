@@ -39,6 +39,31 @@ const toKeywordLikePattern = (keyword?: string) => {
   return `%${trimmed.replace(/[\\%_]/g, char => `\\${char}`)}%`;
 };
 
+// 보관함 내 기록 (getMyFeeds) 쿼리 한 줄
+type MyFeedFileRow = {
+  fileId: number;
+  fileType: string;
+  mimeType: string;
+  fileKey: string;
+};
+
+type MyFeedRow = {
+  feedId: number | string;
+  visibility: Visibility;
+  recordId: number | string;
+  font: string;
+  text: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  musicId: number | string | null;
+  externalId: string | null;
+  musicTitle: string | null;
+  musicArtist: string | null;
+  musicArtwork: string | null;
+  previewUrl: string | null;
+  files: unknown;
+};
+
 @Injectable()
 export class FeedService {
   // includeMeInAllFeed       GET /feed           내 글 포함
@@ -871,6 +896,10 @@ export class FeedService {
    * keyword: 노래 제목 또는 아티스트에 포함된 글만 (대소문자 구분 없음)
    * sort: latest(기본) / oldest 는 feedId 커서, title 은 제목이 겹칠 수 있어 offset 커서를 씁니다.
    * 프론트는 nextCursor 를 그대로 다시 보내면 됩니다.
+   *
+   * DB 가 서버와 다른 리전이라 왕복 한 번이 비쌉니다. 그래서 페이지 고르기와 상세를 쿼리 하나로 불러오고,
+   * 보관함 카드에 필요한 컬럼만 가져옵니다 (작성자·좋아요·북마크 정보는 내려가지 않습니다).
+   * 파일은 글마다 JSON 배열 하나로 묶어 글 한 개 = 행 한 개가 되게 합니다.
    */
   async getMyFeeds(params: {
     userId: number;
@@ -885,148 +914,98 @@ export class FeedService {
     const keywordPattern = toKeywordLikePattern(params.keyword);
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
     const offset = sort === 'title' ? cursor ?? 0 : 0;
+    const isOldest = sort === 'oldest';
     const startedAt = Date.now(); // [측정용]
 
-    // 1) 정렬·페이지에 해당하는 feedId 만 먼저 고른다
-    const pageQuery = this.dataSource
-      .getRepository(FeedEntity)
-      .createQueryBuilder('feed')
-      .innerJoin('feed.record', 'record')
-      .leftJoin('record.music', 'music')
-      .select('feed.id', 'feedId')
-      .where('record.userId = :userId', { userId })
-      .limit(safeLimit + 1);
+    const conditions = ['record.user_id = ?', 'feed.deleted_at IS NULL'];
+    const conditionParams: unknown[] = [userId];
 
     if (genre !== undefined) {
-      pageQuery.andWhere('JSON_CONTAINS(music.musicGenre, JSON_QUOTE(:genre))', { genre });
+      conditions.push('JSON_CONTAINS(music.music_genre, JSON_QUOTE(?))');
+      conditionParams.push(genre);
     }
 
     if (month !== undefined) {
       const { start, end } = this.getKstMonthRange(month);
 
-      pageQuery
-        .andWhere('record.createdAt >= :monthStart', { monthStart: start })
-        .andWhere('record.createdAt < :monthEnd', { monthEnd: end });
+      conditions.push('record.created_at >= ?', 'record.created_at < ?');
+      conditionParams.push(start, end);
     }
 
     if (keywordPattern !== undefined) {
-      pageQuery.andWhere(
-        '(music.musicTitle LIKE :keywordPattern OR music.musicArtist LIKE :keywordPattern)',
-        { keywordPattern },
-      );
+      conditions.push('(music.music_title LIKE ? OR music.music_artist LIKE ?)');
+      conditionParams.push(keywordPattern, keywordPattern);
     }
 
-    if (sort === 'title') {
-      pageQuery
-        .addSelect(TITLE_GROUP_SQL, 'titleGroup')
-        .orderBy('titleGroup', 'ASC')
-        .addOrderBy('music.musicTitle', 'ASC')
-        .addOrderBy('feed.id', 'DESC')
-        .offset(offset);
-    } else {
-      const isOldest = sort === 'oldest';
-
-      pageQuery.orderBy('feed.id', isOldest ? 'ASC' : 'DESC');
-
-      if (cursor !== undefined) {
-        pageQuery.andWhere(isOldest ? 'feed.id > :cursor' : 'feed.id < :cursor', { cursor });
-      }
+    if (sort !== 'title' && cursor !== undefined) {
+      conditions.push(isOldest ? 'feed.id > ?' : 'feed.id < ?');
+      conditionParams.push(cursor);
     }
 
-    const pageRows: Array<{ feedId: number | string }> = await pageQuery.getRawMany();
-    const hasNext = pageRows.length > safeLimit;
-    const pageFeedIds = pageRows.slice(0, safeLimit).map(row => Number(row.feedId));
-    const pageQueryMs = Date.now() - startedAt; // [측정용]
+    // 안쪽(페이지 고르기)과 바깥쪽(상세) 모두 같은 별칭을 쓰므로 정렬식을 그대로 같이 쓴다
+    const orderBySql = sort === 'title'
+      ? `${TITLE_GROUP_SQL} ASC, music.music_title ASC, feed.id DESC`
+      : `feed.id ${isOldest ? 'ASC' : 'DESC'}`;
 
-    if (pageFeedIds.length === 0) {
-      return { items: [], nextCursor: null, hasNext: false };
-    }
+    const rows: MyFeedRow[] = await this.dataSource.query(
+      `
+      SELECT
+        feed.id AS feedId,
+        feed.visibility AS visibility,
+        record.id AS recordId,
+        record.font AS font,
+        record.text AS text,
+        record.created_at AS createdAt,
+        record.updated_at AS updatedAt,
+        music.id AS musicId,
+        music.external_id AS externalId,
+        music.music_title AS musicTitle,
+        music.music_artist AS musicArtist,
+        music.music_artwork AS musicArtwork,
+        music.preview_url AS previewUrl,
+        (
+          SELECT JSON_ARRAYAGG(JSON_OBJECT(
+            'fileId', recordFile.id,
+            'fileType', recordFile.file_type,
+            'mimeType', recordFile.mime_type,
+            'fileKey', recordFile.file_key
+          ))
+          FROM record_file recordFile
+          WHERE recordFile.record_id = record.id
+        ) AS files
+      FROM (
+        SELECT feed.id AS id
+        FROM feed
+        JOIN record ON record.id = feed.record_id
+        LEFT JOIN music ON music.id = record.music_id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY ${orderBySql}
+        LIMIT ? OFFSET ?
+      ) AS page
+      JOIN feed ON feed.id = page.id
+      JOIN record ON record.id = feed.record_id
+      LEFT JOIN music ON music.id = record.music_id
+      ORDER BY ${orderBySql}
+      `,
+      [...conditionParams, safeLimit + 1, offset],
+    );
 
-    // 2) 고른 글의 상세를 불러와 1) 의 순서대로 맞춘다
-    const queryBuilder = this.dataSource
-      .getRepository(FeedEntity)
-      .createQueryBuilder('feed')
-      .leftJoinAndSelect('feed.record', 'record')
-      .leftJoinAndSelect('record.user', 'user')
-      .leftJoinAndSelect('record.music', 'music')
-      .leftJoinAndSelect('record.files', 'files')
-
-      .addSelect(subQuery => {
-        return subQuery
-          .select('COUNT(feedLike.id)')
-          .from(FeedLikeEntity, 'feedLike')
-          .where('feedLike.feedId = feed.id');
-      }, 'likeCount')
-
-      .addSelect(subQuery => {
-        return subQuery
-          .select('COUNT(myLike.id)')
-          .from(FeedLikeEntity, 'myLike')
-          .where('myLike.feedId = feed.id')
-          .andWhere('myLike.userId = :userId');
-      }, 'isLikedCount')
-
-      .addSelect(subQuery => {
-        return subQuery
-          .select('COUNT(myBookmark.id)')
-          .from(BookmarkEntity, 'myBookmark')
-          .where('myBookmark.feedId = feed.id')
-          .andWhere('myBookmark.userId = :userId');
-      }, 'isBookmarkedCount')
-
-      .addSelect(subQuery => {
-        return subQuery
-          .select('COUNT(bookmark.id)')
-          .from(BookmarkEntity, 'bookmark')
-          .where('bookmark.feedId = feed.id');
-      }, 'bookmarkCount')
-
-      .where('feed.id IN (:...pageFeedIds)', { pageFeedIds })
-      .setParameter('userId', userId);
-
-    const detailStartedAt = Date.now(); // [측정용]
-    const result = await queryBuilder.getRawAndEntities();
-    const detailQueryMs = Date.now() - detailStartedAt; // [측정용]
-    const rawByFeedId = new Map<number, any>();
-
-    result.raw.forEach(raw => {
-      const feedId = Number(raw.feed_id);
-
-      if (!rawByFeedId.has(feedId)) {
-        rawByFeedId.set(feedId, raw);
-      }
-    });
-
-    const feedById = new Map(result.entities.map(feed => [Number(feed.id), feed]));
-
-    const items = pageFeedIds.flatMap(feedId => {
-      const feed = feedById.get(feedId);
-      if (!feed) return [];
-
-      const raw = rawByFeedId.get(feedId);
-
-      return [
-        this.formatFeedResponse(feed, {
-          likeCount: Number(raw?.likeCount ?? 0),
-          bookmarkCount: Number(raw?.bookmarkCount ?? 0),
-          isLiked: Number(raw?.isLikedCount ?? 0) > 0,
-          isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
-        }),
-      ];
-    });
+    const hasNext = rows.length > safeLimit;
+    const pageRows = rows.slice(0, safeLimit);
+    const items = pageRows.map(row => this.formatMyFeedResponse(row));
 
     let nextCursor: number | null = null;
 
     if (hasNext) {
       nextCursor = sort === 'title'
         ? offset + safeLimit
-        : pageFeedIds[pageFeedIds.length - 1];
+        : Number(pageRows[pageRows.length - 1].feedId);
     }
 
     // [측정용]
     this.logger.log(
       `[timing] GET /feed/me genre=${genre ?? '-'} month=${month ?? '-'} sort=${sort} keyword=${params.keyword ? 'y' : '-'} cursor=${cursor ?? '-'} `
-      + `items=${items.length} pageQuery=${pageQueryMs}ms detailQuery=${detailQueryMs}ms total=${Date.now() - startedAt}ms`,
+      + `items=${items.length} total=${Date.now() - startedAt}ms`,
     );
 
     return {
@@ -1415,6 +1394,59 @@ export class FeedService {
       isLiked: meta?.isLiked ?? false,
       isBookmarked: meta?.isBookmarked ?? false,
     };
+  }
+
+  // 보관함 내 기록 한 줄 (getMyFeeds). formatFeedResponse 와 같은 모양에서 작성자·좋아요·북마크만 뺐다
+  private formatMyFeedResponse(row: MyFeedRow) {
+    const files = this.toMyFeedFileList(row.files)
+      .sort((a, b) => Number(a.fileId) - Number(b.fileId));
+
+    return {
+      feedId: row.feedId,
+      visibility: row.visibility,
+      font: row.font,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      isEdited: this.isEdited(row.createdAt, row.updatedAt),
+
+      record: {
+        recordId: row.recordId,
+        text: row.text,
+      },
+
+      music: row.musicId !== null
+        ? {
+          musicId: row.musicId,
+          externalId: row.externalId,
+          musicTitle: row.musicTitle,
+          musicArtist: row.musicArtist,
+          musicArtwork: row.musicArtwork,
+          previewUrl: row.previewUrl,
+        }
+        : null,
+
+      files: files.map(file => ({
+        fileId: file.fileId,
+        fileType: file.fileType,
+        mimeType: file.mimeType,
+        url: this.r2Service.getPublicUrl(file.fileKey),
+      })),
+    };
+  }
+
+  // JSON_ARRAYAGG 결과. 드라이버에 따라 문자열로 올 수 있고, 파일이 없으면 NULL 이다
+  private toMyFeedFileList(value: unknown): MyFeedFileRow[] {
+    let list: unknown = value;
+
+    if (typeof value === 'string') {
+      try {
+        list = JSON.parse(value);
+      } catch {
+        return [];
+      }
+    }
+
+    return Array.isArray(list) ? (list as MyFeedFileRow[]) : [];
   }
 
   /*
