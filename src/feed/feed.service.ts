@@ -1,6 +1,5 @@
 import { createHash } from 'crypto';
-import { connect } from 'net';
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Brackets, DataSource, In } from 'typeorm';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateFeedDto } from './dto/create-feed.dto';
@@ -71,9 +70,6 @@ export class FeedService {
   // includeMeInFollowingFeed GET /feed/following 내 글 미포함
   private readonly includeMeInAllFeed = true;
   private readonly includeMeInFollowingFeed = false;
-
-  // [측정용] 보관함 조회 시간 로그. 측정이 끝나면 지운다
-  private readonly logger = new Logger(FeedService.name);
 
   constructor(
     private readonly dataSource: DataSource,
@@ -916,7 +912,6 @@ export class FeedService {
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
     const offset = sort === 'title' ? cursor ?? 0 : 0;
     const isOldest = sort === 'oldest';
-    const startedAt = Date.now(); // [측정용]
 
     const conditions = ['record.user_id = ?', 'feed.deleted_at IS NULL'];
     const conditionParams: unknown[] = [userId];
@@ -1003,12 +998,6 @@ export class FeedService {
         : Number(pageRows[pageRows.length - 1].feedId);
     }
 
-    // [측정용]
-    this.logger.log(
-      `[timing] GET /feed/me genre=${genre ?? '-'} month=${month ?? '-'} sort=${sort} keyword=${params.keyword ? 'y' : '-'} cursor=${cursor ?? '-'} `
-      + `items=${items.length} total=${Date.now() - startedAt}ms`,
-    );
-
     return {
       items,
       nextCursor,
@@ -1087,7 +1076,6 @@ export class FeedService {
     if (keywordPattern !== undefined) params.push(keywordPattern, keywordPattern);
     if (limit) params.push(limit);
 
-    const startedAt = Date.now(); // [측정용]
     const rows: Array<{
       month: string;
       feedCount: number | string;
@@ -1112,16 +1100,6 @@ export class FeedService {
       `,
       params,
     );
-
-    const queryMs = Date.now() - startedAt; // [측정용]
-
-    this.logger.log(
-      `[timing] GET /feed/me/months limit=${limit ?? '-'} keyword=${keyword ? 'y' : '-'} `
-      + `rows=${rows.length} query=${queryMs}ms`,
-    );
-
-    // [측정용] 서버↔DB 왕복 진단. 응답을 늦추지 않게 기다리지 않는다
-    void this.logDbLatencyDiagnostics();
 
     const covers = this.pickSeededCovers(
       rows.map(row => ({ key: `month:${row.month}`, artworks: this.toArtworkList(row.artworks) })),
@@ -1445,56 +1423,6 @@ export class FeedService {
     }
 
     return Array.isArray(list) ? (list as MyFeedFileRow[]) : [];
-  }
-
-  /*
-   * [측정용] 서버↔DB 가 왜 느린지 가르는 진단. 측정이 끝나면 지운다
-   * tcpConnect: DB 주소에 TCP 연결만 맺는 시간 (MySQL·TLS 없이 순수 네트워크 왕복 1번)
-   * select1: 같은 커넥션에서 SELECT 1 을 5번 연달아 보낸 각각의 시간 (첫 번째는 풀에서 커넥션을 꺼내는 시간 포함)
-   * tcpConnect ≈ select1 이면 네트워크 경로 문제, tcpConnect 가 훨씬 작으면 드라이버·커넥션 쪽 문제
-   */
-  private async logDbLatencyDiagnostics() {
-    try {
-      const { host, port } = this.dataSource.options as { host?: string; port?: number };
-      let tcpConnectMs = -1;
-
-      if (host) {
-        const tcpStartedAt = Date.now();
-
-        await new Promise<void>((resolve, reject) => {
-          const socket = connect({ host, port: port ?? 3306 }, () => {
-            socket.destroy();
-            resolve();
-          });
-          socket.setTimeout(5000, () => {
-            socket.destroy();
-            reject(new Error('tcp connect timeout'));
-          });
-          socket.on('error', reject);
-        });
-
-        tcpConnectMs = Date.now() - tcpStartedAt;
-      }
-
-      const queryRunner = this.dataSource.createQueryRunner();
-      const select1Ms: number[] = [];
-
-      try {
-        for (let i = 0; i < 5; i += 1) {
-          const startedAt = Date.now();
-          await queryRunner.query('SELECT 1');
-          select1Ms.push(Date.now() - startedAt);
-        }
-      } finally {
-        await queryRunner.release();
-      }
-
-      this.logger.log(
-        `[timing] diag tcpConnect=${tcpConnectMs}ms select1=[${select1Ms.join(', ')}]ms`,
-      );
-    } catch (error) {
-      this.logger.warn(`[timing] diag failed: ${(error as Error).message}`);
-    }
   }
 
   /*
