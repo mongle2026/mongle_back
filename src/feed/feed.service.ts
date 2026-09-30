@@ -30,6 +30,15 @@ const TITLE_GROUP_SQL = `
   END
 `;
 
+// 보관함 검색어 → LIKE '%검색어%' 패턴. 앞뒤 공백을 빼고, 비면 undefined (검색 안 함).
+// %, _ 는 와일드카드가 아닌 글자로 찾도록 이스케이프한다
+const toKeywordLikePattern = (keyword?: string) => {
+  const trimmed = keyword?.trim();
+  if (!trimmed) return undefined;
+
+  return `%${trimmed.replace(/[\\%_]/g, char => `\\${char}`)}%`;
+};
+
 @Injectable()
 export class FeedService {
   // includeMeInAllFeed       GET /feed           내 글 포함
@@ -856,6 +865,7 @@ export class FeedService {
    * 보관함 - 내 기록 목록 (최근 기록, 장르 상세, 월 상세 공용)
    * 내 글이므로 공개 범위와 상관없이 모두 보여줍니다.
    * genre: 음악 장르 배열에 포함된 글만 / month: 한국 시간 기준 'YYYY-MM'
+   * keyword: 노래 제목 또는 아티스트에 포함된 글만 (대소문자 구분 없음)
    * sort: latest(기본) / oldest 는 feedId 커서, title 은 제목이 겹칠 수 있어 offset 커서를 씁니다.
    * 프론트는 nextCursor 를 그대로 다시 보내면 됩니다.
    */
@@ -866,8 +876,10 @@ export class FeedService {
     genre?: string;
     month?: string;
     sort?: MyFeedSort;
+    keyword?: string;
   }) {
     const { userId, cursor, genre, month, sort = 'latest' } = params;
+    const keywordPattern = toKeywordLikePattern(params.keyword);
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
     const offset = sort === 'title' ? cursor ?? 0 : 0;
 
@@ -891,6 +903,13 @@ export class FeedService {
       pageQuery
         .andWhere('record.createdAt >= :monthStart', { monthStart: start })
         .andWhere('record.createdAt < :monthEnd', { monthEnd: end });
+    }
+
+    if (keywordPattern !== undefined) {
+      pageQuery.andWhere(
+        '(music.musicTitle LIKE :keywordPattern OR music.musicArtist LIKE :keywordPattern)',
+        { keywordPattern },
+      );
     }
 
     if (sort === 'title') {
@@ -1066,8 +1085,15 @@ export class FeedService {
    * 커버는 장르별 기록과 같이 coverSeed 로 그 달 곡들 커버 중 하나만 내려줍니다.
    * latestFeedId: 그 달의 가장 최신 글. 프론트는 cursor = latestFeedId + 1 로 GET /feed/me 를 불러
    * 중간 글을 건너뛰고 그 달부터 목록을 시작합니다.
+   * keyword 가 있으면 노래 제목 또는 아티스트에 포함된 글만 셉니다 (그런 글이 없는 달은 빠짐).
    */
-  async getMyFeedMonths(userId: number, limit?: number, coverSeed = '') {
+  async getMyFeedMonths(userId: number, limit?: number, coverSeed = '', keyword?: string) {
+    const keywordPattern = toKeywordLikePattern(keyword);
+    const params: unknown[] = [userId];
+
+    if (keywordPattern !== undefined) params.push(keywordPattern, keywordPattern);
+    if (limit) params.push(limit);
+
     const rows: Array<{
       month: string;
       feedCount: number | string;
@@ -1085,11 +1111,12 @@ export class FeedService {
       JOIN music ON music.id = record.music_id
       WHERE record.user_id = ?
         AND feed.deleted_at IS NULL
+        ${keywordPattern !== undefined ? 'AND (music.music_title LIKE ? OR music.music_artist LIKE ?)' : ''}
       GROUP BY month
       ORDER BY month DESC
       ${limit ? 'LIMIT ?' : ''}
       `,
-      limit ? [userId, limit] : [userId],
+      params,
     );
 
     const covers = this.pickSeededCovers(

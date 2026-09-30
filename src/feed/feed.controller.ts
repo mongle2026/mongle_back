@@ -65,6 +65,7 @@ export class FeedController {
       genre: query.genre,
       month: query.month,
       sort: query.sort,
+      keyword: query.keyword,
     });
   }
 
@@ -75,7 +76,7 @@ export class FeedController {
 
   @Get('me/months')
   async getMyFeedMonths(@Query() query: GetMyFeedGroupQueryDto) {
-    return this.feedService.getMyFeedMonths(query.userId, query.limit, query.coverSeed);
+    return this.feedService.getMyFeedMonths(query.userId, query.limit, query.coverSeed, query.keyword);
   }
 
   // 보관함 - 북마크

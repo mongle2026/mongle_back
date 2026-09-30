@@ -14,7 +14,7 @@ import {
 export const MY_FEED_SORTS = ['latest', 'oldest', 'title'] as const;
 export type MyFeedSort = (typeof MY_FEED_SORTS)[number];
 
-// GET /feed/me - 보관함 내 기록 목록 (genre / month 로 좁힐 수 있음)
+// GET /feed/me - 보관함 내 기록 목록 (genre / month / keyword 로 좁힐 수 있음)
 export class GetMyFeedQueryDto {
   @Type(() => Number)
   @IsInt()
@@ -47,6 +47,12 @@ export class GetMyFeedQueryDto {
   @IsOptional()
   @IsIn(MY_FEED_SORTS)
   sort?: MyFeedSort;
+
+  // 노래 제목 또는 아티스트에 포함된 글만
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  keyword?: string;
 }
 
 // GET /feed/me/genres, GET /feed/me/months
@@ -68,4 +74,10 @@ export class GetMyFeedGroupQueryDto {
   @IsString()
   @MaxLength(32)
   coverSeed?: string;
+
+  // GET /feed/me/months 만 사용. 노래 제목 또는 아티스트에 포함된 글이 있는 달만
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  keyword?: string;
 }
