@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Brackets, DataSource, In } from 'typeorm';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateFeedDto } from './dto/create-feed.dto';
@@ -45,6 +45,9 @@ export class FeedService {
   // includeMeInFollowingFeed GET /feed/following 내 글 미포함
   private readonly includeMeInAllFeed = true;
   private readonly includeMeInFollowingFeed = false;
+
+  // [측정용] 보관함 조회 시간 로그. 측정이 끝나면 지운다
+  private readonly logger = new Logger(FeedService.name);
 
   constructor(
     private readonly dataSource: DataSource,
@@ -882,6 +885,7 @@ export class FeedService {
     const keywordPattern = toKeywordLikePattern(params.keyword);
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
     const offset = sort === 'title' ? cursor ?? 0 : 0;
+    const startedAt = Date.now(); // [측정용]
 
     // 1) 정렬·페이지에 해당하는 feedId 만 먼저 고른다
     const pageQuery = this.dataSource
@@ -932,6 +936,7 @@ export class FeedService {
     const pageRows: Array<{ feedId: number | string }> = await pageQuery.getRawMany();
     const hasNext = pageRows.length > safeLimit;
     const pageFeedIds = pageRows.slice(0, safeLimit).map(row => Number(row.feedId));
+    const pageQueryMs = Date.now() - startedAt; // [측정용]
 
     if (pageFeedIds.length === 0) {
       return { items: [], nextCursor: null, hasNext: false };
@@ -979,7 +984,9 @@ export class FeedService {
       .where('feed.id IN (:...pageFeedIds)', { pageFeedIds })
       .setParameter('userId', userId);
 
+    const detailStartedAt = Date.now(); // [측정용]
     const result = await queryBuilder.getRawAndEntities();
+    const detailQueryMs = Date.now() - detailStartedAt; // [측정용]
     const rawByFeedId = new Map<number, any>();
 
     result.raw.forEach(raw => {
@@ -1015,6 +1022,12 @@ export class FeedService {
         ? offset + safeLimit
         : pageFeedIds[pageFeedIds.length - 1];
     }
+
+    // [측정용]
+    this.logger.log(
+      `[timing] GET /feed/me genre=${genre ?? '-'} month=${month ?? '-'} sort=${sort} keyword=${params.keyword ? 'y' : '-'} cursor=${cursor ?? '-'} `
+      + `items=${items.length} pageQuery=${pageQueryMs}ms detailQuery=${detailQueryMs}ms total=${Date.now() - startedAt}ms`,
+    );
 
     return {
       items,
@@ -1094,6 +1107,7 @@ export class FeedService {
     if (keywordPattern !== undefined) params.push(keywordPattern, keywordPattern);
     if (limit) params.push(limit);
 
+    const startedAt = Date.now(); // [측정용]
     const rows: Array<{
       month: string;
       feedCount: number | string;
@@ -1118,6 +1132,19 @@ export class FeedService {
       `,
       params,
     );
+
+    const queryMs = Date.now() - startedAt; // [측정용]
+
+    this.logger.log(
+      `[timing] GET /feed/me/months limit=${limit ?? '-'} keyword=${keyword ? 'y' : '-'} `
+      + `rows=${rows.length} query=${queryMs}ms`,
+    );
+
+    // [측정용] 아무 일도 안 하는 쿼리 = 서버↔DB 왕복 시간. 응답을 늦추지 않게 기다리지 않는다
+    const pingStartedAt = Date.now();
+    void this.dataSource.query('SELECT 1').then(() => {
+      this.logger.log(`[timing] dbPing=${Date.now() - pingStartedAt}ms`);
+    });
 
     const covers = this.pickSeededCovers(
       rows.map(row => ({ key: `month:${row.month}`, artworks: this.toArtworkList(row.artworks) })),
