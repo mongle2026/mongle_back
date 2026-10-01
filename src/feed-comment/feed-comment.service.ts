@@ -96,7 +96,10 @@ export class FeedCommentService {
       replyToUserId,
     });
 
-    const savedComment = await this.feedCommentRepository.save(comment);
+    // INSERT 한 번뿐이라 트랜잭션으로 감쌀 필요가 없다 (START/COMMIT 왕복 생략)
+    const savedComment = await this.feedCommentRepository.save(comment, {
+      transaction: false,
+    });
 
     // 원댓글은 글 작성자에게, 답글은 답글 대상으로 선택한 사람에게만 알린다
     const notifyUserId = rootCommentId ? replyToUserId : feedAuthorId;
