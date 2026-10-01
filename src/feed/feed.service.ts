@@ -14,6 +14,7 @@ import { MyFeedSort } from './dto/get-my-feed-query.dto';
 import { BookmarkFeedFilter, BookmarkFeedSort } from './dto/get-bookmark-feed-query.dto';
 import { Visibility } from './enums/visibility.enum';
 import { FollowService } from '../follow/follow.service';
+import { FollowEntity } from '../follow/entities/follow.entity';
 import { R2Service } from '../storage/r2.service';
 
 // 보관함 장르별 기록에서 빼는 장르. 한국/영어 스토어프런트 표기를 모두 둔다
@@ -1131,11 +1132,6 @@ export class FeedService {
   }) {
     const { userId, cursor, filter = 'all', sort = 'latest' } = params;
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
-    const followingIds = await this.followService.getFollowingIds(userId);
-
-    if (filter === 'following' && followingIds.length === 0) {
-      return { items: [], nextCursor: null, hasNext: false };
-    }
 
     // 1) 정렬·페이지에 해당하는 북마크만 먼저 고른다
     const pageQuery = this.dataSource
@@ -1149,9 +1145,19 @@ export class FeedService {
       .andWhere('feed.deletedAt IS NULL')
       .limit(safeLimit + 1);
 
+    // 팔로우 목록을 따로 불러오지 않고 쿼리 안에서 확인해 DB 왕복을 줄인다.
+    // 서브쿼리는 바깥 별칭의 속성 이름을 바꿔 주지 않아서 컬럼 이름(record.user_id)으로 쓴다
+    const isFollowingAuthor = `EXISTS ${pageQuery
+      .subQuery()
+      .select('1')
+      .from(FollowEntity, 'follow')
+      .where('follow.followerId = :userId')
+      .andWhere('follow.followingId = record.user_id')
+      .getQuery()}`;
+
     if (filter === 'following') {
       pageQuery
-        .andWhere('record.userId IN (:...followingIds)', { followingIds })
+        .andWhere(isFollowingAuthor)
         .andWhere('feed.visibility IN (:...followVisibilities)', {
           followVisibilities: [Visibility.PUBLIC, Visibility.FOLLOWER],
         });
@@ -1173,17 +1179,15 @@ export class FeedService {
             }),
           );
 
-          if (followingIds.length > 0) {
-            qb.orWhere(
-              new Brackets(followQb => {
-                followQb
-                  .where('feed.visibility = :followVisibility', {
-                    followVisibility: Visibility.FOLLOWER,
-                  })
-                  .andWhere('record.userId IN (:...followingIds)', { followingIds });
-              }),
-            );
-          }
+          qb.orWhere(
+            new Brackets(followQb => {
+              followQb
+                .where('feed.visibility = :followVisibility', {
+                  followVisibility: Visibility.FOLLOWER,
+                })
+                .andWhere(isFollowingAuthor);
+            }),
+          );
         }),
       );
     }
@@ -1241,6 +1245,14 @@ export class FeedService {
           .where('bookmark.feedId = feed.id');
       }, 'bookmarkCount')
 
+      .addSelect(subQuery => {
+        return subQuery
+          .select('COUNT(follow.id)')
+          .from(FollowEntity, 'follow')
+          .where('follow.followerId = :userId')
+          .andWhere('follow.followingId = record.user_id');
+      }, 'isFollowingCount')
+
       .where('feed.id IN (:...pageFeedIds)', { pageFeedIds })
       .setParameter('userId', userId)
       .getRawAndEntities();
@@ -1270,7 +1282,7 @@ export class FeedService {
             bookmarkCount: Number(raw?.bookmarkCount ?? 0),
             isLiked: Number(raw?.isLikedCount ?? 0) > 0,
             isBookmarked: true,
-            isFollowing: followingIds.includes(Number(feed.record.user.id)),
+            isFollowing: Number(raw?.isFollowingCount ?? 0) > 0,
           }),
           bookmarkId,
         },
