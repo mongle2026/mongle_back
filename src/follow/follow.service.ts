@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { FollowEntity } from './entities/follow.entity';
 import { UserEntity } from '../user/entities/user.entity';
 import { R2Service } from '../storage/r2.service';
@@ -24,30 +24,27 @@ export class FollowService {
   async followUser(currentUserId: number, targetUserId: number) {
     this.validateDifferentUser(currentUserId, targetUserId);
 
-    await this.ensureUserExists(currentUserId);
-    await this.ensureUserExists(targetUserId);
+    // DB 왕복 한 번으로 처리한다.
+    // 이미 팔로우 중이면 유니크 키에 걸려 아무것도 바뀌지 않고, 없는 사용자면 FK 에러가 난다.
+    // (INSERT IGNORE 는 FK 에러까지 삼켜서 쓰지 않는다)
+    try {
+      await this.followRepository
+        .createQueryBuilder()
+        .insert()
+        .into(FollowEntity)
+        .values({
+          followerId: currentUserId,
+          followingId: targetUserId,
+        })
+        .orUpdate(['follower_id'], ['follower_id', 'following_id'])
+        .execute();
+    } catch (error) {
+      if (this.isMissingUserError(error)) {
+        throw new NotFoundException('사용자를 찾을 수 없습니다.');
+      }
 
-    const existingFollow = await this.followRepository.findOne({
-      where: {
-        followerId: currentUserId,
-        followingId: targetUserId,
-      },
-    });
-
-    if (existingFollow) {
-      return {
-        followerId: currentUserId,
-        followingId: targetUserId,
-        isFollowing: true,
-      };
+      throw error;
     }
-
-    const follow = this.followRepository.create({
-      followerId: currentUserId,
-      followingId: targetUserId,
-    });
-
-    await this.followRepository.save(follow);
 
     return {
       followerId: currentUserId,
@@ -59,9 +56,7 @@ export class FollowService {
   async unfollowUser(currentUserId: number, targetUserId: number) {
     this.validateDifferentUser(currentUserId, targetUserId);
 
-    await this.ensureUserExists(currentUserId);
-    await this.ensureUserExists(targetUserId);
-
+    // 없는 사용자면 지워지는 행이 없을 뿐이라 따로 확인하지 않는다
     const result = await this.followRepository.delete({
       followerId: currentUserId,
       followingId: targetUserId,
@@ -222,6 +217,14 @@ export class FollowService {
     }
 
     return user;
+  }
+
+  // MySQL ER_NO_REFERENCED_ROW_2: 참조하는 사용자가 없음
+  private isMissingUserError(error: unknown) {
+    return (
+      error instanceof QueryFailedError &&
+      (error.driverError as { errno?: number } | undefined)?.errno === 1452
+    );
   }
 
   private validateDifferentUser(currentUserId: number, targetUserId: number) {
