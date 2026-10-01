@@ -60,6 +60,7 @@ export class LetterService {
         recordId: record.id,
         userId: Number(dto.userId),
         files: dto.files ?? [],
+        isNewRecord: true,
       });
 
       const letter = manager.create(LetterEntity, {

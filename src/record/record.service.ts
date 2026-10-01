@@ -6,6 +6,7 @@ import { RecordFilePendingEntity } from './entities/record-file-pending.entity';
 import { RecordFileDto } from './dto/record-file.dto';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { MusicService } from '../music/music.service';
+import { MusicEntity } from '../music/entities/music.entity';
 import { getFileType } from './utils/get-file-type.util';
 import { RecordFont } from './enums/record-font.enum';
 import { R2Service } from '../storage/r2.service';
@@ -22,16 +23,28 @@ export class RecordService {
     private readonly musicService: MusicService,
   ) {}
 
+  /**
+   * 음악을 찾거나 새로 만듭니다.
+   * 트랜잭션 밖에서 다른 조회와 동시에 미리 불러 둘 때 씁니다.
+   */
+  resolveMusic(dto: CreateMusicDto): Promise<MusicEntity> {
+    return this.musicService.findOrCreateMusic(dto);
+  }
+
   async createBaseRecord(
     manager: EntityManager,
     params: {
       userId: number;
-      music: CreateMusicDto;
+      // resolveMusic으로 미리 불러온 음악을 넘기면 다시 조회하지 않는다
+      music: CreateMusicDto | MusicEntity;
       text?: string;
       font?: RecordFont;
     },
   ): Promise<RecordEntity> {
-    const music = await this.musicService.findOrCreateMusic(params.music, manager);
+    const music =
+      params.music instanceof MusicEntity
+        ? params.music
+        : await this.musicService.findOrCreateMusic(params.music, manager);
 
     const font = params.font ?? RecordFont.KYOBO;
 
@@ -196,10 +209,12 @@ export class RecordService {
       recordId: number;
       userId: number;
       files: RecordFileDto[];
+      // 방금 만든 레코드면 기존 파일 개수 조회와 수정 시각 갱신을 건너뛴다
+      isNewRecord?: boolean;
     },
     maxFileCount = 5,
   ) {
-    const { recordId, userId, files } = params;
+    const { recordId, userId, files, isNewRecord = false } = params;
 
     if (files.length === 0) {
       return [];
@@ -211,9 +226,11 @@ export class RecordService {
       throw new BadRequestException('같은 파일이 두 번 포함되어 있습니다.');
     }
 
-    const currentFileCount = await manager.count(RecordFileEntity, {
-      where: { recordId },
-    });
+    const currentFileCount = isNewRecord
+      ? 0
+      : await manager.count(RecordFileEntity, {
+        where: { recordId },
+      });
 
     if (currentFileCount + files.length > maxFileCount) {
       throw new BadRequestException(
@@ -266,7 +283,14 @@ export class RecordService {
     });
 
     await manager.save(RecordFileEntity, recordFiles);
-    await manager.update(RecordEntity, { id: recordId }, { updatedAt: new Date() });
+
+    /*
+     * 새 레코드에 수정 시각을 찍으면 초 단위가 넘어갈 때
+     * 방금 쓴 글이 "수정됨"으로 보일 수 있어서 건너뜁니다.
+     */
+    if (!isNewRecord) {
+      await manager.update(RecordEntity, { id: recordId }, { updatedAt: new Date() });
+    }
 
     return recordFiles;
   }

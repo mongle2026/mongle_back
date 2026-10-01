@@ -16,6 +16,7 @@ import { Visibility } from './enums/visibility.enum';
 import { FollowService } from '../follow/follow.service';
 import { FollowEntity } from '../follow/entities/follow.entity';
 import { R2Service } from '../storage/r2.service';
+import { UserEntity } from '../user/entities/user.entity';
 
 // 보관함 장르별 기록에서 빼는 장르. 한국/영어 스토어프런트 표기를 모두 둔다
 const EXCLUDED_ARCHIVE_GENRES = ['음악', 'Music'];
@@ -81,11 +82,28 @@ export class FeedService {
 
   async createFeed(dto: CreateFeedDto) {
     const music = this.parseMusic(dto.music);
+    const userId = Number(dto.userId);
+
+    /*
+     * DB가 멀어서 왕복 한 번이 비싸므로,
+     * 음악과 작성자는 트랜잭션 밖에서 동시에 불러옵니다.
+     * 음악은 여러 글이 같이 쓰는 목록이라 글 저장이 실패해 남아도 괜찮습니다.
+     */
+    const [resolvedMusic, user] = await Promise.all([
+      this.recordService.resolveMusic(music),
+      this.dataSource.getRepository(UserEntity).findOne({
+        where: { id: userId },
+      }),
+    ]);
+
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
 
     return this.dataSource.transaction(async manager => {
       const record = await this.recordService.createBaseRecord(manager, {
-        userId: Number(dto.userId),
-        music,
+        userId,
+        music: resolvedMusic,
         text: dto.text,
         font: dto.font,
       });
@@ -94,38 +112,50 @@ export class FeedService {
        * 업로드가 끝난 파일을 같은 트랜잭션에서 붙입니다.
        * 첨부가 실패하면 레코드도 함께 롤백되어 반쪽짜리 글이 남지 않습니다.
        */
-      await this.recordService.attachFiles(manager, {
+      const files = await this.recordService.attachFiles(manager, {
         recordId: record.id,
-        userId: Number(dto.userId),
+        userId,
         files: dto.files ?? [],
+        isNewRecord: true,
       });
 
-      const feed = manager.create(FeedEntity, {
-        recordId: record.id,
-        visibility: dto.visibility,
-      });
+      /*
+       * 피드는 id만 있으면 되므로 저장 후 다시 읽어 오지 않습니다.
+       */
+      const insertResult = await manager
+        .createQueryBuilder()
+        .insert()
+        .into(FeedEntity)
+        .values({
+          recordId: record.id,
+          visibility: dto.visibility,
+        })
+        .updateEntity(false)
+        .execute();
 
-      const savedFeed = await manager.save(FeedEntity, feed);
+      const feedId = Number(insertResult.raw.insertId);
 
       /*
        * 목록과 같은 형태로 새 글을 돌려주면
        * 앱이 다시 조회하지 않고 피드 맨 앞에 바로 넣을 수 있습니다.
+       * 방금 저장한 값으로 조립해서 다시 조회하지 않습니다.
        * 새 글이라 좋아요·북마크는 모두 0이고 내 글이라 팔로우 여부도 없습니다.
        */
-      const createdFeed = await manager
-        .getRepository(FeedEntity)
-        .createQueryBuilder('feed')
-        .leftJoinAndSelect('feed.record', 'record')
-        .leftJoinAndSelect('record.user', 'user')
-        .leftJoinAndSelect('record.music', 'music')
-        .leftJoinAndSelect('record.files', 'files')
-        .where('feed.id = :feedId', { feedId: savedFeed.id })
-        .getOneOrFail();
+      const createdFeed = Object.assign(new FeedEntity(), {
+        id: feedId,
+        recordId: record.id,
+        visibility: dto.visibility,
+        record: Object.assign(record, {
+          user,
+          music: resolvedMusic,
+          files,
+        }),
+      });
 
       return {
         message: '게시글이 생성되었습니다.',
         recordId: record.id,
-        feedId: savedFeed.id,
+        feedId,
         feed: this.formatFeedResponse(createdFeed),
       };
     });
