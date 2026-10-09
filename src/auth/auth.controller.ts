@@ -36,6 +36,13 @@ export class AuthController {
     return this.authService.loginWithApple(dto.identityToken);
   }
 
+  // TODO: 카카오/애플 로그인을 앱에 붙이면 지운다. 가입 테스트용 임의 카카오 계정
+  @Post('mock/kakao')
+  @HttpCode(HttpStatus.OK)
+  mockLoginWithKakao() {
+    return this.authService.issueMockKakaoSignupToken();
+  }
+
   @Post('signup')
   async signup(@Body() dto: SignupDto) {
     return this.authService.signup(dto);

@@ -73,6 +73,16 @@ export class AuthService {
     );
   }
 
+  // TODO: 카카오/애플 로그인을 앱에 붙이면 지운다.
+  // 소셜 로그인 없이 가입을 시험할 수 있게 임의의 카카오 계정으로 signupToken 을 발급한다.
+  issueMockKakaoSignupToken() {
+    return this.toNewUserResponse(
+      AuthProvider.KAKAO,
+      `mock-${randomUUID()}`,
+      null,
+    );
+  }
+
   // 애플 identity token 은 10분이면 만료되므로, 가입 화면에 오래 머물러도 되도록
   // 소셜 토큰 대신 로그인 때 우리 서버가 발급한 signupToken 으로 소셜 계정을 확인한다.
   async signup(dto: SignupDto) {
