@@ -2,15 +2,20 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Post,
   Query,
   Param,
   ParseIntPipe,
   BadRequestException,
   DefaultValuePipe,
+  UseGuards,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { ConfirmProfileImageDto } from './dto/confirm-profile-image.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUserId } from '../auth/current-user-id.decorator';
 
 @Controller('user')
 export class UserController {
@@ -50,6 +55,16 @@ export class UserController {
       page,
       limit,
     );
+  }
+
+  // 내 닉네임 / 아이디 수정
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  async updateMe(
+    @CurrentUserId() userId: number,
+    @Body() dto: UpdateUserDto,
+  ) {
+    return this.userService.updateProfile(userId, dto);
   }
 
   @Get(':id')

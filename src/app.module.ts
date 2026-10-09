@@ -27,6 +27,7 @@ import { FollowEntity } from './follow/entities/follow.entity';
 import { StorageModule } from './storage/storage.module';
 import { StampModule } from './stamp/stamp.module';
 import { NotificationModule } from './notification/notification.module';
+import { AuthModule } from './auth/auth.module';
 import { StampEntity } from './stamp/entities/stamp.entity';
 import { NotificationEntity } from './notification/entities/notification.entity';
 import { PushTokenEntity } from './notification/entities/push-token.entity';
@@ -90,6 +91,7 @@ import { NotificationSettingEntity } from './notification/entities/notification-
       },
     }),
 
+    AuthModule,
     UserModule,
     RecordModule,
     FeedModule,

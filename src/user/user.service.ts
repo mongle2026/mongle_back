@@ -1,8 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { UserEntity } from './entities/user.entity';
 import { R2Service } from '../storage/r2.service';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { isDuplicateEntryError } from '../database/mysql-error.util';
 
 @Injectable()
 export class UserService {
@@ -180,6 +187,50 @@ export class UserService {
       nextPage: null,
       hasNextPage: false,
     };
+  }
+
+  async updateProfile(userId: number, dto: UpdateUserDto) {
+    const changes: Partial<Pick<UserEntity, 'nickname' | 'userCode'>> = {};
+
+    if (dto.nickname !== undefined) {
+      changes.nickname = dto.nickname;
+    }
+
+    if (dto.userCode !== undefined) {
+      changes.userCode = dto.userCode;
+    }
+
+    if (Object.keys(changes).length === 0) {
+      throw new BadRequestException('변경할 항목이 없습니다.');
+    }
+
+    // 내 아이디의 대소문자만 바꾸는 경우는 허용되도록 나는 빼고 확인한다
+    if (
+      changes.userCode !== undefined &&
+      (await this.userRepository.existsBy({
+        userCode: changes.userCode,
+        id: Not(userId),
+      }))
+    ) {
+      throw new ConflictException('이미 사용 중인 아이디입니다.');
+    }
+
+    try {
+      const result = await this.userRepository.update({ id: userId }, changes);
+
+      if (!result.affected) {
+        throw new NotFoundException('사용자를 찾을 수 없습니다.');
+      }
+    } catch (error) {
+      // 위 확인과 저장 사이에 다른 사람이 같은 아이디를 가져간 경우
+      if (isDuplicateEntryError(error)) {
+        throw new ConflictException('이미 사용 중인 아이디입니다.');
+      }
+
+      throw error;
+    }
+
+    return this.getUserById(userId);
   }
 
   async createProfileImageUploadUrl(userId: number) {

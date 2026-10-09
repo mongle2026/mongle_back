@@ -1,4 +1,13 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateUserDto } from './create-user.dto';
+import { IsOptional } from 'class-validator';
+import { IsNickname, IsUserCode } from '../user-profile.validation';
 
-export class UpdateUserDto extends PartialType(CreateUserDto) {}
+// 프로필 수정. 보낸 항목만 바꾼다.
+export class UpdateUserDto {
+  @IsOptional()
+  @IsNickname()
+  nickname?: string;
+
+  @IsOptional()
+  @IsUserCode()
+  userCode?: string;
+}
