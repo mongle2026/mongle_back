@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -58,8 +59,10 @@ export class R2Service {
     return `records/${userId}/${randomUUID()}.${ext}`;
   }
 
-  buildProfileImageKey(userId: number) {
-    return `profile/${userId}.jpg`;
+  // 사진을 바꿀 때마다 새 키를 쓴다. 같은 주소의 내용이 바뀌지 않아서 캐시를 무효화할 필요가 없다.
+  // 가입 전에도 올릴 수 있도록 키에 userId 를 넣지 않는다.
+  buildProfileImageKey() {
+    return `profile/${randomUUID()}.jpg`;
   }
 
   async createPresignedPutUrl(
@@ -78,6 +81,27 @@ export class R2Service {
     });
   }
 
+  // 올라가 있는 객체의 크기(byte). 없으면 null
+  async getObjectSize(key: string): Promise<number | null> {
+    try {
+      const { ContentLength } = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+
+      return ContentLength ?? 0;
+    } catch (error) {
+      // HEAD 는 응답 본문이 없어서 상태 코드로 확인한다
+      const status = (error as { $metadata?: { httpStatusCode?: number } })
+        .$metadata?.httpStatusCode;
+
+      if (status === 404) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
   async deleteObject(key: string) {
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
@@ -88,17 +112,8 @@ export class R2Service {
     return `${this.publicUrl}/${key}`;
   }
 
-  getProfileImageUrl(
-    userId: number,
-    imageMimeType: string | null,
-    imageUpdatedAt: Date | null,
-  ): string | null {
-    if (!imageMimeType) {
-      return null;
-    }
-
-    const version = imageUpdatedAt ? imageUpdatedAt.getTime() : 0;
-
-    return `${this.getPublicUrl(this.buildProfileImageKey(userId))}?v=${version}`;
+  // 프로필 사진이 없으면 null
+  getProfileImageUrl(profileImageKey: string | null): string | null {
+    return profileImageKey ? this.getPublicUrl(profileImageKey) : null;
   }
 }

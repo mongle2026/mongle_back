@@ -1372,11 +1372,9 @@ export class FeedService {
         userId: feed.record.user.id,
         userCode: feed.record.user.userCode,
         nickname: feed.record.user.nickname,
-        hasProfileImage: !!feed.record.user.imageMimeType,
+        hasProfileImage: !!feed.record.user.profileImageKey,
         profileImageUrl: this.r2Service.getProfileImageUrl(
-          feed.record.user.id,
-          feed.record.user.imageMimeType,
-          feed.record.user.imageUpdatedAt,
+          feed.record.user.profileImageKey,
         ),
         isFollowing: meta?.isFollowing ?? false,
       },

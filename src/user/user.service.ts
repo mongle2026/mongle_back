@@ -42,8 +42,7 @@ export class UserService {
         'user.id',
         'user.userCode',
         'user.nickname',
-        'user.imageMimeType',
-        'user.imageUpdatedAt',
+        'user.profileImageKey',
       ])
       .where(
         `
@@ -113,8 +112,7 @@ export class UserService {
         'user.id',
         'user.userCode',
         'user.nickname',
-        'user.imageMimeType',
-        'user.imageUpdatedAt',
+        'user.profileImageKey',
       ])
       .where('user.id = :userId', {
         userId,
@@ -133,12 +131,10 @@ export class UserService {
       nickname: user.nickname,
 
       hasProfileImage:
-        !!user.imageMimeType,
+        !!user.profileImageKey,
 
       profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.id,
-        user.imageMimeType,
-        user.imageUpdatedAt,
+        user.profileImageKey,
       ),
     };
   }
@@ -162,8 +158,7 @@ export class UserService {
         'user.id',
         'user.userCode',
         'user.nickname',
-        'user.imageMimeType',
-        'user.imageUpdatedAt',
+        'user.profileImageKey',
       ])
       .where('user.id = :currentUserId', {
         currentUserId,
@@ -233,40 +228,14 @@ export class UserService {
     return this.getUserById(userId);
   }
 
-  async createProfileImageUploadUrl(userId: number) {
-    const key = this.r2Service.buildProfileImageKey(userId);
-    const mimeType = 'image/jpeg';
-
-    return {
-      key,
-      uploadUrl: await this.r2Service.createPresignedPutUrl(key, mimeType),
-    };
-  }
-
-  async confirmProfileImage(userId: number, mimeType: string) {
-    if (mimeType !== 'image/jpeg') {
-      throw new BadRequestException('프로필 이미지는 jpg 형식만 지원합니다.');
-    }
-
-    await this.userRepository.update(
-      { id: userId },
-      { imageMimeType: mimeType, imageUpdatedAt: new Date() },
-    );
-
-    return { message: '프로필 이미지가 업데이트되었습니다.' };
-  }
-
-
   private toRecipientResponse(user: UserEntity, currentUserId: number) {
     return {
       id: user.id,
       userCode: user.userCode,
       nickname: user.nickname,
-      hasProfileImage: !!user.imageMimeType,
+      hasProfileImage: !!user.profileImageKey,
       profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.id,
-        user.imageMimeType,
-        user.imageUpdatedAt,
+        user.profileImageKey,
       ),
       isMe: String(user.id) === String(currentUserId),
     };

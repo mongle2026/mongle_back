@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { IsNickname, IsUserCode } from '../../user/user-profile.validation';
 
 export class SignupDto {
@@ -12,4 +12,10 @@ export class SignupDto {
 
   @IsUserCode()
   userCode!: string;
+
+  // POST /user/profile-image/upload-url 로 받아 사진을 올린 키. 사진을 고르지 않았으면 보내지 않는다.
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  profileImageKey?: string;
 }

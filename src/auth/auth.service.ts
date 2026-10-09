@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import * as jwt from 'jsonwebtoken';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { UserEntity } from '../user/entities/user.entity';
 import { AuthProvider } from '../user/enums/auth-provider.enum';
 import {
@@ -18,6 +18,7 @@ import {
 } from '../user/user-profile.validation';
 import { isDuplicateEntryError } from '../database/mysql-error.util';
 import { UserService } from '../user/user.service';
+import { ProfileImageService } from '../user/profile-image.service';
 import { KakaoApiService } from './kakao-api.service';
 import { AppleApiService } from './apple-api.service';
 import {
@@ -42,6 +43,8 @@ export class AuthService {
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
     private readonly userService: UserService,
+    private readonly profileImageService: ProfileImageService,
+    private readonly dataSource: DataSource,
     private readonly kakaoApiService: KakaoApiService,
     private readonly appleApiService: AppleApiService,
     private readonly configService: ConfigService,
@@ -109,19 +112,31 @@ export class AuthService {
       throw new ConflictException('이미 사용 중인 아이디입니다.');
     }
 
+    const { profileImageKey } = dto;
+
+    if (profileImageKey) {
+      await this.profileImageService.verifyUploaded(profileImageKey);
+    }
+
     let user: UserEntity;
 
     try {
-      user = await this.userRepository.save(
-        this.userRepository.create({
-          provider,
-          providerUserId,
-          nickname: dto.nickname,
-          userCode: dto.userCode,
-          imageMimeType: null,
-          imageUpdatedAt: null,
-        }),
-      );
+      // 사진을 대기표에서 빼는 것과 회원 저장을 함께 처리한다. 저장이 실패하면 사진은 대기표로 돌아가 정리된다.
+      user = await this.dataSource.transaction(async (manager) => {
+        if (profileImageKey) {
+          await this.profileImageService.attach(manager, profileImageKey);
+        }
+
+        return manager.save(
+          manager.create(UserEntity, {
+            provider,
+            providerUserId,
+            nickname: dto.nickname,
+            userCode: dto.userCode,
+            profileImageKey: profileImageKey ?? null,
+          }),
+        );
+      });
     } catch (error) {
       // 위 확인과 저장 사이에 같은 소셜 계정/아이디로 동시에 가입한 경우
       if (isDuplicateEntryError(error)) {

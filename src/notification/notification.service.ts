@@ -299,11 +299,7 @@ export class NotificationService {
       // 편지는 닉네임, 피드는 아이디(userCode)
       name: actor ? (isFeed ? actor.userCode : actor.nickname) : null,
       profileImageUrl: actor
-        ? this.r2Service.getProfileImageUrl(
-            actor.id,
-            actor.imageMimeType,
-            actor.imageUpdatedAt,
-          )
+        ? this.r2Service.getProfileImageUrl(actor.profileImageKey)
         : null,
       content: notification.content,
       eventTitle: notification.eventTitle,

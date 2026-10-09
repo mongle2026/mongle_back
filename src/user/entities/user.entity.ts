@@ -29,11 +29,9 @@ export class UserEntity {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
 
-  @Column({ name: 'image_mime_type', type: 'varchar', length: 50, nullable: true })
-  imageMimeType!: string | null; // 유지: null이면 "프로필 이미지 없음" 플래그로 계속 사용
-
-  @Column({ name: 'image_updated_at', type: 'datetime', nullable: true })
-  imageUpdatedAt!: Date | null; // 캐시 무효화용 (?v=timestamp)
+  // 프로필 사진의 R2 키(profile/{uuid}.jpg). null 이면 사진 없음
+  @Column({ name: 'profile_image_key', type: 'varchar', length: 100, nullable: true })
+  profileImageKey!: string | null;
 
 
   // 서비스 안에서 회원을 구별하는 아이디. 화면의 @ 없이 저장한다. 규칙은 user-profile.validation.ts

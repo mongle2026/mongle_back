@@ -12,14 +12,25 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { UserService } from './user.service';
-import { ConfirmProfileImageDto } from './dto/confirm-profile-image.dto';
+import { ProfileImageService } from './profile-image.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUserId } from '../auth/current-user-id.decorator';
 
 @Controller('user')
 export class UserController {
-  constructor(private readonly userService: UserService) { }
+  constructor(
+    private readonly userService: UserService,
+    private readonly profileImageService: ProfileImageService,
+  ) { }
+
+  // 프로필 사진 업로드 URL. 가입 전에도 올릴 수 있도록 회원을 받지 않는다.
+  // 올린 뒤 받은 key 를 가입 요청에 실어 보낸다.
+  // TODO: 로그인 붙이면 아무나 부르지 못하게 signupToken 이나 로그인 토큰을 확인한다
+  @Post('profile-image/upload-url')
+  async createProfileImageUploadUrl() {
+    return this.profileImageService.createUploadUrl();
+  }
 
   @Get('search')
   async searchUsers(
@@ -78,19 +89,6 @@ export class UserController {
     }
 
     return this.userService.getUserById(id);
-  }
-
-  @Post(':id/profile-image/upload-url')
-  async createProfileImageUploadUrl(@Param('id', ParseIntPipe) id: number) {
-    return this.userService.createProfileImageUploadUrl(id);
-  }
-
-  @Post(':id/profile-image/confirm')
-  async confirmProfileImage(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: ConfirmProfileImageDto,
-  ) {
-    return this.userService.confirmProfileImage(id, dto.mimeType);
   }
 
 }

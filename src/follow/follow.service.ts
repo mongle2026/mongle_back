@@ -110,8 +110,7 @@ export class FollowService {
         'user.id',
         'user.userCode',
         'user.nickname',
-        'user.imageMimeType',
-        'user.imageUpdatedAt',
+        'user.profileImageKey',
       ])
       .orderBy('follow.createdAt', 'DESC')
       .limit(50)
@@ -137,8 +136,7 @@ export class FollowService {
         'user.id',
         'user.userCode',
         'user.nickname',
-        'user.imageMimeType',
-        'user.imageUpdatedAt',
+        'user.profileImageKey',
       ])
       .orderBy('follow.createdAt', 'DESC')
       .limit(50)
@@ -169,8 +167,7 @@ export class FollowService {
         'user.id',
         'user.userCode',
         'user.nickname',
-        'user.imageMimeType',
-        'user.imageUpdatedAt',
+        'user.profileImageKey',
       ])
       .where('user.id = :currentUserId', { currentUserId })
       .getOne();
@@ -242,11 +239,9 @@ export class FollowService {
       id: user.id,
       userCode: user.userCode,
       nickname: user.nickname,
-      hasProfileImage: !!user.imageMimeType,
+      hasProfileImage: !!user.profileImageKey,
       profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.id,
-        user.imageMimeType,
-        user.imageUpdatedAt,
+        user.profileImageKey,
       ),
       isMe: String(user.id) === String(currentUserId),
       isFollowing,

@@ -60,8 +60,7 @@ async function seedUserImages() {
     await userRepository.update(
       { userCode },
       {
-        imageMimeType: 'image/jpeg',
-        imageUpdatedAt: new Date(),
+        profileImageKey: `profile/${user.id}.jpg`,
       },
     );
 

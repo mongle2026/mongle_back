@@ -185,9 +185,7 @@ export class LetterService {
               id: Number(letter.record.user.id),
               nickname: letter.record.user.nickname,
               profileImageUrl: this.r2Service.getProfileImageUrl(
-                letter.record.user.id,
-                letter.record.user.imageMimeType,
-                letter.record.user.imageUpdatedAt,
+                letter.record.user.profileImageKey,
               ),
             }
             : null,
@@ -448,9 +446,7 @@ export class LetterService {
       userId: Number(user.id),
       nickname: user.nickname,
       profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.id,
-        user.imageMimeType,
-        user.imageUpdatedAt,
+        user.profileImageKey,
       ),
     };
   }

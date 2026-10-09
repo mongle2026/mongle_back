@@ -363,11 +363,9 @@ export class FeedCommentService {
       userId: Number(user.id),
       nickname: user.nickname,
       userCode: user.userCode,
-      hasProfileImage: !!user.imageMimeType,
+      hasProfileImage: !!user.profileImageKey,
       profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.id,
-        user.imageMimeType,
-        user.imageUpdatedAt,
+        user.profileImageKey,
       ),
     };
   }

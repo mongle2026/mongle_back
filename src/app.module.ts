@@ -10,6 +10,7 @@ import { LetterModule } from './letter/letter.module';
 import { RecordEntity } from './record/entities/record.entity';
 import { RecordFileEntity } from './record/entities/record-file.entity';
 import { RecordFilePendingEntity } from './record/entities/record-file-pending.entity';
+import { ProfileImagePendingEntity } from './user/entities/profile-image-pending.entity';
 import { FeedEntity } from './feed/entities/feed.entity';
 import { LetterEntity } from './letter/entities/letter.entity';
 import { MusicModule } from './music/music.module';
@@ -68,6 +69,7 @@ import { NotificationSettingEntity } from './notification/entities/notification-
 
           entities: [
             UserEntity,
+            ProfileImagePendingEntity,
             RecordEntity,
             RecordFileEntity,
             RecordFilePendingEntity,
