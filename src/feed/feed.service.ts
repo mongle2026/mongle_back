@@ -1368,7 +1368,7 @@ export class FeedService {
       isEdited: this.isEdited(feed.record.createdAt, feed.record.updatedAt),
 
       user: {
-        userId: feed.record.user.id,
+        userId: feed.record.user.publicId,
         userCode: feed.record.user.userCode,
         nickname: feed.record.user.nickname,
         hasProfileImage: !!feed.record.user.profileImageKey,

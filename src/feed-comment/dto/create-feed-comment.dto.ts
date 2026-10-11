@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsInt,
+  IsUUID,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -22,10 +23,8 @@ export class CreateFeedCommentDto {
   @Min(1)
   rootCommentId?: number;
 
-  // 답글 대상으로 선택한 사람 (내가 누른 댓글의 작성자)
+  // 답글 대상으로 선택한 사람의 publicId (내가 누른 댓글의 작성자)
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  replyToUserId?: number;
+  @IsUUID()
+  replyToUserId?: string;
 }

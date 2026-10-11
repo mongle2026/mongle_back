@@ -165,10 +165,7 @@ export class RecordService {
 
     const uploads = await Promise.all(
       params.files.map(async (file) => {
-        const key = this.r2Service.buildRecordImageKey(
-          params.userId,
-          file.mimeType,
-        );
+        const key = this.r2Service.buildRecordImageKey(file.mimeType);
 
         return {
           key,

@@ -7,6 +7,7 @@ import {
   Query,
   Param,
   ParseIntPipe,
+  ParseUUIDPipe,
   BadRequestException,
   DefaultValuePipe,
   UseGuards,
@@ -74,15 +75,9 @@ export class UserController {
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   async getUser(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) publicId: string,
   ) {
-    if (id <= 0) {
-      throw new BadRequestException(
-        '사용자 id가 올바르지 않습니다.',
-      );
-    }
-
-    return this.userService.getUserById(id);
+    return this.userService.getUserByPublicId(publicId);
   }
 
 }

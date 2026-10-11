@@ -53,10 +53,11 @@ export class R2Service {
   }
 
   // 레코드가 만들어지기 전에 업로드 URL을 발급하므로 키에 recordId를 넣지 않는다.
-  // 예전 키(records/{userId}/{recordId}/...)는 DB에 통째로 저장돼 있어 그대로 동작한다.
-  buildRecordImageKey(userId: number, mimeType: string) {
+  // 공개 URL이 되므로 내부 userId도 넣지 않는다. 누구 파일인지는 record_file_pending 으로 확인한다.
+  // 예전 키(records/{userId}/...)는 DB에 통째로 저장돼 있어 그대로 동작한다.
+  buildRecordImageKey(mimeType: string) {
     const ext = this.resolveExtension(mimeType);
-    return `records/${userId}/${randomUUID()}.${ext}`;
+    return `records/${randomUUID()}.${ext}`;
   }
 
   // 사진을 바꿀 때마다 새 키를 쓴다. 같은 주소의 내용이 바뀌지 않아서 캐시를 무효화할 필요가 없다.

@@ -14,9 +14,16 @@ import { AuthProvider } from '../enums/auth-provider.enum';
 @Index('UQ_user_provider_user_id', ['provider', 'providerUserId'], {
   unique: true,
 })
+@Index('UQ_user_public_id', ['publicId'], { unique: true })
 export class UserEntity {
+  // 서버 안에서만 쓰는 id(FK, 토큰 sub). 앱에는 publicId 를 보여준다.
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id!: number;
+
+  // 앱에 보여주는 회원 식별값(UUID). 가입할 때 정하고 바뀌지 않는다.
+  // API 응답의 userId/id 같은 회원 필드와 요청으로 받는 회원 값은 모두 이 값이다.
+  @Column({ name: 'public_id', type: 'char', length: 36 })
+  publicId!: string;
 
   // 가입/로그인에 쓴 소셜 계정 종류
   @Column({ type: 'varchar', length: 10 })

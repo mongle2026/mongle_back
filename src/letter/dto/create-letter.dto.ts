@@ -3,9 +3,9 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
-  IsNumberString,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -22,7 +22,8 @@ export class CreateLetterDto {
   @MaxLength(2000)
   text?: string;
 
-  @IsNumberString()
+  // 받는 사람의 publicId
+  @IsUUID()
   receiverId!: string;
 
   @IsString()

@@ -14,6 +14,7 @@ import { RecordService } from '../record/record.service';
 import { R2Service } from '../storage/r2.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
+import { UserService } from '../user/user.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -24,13 +25,14 @@ export class LetterService {
     private readonly recordService: RecordService,
     private readonly r2Service: R2Service,
     private readonly notificationService: NotificationService,
+    private readonly userService: UserService,
   ) { }
 
   async createLetter(senderId: number, dto: CreateLetterDto) {
     const music = this.parseMusic(dto.music);
 
     const now = new Date();
-    const receiverId = Number(dto.receiverId);
+    const receiverId = await this.userService.getIdByPublicId(dto.receiverId);
     const deliveryAt = dto.deliveryAt ? new Date(dto.deliveryAt) : null;
     const isDelivered = deliveryAt === null || deliveryAt <= now;
 
@@ -163,7 +165,7 @@ export class LetterService {
         letter: {
           id: Number(letter.id),
           recordId: Number(letter.recordId),
-          receiverId: Number(letter.receiverId),
+          receiverId: letter.receiver?.publicId ?? null,
           receiver: this.formatLetterboxUser(letter.receiver),
           pattern: letter.pattern,
           color: letter.color,
@@ -173,7 +175,7 @@ export class LetterService {
         },
         record: {
           id: Number(letter.record.id),
-          userId: Number(letter.record.userId),
+          userId: letter.record.user?.publicId ?? null,
           musicId: Number(letter.record.musicId),
           text: letter.record.text,
           font: letter.record.font,
@@ -181,7 +183,7 @@ export class LetterService {
           updatedAt: letter.record.updatedAt,
           user: letter.record.user
             ? {
-              id: Number(letter.record.user.id),
+              id: letter.record.user.publicId,
               nickname: letter.record.user.nickname,
               profileImageUrl: this.r2Service.getProfileImageUrl(
                 letter.record.user.profileImageKey,
@@ -442,7 +444,7 @@ export class LetterService {
     }
 
     return {
-      userId: Number(user.id),
+      userId: user.publicId,
       nickname: user.nickname,
       profileImageUrl: this.r2Service.getProfileImageUrl(
         user.profileImageKey,

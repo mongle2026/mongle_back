@@ -40,6 +40,7 @@ export class UserService {
       .createQueryBuilder('user')
       .select([
         'user.id',
+        'user.publicId',
         'user.userCode',
         'user.nickname',
         'user.profileImageKey',
@@ -105,19 +106,40 @@ export class UserService {
     };
   }
 
+  // 앱이 보낸 publicId 를 서버 안에서 쓰는 user.id 로 바꾼다
+  async getIdByPublicId(publicId: string): Promise<number> {
+    const user = await this.userRepository.findOne({
+      select: { id: true },
+      where: { publicId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    return Number(user.id);
+  }
+
   async getUserById(userId: number) {
-    const user = await this.userRepository
-      .createQueryBuilder('user')
-      .select([
-        'user.id',
-        'user.userCode',
-        'user.nickname',
-        'user.profileImageKey',
-      ])
-      .where('user.id = :userId', {
-        userId,
-      })
-      .getOne();
+    return this.getUserProfile({ id: userId });
+  }
+
+  // 다른 사람 프로필 조회. 앱은 publicId 로만 회원을 가리킨다.
+  async getUserByPublicId(publicId: string) {
+    return this.getUserProfile({ publicId });
+  }
+
+  private async getUserProfile(where: { id: number } | { publicId: string }) {
+    const user = await this.userRepository.findOne({
+      select: {
+        id: true,
+        publicId: true,
+        userCode: true,
+        nickname: true,
+        profileImageKey: true,
+      },
+      where,
+    });
 
     if (!user) {
       throw new NotFoundException(
@@ -126,7 +148,7 @@ export class UserService {
     }
 
     return {
-      userId: Number(user.id),
+      userId: user.publicId,
       userCode: user.userCode,
       nickname: user.nickname,
 
@@ -156,6 +178,7 @@ export class UserService {
       .createQueryBuilder('user')
       .select([
         'user.id',
+        'user.publicId',
         'user.userCode',
         'user.nickname',
         'user.profileImageKey',
@@ -230,7 +253,7 @@ export class UserService {
 
   private toRecipientResponse(user: UserEntity, currentUserId: number) {
     return {
-      id: user.id,
+      id: user.publicId,
       userCode: user.userCode,
       nickname: user.nickname,
       hasProfileImage: !!user.profileImageKey,

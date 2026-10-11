@@ -81,7 +81,7 @@ export class StampService {
 
     // 보내준 사람은 한 번씩만, 처음 보내준 편지가 오래된 순(왼쪽이 오래된 것)
     const senders = new Map<
-      number,
+      string,
       NonNullable<(typeof letters)[number]['sender']> & { isMe: boolean }
     >();
 
@@ -90,7 +90,7 @@ export class StampService {
 
       senders.set(letter.sender.userId, {
         ...letter.sender,
-        isMe: letter.sender.userId === userId,
+        isMe: letter.isSender,
       });
     }
 

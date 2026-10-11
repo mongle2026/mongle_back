@@ -119,6 +119,7 @@ export class AuthService {
 
         return manager.save(
           manager.create(UserEntity, {
+            publicId: randomUUID(),
             provider,
             providerUserId,
             nickname: dto.nickname,

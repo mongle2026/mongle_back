@@ -4,10 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { FollowEntity } from './entities/follow.entity';
 import { UserEntity } from '../user/entities/user.entity';
 import { R2Service } from '../storage/r2.service';
+import { UserService } from '../user/user.service';
 
 @Injectable()
 export class FollowService {
@@ -19,85 +20,92 @@ export class FollowService {
     private readonly userRepository: Repository<UserEntity>,
 
     private readonly r2Service: R2Service,
+    private readonly userService: UserService,
   ) {}
 
-  async followUser(currentUserId: number, targetUserId: number) {
-    this.validateDifferentUser(currentUserId, targetUserId);
+  async followUser(currentUserId: number, targetPublicId: string) {
+    // DB 왕복 한 번으로 처리한다. publicId 로 찾은 사용자를 그대로 넣는다.
+    // 이미 팔로우 중이면 유니크 키에 걸려 아무것도 바뀌지 않는다.
+    const result: { affectedRows: number } = await this.followRepository.query(
+      `INSERT INTO \`follow\` (\`follower_id\`, \`following_id\`)
+        SELECT ?, \`id\` FROM \`user\` WHERE \`public_id\` = ? AND \`id\` <> ?
+        ON DUPLICATE KEY UPDATE \`follower_id\` = \`follower_id\``,
+      [currentUserId, targetPublicId, currentUserId],
+    );
 
-    // DB 왕복 한 번으로 처리한다.
-    // 이미 팔로우 중이면 유니크 키에 걸려 아무것도 바뀌지 않고, 없는 사용자면 FK 에러가 난다.
-    // (INSERT IGNORE 는 FK 에러까지 삼켜서 쓰지 않는다)
-    try {
-      await this.followRepository
-        .createQueryBuilder()
-        .insert()
-        .into(FollowEntity)
-        .values({
-          followerId: currentUserId,
-          followingId: targetUserId,
-        })
-        .orUpdate(['follower_id'], ['follower_id', 'following_id'])
-        .execute();
-    } catch (error) {
-      if (this.isMissingUserError(error)) {
-        throw new NotFoundException('사용자를 찾을 수 없습니다.');
-      }
-
-      throw error;
+    // 넣은 행이 없으면 이미 팔로우 중이거나, 없는 사용자거나, 나 자신이다
+    if (result.affectedRows === 0) {
+      const targetUserId =
+        await this.userService.getIdByPublicId(targetPublicId);
+      this.validateDifferentUser(currentUserId, targetUserId);
     }
 
     return {
-      followerId: currentUserId,
-      followingId: targetUserId,
+      followingId: targetPublicId,
       isFollowing: true,
     };
   }
 
-  async unfollowUser(currentUserId: number, targetUserId: number) {
-    this.validateDifferentUser(currentUserId, targetUserId);
-
-    // 없는 사용자면 지워지는 행이 없을 뿐이라 따로 확인하지 않는다
-    const result = await this.followRepository.delete({
-      followerId: currentUserId,
-      followingId: targetUserId,
-    });
+  async unfollowUser(currentUserId: number, targetPublicId: string) {
+    // 없는 사용자거나 나 자신이면 지워지는 행이 없을 뿐이라 따로 확인하지 않는다
+    const result: { affectedRows: number } = await this.followRepository.query(
+      `DELETE \`follow\` FROM \`follow\`
+        INNER JOIN \`user\` ON \`user\`.\`id\` = \`follow\`.\`following_id\`
+        WHERE \`follow\`.\`follower_id\` = ? AND \`user\`.\`public_id\` = ?`,
+      [currentUserId, targetPublicId],
+    );
 
     return {
-      followerId: currentUserId,
-      followingId: targetUserId,
+      followingId: targetPublicId,
       isFollowing: false,
-      deleted: Number(result.affected) > 0,
+      deleted: result.affectedRows > 0,
     };
   }
 
-  async getFollowStatus(currentUserId: number, targetUserId: number) {
-    if (String(currentUserId) === String(targetUserId)) {
-      return {
-        followerId: currentUserId,
-        followingId: targetUserId,
-        isFollowing: false,
-        isMe: true,
-      };
+  async getFollowStatus(currentUserId: number, targetPublicId: string) {
+    const target = await this.userRepository
+      .createQueryBuilder('user')
+      .select('user.id', 'id')
+      .addSelect(
+        (subQuery) =>
+          subQuery
+            .select('COUNT(*)')
+            .from(FollowEntity, 'follow')
+            .where('follow.followerId = :currentUserId')
+            .andWhere('follow.followingId = user.id'),
+        'followCount',
+      )
+      .where('user.publicId = :targetPublicId', { targetPublicId })
+      .setParameter('currentUserId', currentUserId)
+      .getRawOne<{ id: string; followCount: string }>();
+
+    if (!target) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
     }
 
-    const count = await this.followRepository.count({
-      where: {
-        followerId: currentUserId,
-        followingId: targetUserId,
-      },
-    });
+    const isMe = Number(target.id) === currentUserId;
 
     return {
-      followerId: currentUserId,
-      followingId: targetUserId,
-      isFollowing: count > 0,
-      isMe: false,
+      followingId: targetPublicId,
+      isFollowing: !isMe && Number(target.followCount) > 0,
+      isMe,
     };
   }
 
-  async getFollowingUsers(userId: number) {
-    await this.ensureUserExists(userId);
+  // 앱은 publicId 로 회원을 가리킨다
+  async getFollowingUsersByPublicId(publicId: string) {
+    return this.getFollowingUsers(
+      await this.userService.getIdByPublicId(publicId),
+    );
+  }
 
+  async getFollowerUsersByPublicId(publicId: string) {
+    return this.getFollowerUsers(
+      await this.userService.getIdByPublicId(publicId),
+    );
+  }
+
+  private async getFollowingUsers(userId: number) {
     const users = await this.userRepository
       .createQueryBuilder('user')
       .innerJoin(
@@ -108,6 +116,7 @@ export class FollowService {
       )
       .select([
         'user.id',
+        'user.publicId',
         'user.userCode',
         'user.nickname',
         'user.profileImageKey',
@@ -121,9 +130,7 @@ export class FollowService {
     );
   }
 
-  async getFollowerUsers(userId: number) {
-    await this.ensureUserExists(userId);
-
+  private async getFollowerUsers(userId: number) {
     const users = await this.userRepository
       .createQueryBuilder('user')
       .innerJoin(
@@ -134,6 +141,7 @@ export class FollowService {
       )
       .select([
         'user.id',
+        'user.publicId',
         'user.userCode',
         'user.nickname',
         'user.profileImageKey',
@@ -165,6 +173,7 @@ export class FollowService {
       .createQueryBuilder('user')
       .select([
         'user.id',
+        'user.publicId',
         'user.userCode',
         'user.nickname',
         'user.profileImageKey',
@@ -216,14 +225,6 @@ export class FollowService {
     return user;
   }
 
-  // MySQL ER_NO_REFERENCED_ROW_2: 참조하는 사용자가 없음
-  private isMissingUserError(error: unknown) {
-    return (
-      error instanceof QueryFailedError &&
-      (error.driverError as { errno?: number } | undefined)?.errno === 1452
-    );
-  }
-
   private validateDifferentUser(currentUserId: number, targetUserId: number) {
     if (String(currentUserId) === String(targetUserId)) {
       throw new BadRequestException('자기 자신은 팔로우할 수 없습니다.');
@@ -236,7 +237,7 @@ export class FollowService {
     isFollowing: boolean,
   ) {
     return {
-      id: user.id,
+      id: user.publicId,
       userCode: user.userCode,
       nickname: user.nickname,
       hasProfileImage: !!user.profileImageKey,

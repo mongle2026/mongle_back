@@ -6,12 +6,14 @@ import { LetterEntity } from './entities/letter.entity';
 import { RecordModule } from '../record/record.module';
 import { NotificationModule } from '../notification/notification.module';
 import { LetterNotificationScheduler } from './letter-notification.scheduler';
+import { UserModule } from '../user/user.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([LetterEntity]),
     RecordModule,
     NotificationModule,
+    UserModule,
   ],
   controllers: [LetterController],
   providers: [LetterService, LetterNotificationScheduler],

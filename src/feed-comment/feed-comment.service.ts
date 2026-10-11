@@ -12,6 +12,7 @@ import { CreateFeedCommentDto } from './dto/create-feed-comment.dto';
 import { R2Service } from '../storage/r2.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
+import { UserEntity } from '../user/entities/user.entity';
 
 @Injectable()
 export class FeedCommentService {
@@ -48,6 +49,9 @@ export class FeedCommentService {
           id: dto.rootCommentId,
           feedId,
         },
+        relations: {
+          user: true,
+        },
       });
 
       if (!target) {
@@ -67,6 +71,9 @@ export class FeedCommentService {
                 id: rootId,
                 feedId,
               },
+              relations: {
+                user: true,
+              },
             });
 
       if (!rootComment) {
@@ -81,10 +88,9 @@ export class FeedCommentService {
 
       rootCommentId = rootId;
       replyToUserId = this.resolveReplyToUserId({
-        requestedUserId: dto.replyToUserId,
+        requestedPublicId: dto.replyToUserId,
         userId,
-        feedAuthorId,
-        rootCommentAuthorId: Number(rootComment.userId),
+        participants: [feed.record.user, rootComment.user],
       });
     }
 
@@ -126,24 +132,19 @@ export class FeedCommentService {
    * 비어 있거나 올바르지 않으면 묶음의 상대방으로 정한다. (글 작성자가 자기 글에 단 묶음이면 없음)
    */
   private resolveReplyToUserId(params: {
-    requestedUserId?: number;
+    requestedPublicId?: string;
     userId: number;
-    feedAuthorId: number;
-    rootCommentAuthorId: number;
+    participants: UserEntity[];
   }) {
-    const userId = Number(params.userId);
-    const participants = [params.feedAuthorId, params.rootCommentAuthorId];
-    const requested = params.requestedUserId
-      ? Number(params.requestedUserId)
-      : null;
-
-    if (requested && requested !== userId && participants.includes(requested)) {
-      return requested;
-    }
-
-    return (
-      participants.find((participantId) => participantId !== userId) ?? null
+    const others = params.participants.filter(
+      (participant) => Number(participant.id) !== Number(params.userId),
     );
+    const target =
+      others.find(
+        (participant) => participant.publicId === params.requestedPublicId,
+      ) ?? others[0];
+
+    return target ? Number(target.id) : null;
   }
 
   async getComments(feedId: number, userId: number) {
@@ -242,7 +243,7 @@ export class FeedCommentService {
       const rootComment = {
         commentId: Number(comment.id),
         feedId: Number(comment.feedId),
-        userId: Number(comment.userId),
+        userId: comment.user?.publicId ?? null,
         user: this.toCommentUser(comment.user),
         content: comment.content,
         rootCommentId: null,
@@ -270,7 +271,7 @@ export class FeedCommentService {
       rootComment.replies.push({
         commentId: Number(comment.id),
         feedId: Number(comment.feedId),
-        userId: Number(comment.userId),
+        userId: comment.user?.publicId ?? null,
         user: this.toCommentUser(comment.user),
         content: comment.content,
         rootCommentId: rootId,
@@ -300,7 +301,9 @@ export class FeedCommentService {
         id: feedId,
       },
       relations: {
-        record: true,
+        record: {
+          user: true,
+        },
       },
     });
 
@@ -344,7 +347,6 @@ export class FeedCommentService {
     return {
       commentId: Number(comment.id),
       feedId: Number(comment.feedId),
-      userId: Number(comment.userId),
       content: comment.content,
       rootCommentId: comment.rootCommentId
         ? Number(comment.rootCommentId)
@@ -354,13 +356,13 @@ export class FeedCommentService {
     };
   }
 
-  private toCommentUser(user: any) {
+  private toCommentUser(user: UserEntity | null | undefined) {
     if (!user) {
       return null;
     }
 
     return {
-      userId: Number(user.id),
+      userId: user.publicId,
       nickname: user.nickname,
       userCode: user.userCode,
       hasProfileImage: !!user.profileImageKey,
