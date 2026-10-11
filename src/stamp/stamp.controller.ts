@@ -1,25 +1,27 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { StampService } from './stamp.service';
-import { GetStampCollectionQueryDto } from './dto/get-stamp-collection-query.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUserId } from '../auth/current-user-id.decorator';
 
 @Controller('stamp')
+@UseGuards(JwtAuthGuard)
 export class StampController {
   constructor(private readonly stampService: StampService) {}
 
   @Get()
-  async getStampCollection(@Query() query: GetStampCollectionQueryDto) {
+  async getStampCollection(@CurrentUserId() userId: number) {
     return this.stampService.getStampCollection({
-      userId: query.userId,
+      userId,
     });
   }
 
   @Get(':code')
   async getStampDetail(
     @Param('code') code: string,
-    @Query() query: GetStampCollectionQueryDto,
+    @CurrentUserId() userId: number,
   ) {
     return this.stampService.getStampDetail({
-      userId: query.userId,
+      userId,
       code,
     });
   }

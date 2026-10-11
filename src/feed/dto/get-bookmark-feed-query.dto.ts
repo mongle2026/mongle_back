@@ -11,11 +11,6 @@ export type BookmarkFeedSort = (typeof BOOKMARK_FEED_SORTS)[number];
 
 // GET /feed/bookmark/me - 보관함 북마크 목록
 export class GetBookmarkFeedQueryDto {
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  userId!: number;
-
   // 마지막으로 받은 글의 bookmarkId
   @Type(() => Number)
   @IsOptional()

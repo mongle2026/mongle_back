@@ -2,7 +2,6 @@ import {
   ArrayMaxSize,
   IsArray,
   IsEnum,
-  IsNumberString,
   IsOptional,
   IsString,
   MaxLength,
@@ -14,9 +13,6 @@ import { Type } from 'class-transformer';
 import { RecordFileDto } from '../../record/dto/record-file.dto';
 
 export class CreateFeedDto {
-  @IsNumberString()
-  userId!: string;
-
   @IsString()
   music!: string;
 

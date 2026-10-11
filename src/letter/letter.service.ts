@@ -26,11 +26,10 @@ export class LetterService {
     private readonly notificationService: NotificationService,
   ) { }
 
-  async createLetter(dto: CreateLetterDto) {
+  async createLetter(senderId: number, dto: CreateLetterDto) {
     const music = this.parseMusic(dto.music);
 
     const now = new Date();
-    const senderId = Number(dto.userId);
     const receiverId = Number(dto.receiverId);
     const deliveryAt = dto.deliveryAt ? new Date(dto.deliveryAt) : null;
     const isDelivered = deliveryAt === null || deliveryAt <= now;
@@ -46,7 +45,7 @@ export class LetterService {
 
     const result = await this.dataSource.transaction(async (manager) => {
       const record = await this.recordService.createBaseRecord(manager, {
-        userId: Number(dto.userId),
+        userId: senderId,
         music,
         text: dto.text,
         font: dto.font,
@@ -58,7 +57,7 @@ export class LetterService {
        */
       await this.recordService.attachFiles(manager, {
         recordId: record.id,
-        userId: Number(dto.userId),
+        userId: senderId,
         files: dto.files ?? [],
         isNewRecord: true,
       });

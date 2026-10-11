@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FeedController } from './feed.controller';
+import { FeedShareController } from './feed-share.controller';
 import { FeedService } from './feed.service';
 import { FeedEntity } from './entities/feed.entity';
 import { RecordModule } from '../record/record.module';
@@ -21,7 +22,7 @@ import { FollowModule } from '../follow/follow.module';
     FollowModule,
     FeedCommentModule,
   ],
-  controllers: [FeedController],
+  controllers: [FeedController, FeedShareController],
   providers: [
     FeedService,
     FeedCleanupService,

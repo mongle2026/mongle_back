@@ -80,9 +80,8 @@ export class FeedService {
     private readonly r2Service: R2Service,
   ) { }
 
-  async createFeed(dto: CreateFeedDto) {
+  async createFeed(userId: number, dto: CreateFeedDto) {
     const music = this.parseMusic(dto.music);
-    const userId = Number(dto.userId);
 
     /*
      * DB가 멀어서 왕복 한 번이 비싸므로,

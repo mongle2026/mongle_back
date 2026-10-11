@@ -16,6 +16,7 @@ import { ProfileImageService } from './profile-image.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUserId } from '../auth/current-user-id.decorator';
+import { SignupOrJwtAuthGuard } from '../auth/signup-or-jwt-auth.guard';
 
 @Controller('user')
 export class UserController {
@@ -24,32 +25,24 @@ export class UserController {
     private readonly profileImageService: ProfileImageService,
   ) { }
 
-  // 프로필 사진 업로드 URL. 가입 전에도 올릴 수 있도록 회원을 받지 않는다.
+  // 프로필 사진 업로드 URL. 가입 전에도 올릴 수 있도록 signupToken 으로도 부를 수 있다.
   // 올린 뒤 받은 key 를 가입 요청에 실어 보낸다.
-  // TODO: 로그인 붙이면 아무나 부르지 못하게 signupToken 이나 로그인 토큰을 확인한다
   @Post('profile-image/upload-url')
+  @UseGuards(SignupOrJwtAuthGuard)
   async createProfileImageUploadUrl() {
     return this.profileImageService.createUploadUrl();
   }
 
   @Get('search')
+  @UseGuards(JwtAuthGuard)
   async searchUsers(
     @Query('keyword') keyword: string = '',
-    @Query('currentUserId') currentUserId: string,
+    @CurrentUserId() currentUserId: number,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe)
     page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe)
     limit: number,
   ) {
-    const parsedCurrentUserId = Number(currentUserId);
-
-    if (
-      !Number.isInteger(parsedCurrentUserId) ||
-      parsedCurrentUserId <= 0
-    ) {
-      throw new BadRequestException('currentUserId가 필요합니다.');
-    }
-
     if (page < 1) {
       throw new BadRequestException('page는 1 이상이어야 합니다.');
     }
@@ -62,7 +55,7 @@ export class UserController {
 
     return await this.userService.searchUsers(
       keyword,
-      parsedCurrentUserId,
+      currentUserId,
       page,
       limit,
     );
@@ -79,6 +72,7 @@ export class UserController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
   async getUser(
     @Param('id', ParseIntPipe) id: number,
   ) {

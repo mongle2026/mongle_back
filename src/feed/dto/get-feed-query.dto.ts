@@ -8,11 +8,6 @@ import {
 
 export class GetFeedQueryDto {
   @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  userId!: number;
-
-  @Type(() => Number)
   @IsOptional()
   @IsInt()
   @Min(1)

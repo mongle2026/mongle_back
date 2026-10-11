@@ -115,8 +115,9 @@ export class NotificationService {
     return { message: '푸시 토큰이 등록되었습니다.' };
   }
 
-  async deletePushToken(token: string) {
-    await this.pushTokenRepository.delete({ token });
+  // 내 계정에 등록된 토큰만 지운다
+  async deletePushToken(userId: number, token: string) {
+    await this.pushTokenRepository.delete({ userId, token });
 
     return { message: '푸시 토큰이 삭제되었습니다.' };
   }

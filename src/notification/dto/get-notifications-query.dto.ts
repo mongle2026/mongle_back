@@ -3,11 +3,6 @@ import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { NotificationType } from '../enums/notification.enum';
 
 export class GetNotificationsQueryDto {
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  userId!: number;
-
   // 없으면 전체
   @IsOptional()
   @IsEnum(NotificationType)

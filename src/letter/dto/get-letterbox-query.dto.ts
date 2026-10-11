@@ -9,11 +9,6 @@ import {
 import { LetterboxTab } from '../enums/letterbox-tab.enum';
 
 export class GetLetterboxQueryDto {
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  userId!: number;
-
   @IsEnum(LetterboxTab)
   tab!: LetterboxTab;
 

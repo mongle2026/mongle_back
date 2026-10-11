@@ -1,19 +1,6 @@
-import { Type } from 'class-transformer';
-import {
-  IsIn,
-  IsInt,
-  IsNotEmpty,
-  IsString,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsIn, IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class RegisterPushTokenDto {
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  userId!: number;
-
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)

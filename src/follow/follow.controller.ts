@@ -7,25 +7,24 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { FollowService } from './follow.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUserId } from '../auth/current-user-id.decorator';
 
 @Controller('follow')
+@UseGuards(JwtAuthGuard)
 export class FollowController {
   constructor(private readonly followService: FollowService) {}
 
   @Post(':targetUserId')
   async followUser(
     @Param('targetUserId', ParseIntPipe) targetUserId: number,
-    @Query('currentUserId') currentUserId: string,
+    @CurrentUserId() currentUserId: number,
   ) {
-    const parsedCurrentUserId = this.parseRequiredNumber(
-      currentUserId,
-      'currentUserId',
-    );
-
     return await this.followService.followUser(
-      parsedCurrentUserId,
+      currentUserId,
       targetUserId,
     );
   }
@@ -33,15 +32,10 @@ export class FollowController {
   @Delete(':targetUserId')
   async unfollowUser(
     @Param('targetUserId', ParseIntPipe) targetUserId: number,
-    @Query('currentUserId') currentUserId: string,
+    @CurrentUserId() currentUserId: number,
   ) {
-    const parsedCurrentUserId = this.parseRequiredNumber(
-      currentUserId,
-      'currentUserId',
-    );
-
     return await this.followService.unfollowUser(
-      parsedCurrentUserId,
+      currentUserId,
       targetUserId,
     );
   }
@@ -49,15 +43,10 @@ export class FollowController {
   @Get(':targetUserId/status')
   async getFollowStatus(
     @Param('targetUserId', ParseIntPipe) targetUserId: number,
-    @Query('currentUserId') currentUserId: string,
+    @CurrentUserId() currentUserId: number,
   ) {
-    const parsedCurrentUserId = this.parseRequiredNumber(
-      currentUserId,
-      'currentUserId',
-    );
-
     return await this.followService.getFollowStatus(
-      parsedCurrentUserId,
+      currentUserId,
       targetUserId,
     );
   }
@@ -76,15 +65,10 @@ export class FollowController {
 
   @Get('recommended-recipients')
   async getRecommendedRecipients(
-    @Query('currentUserId') currentUserId: string,
+    @CurrentUserId() currentUserId: number,
   ) {
-    const parsedCurrentUserId = this.parseRequiredNumber(
-      currentUserId,
-      'currentUserId',
-    );
-
     return await this.followService.getRecommendedRecipients(
-      parsedCurrentUserId,
+      currentUserId,
     );
   }
 

@@ -5,13 +5,16 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   MusicService,
   type MusicSearchResponse,
 } from './music.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('music')
+@UseGuards(JwtAuthGuard)
 export class MusicController {
   constructor(private readonly musicService: MusicService) { }
 

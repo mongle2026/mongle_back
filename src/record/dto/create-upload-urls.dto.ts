@@ -1,4 +1,4 @@
-import { ArrayMaxSize, ArrayMinSize, IsNumberString, IsString, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class UploadFileDto {
@@ -7,9 +7,6 @@ class UploadFileDto {
 }
 
 export class CreateUploadUrlsDto {
-  @IsNumberString()
-  userId!: string;
-
   @ValidateNested({ each: true })
   @Type(() => UploadFileDto)
   @ArrayMinSize(1)

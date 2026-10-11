@@ -17,11 +17,6 @@ export type MyFeedSort = (typeof MY_FEED_SORTS)[number];
 // GET /feed/me - 보관함 내 기록 목록 (genre / month / keyword 로 좁힐 수 있음)
 export class GetMyFeedQueryDto {
   @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  userId!: number;
-
-  @Type(() => Number)
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -57,11 +52,6 @@ export class GetMyFeedQueryDto {
 
 // GET /feed/me/genres, GET /feed/me/months
 export class GetMyFeedGroupQueryDto {
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  userId!: number;
-
   @Type(() => Number)
   @IsOptional()
   @IsInt()

@@ -1,9 +1,12 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { RecordService } from './record.service';
 import { CreateUploadUrlsDto } from './dto/create-upload-urls.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUserId } from '../auth/current-user-id.decorator';
 
 @Controller('record')
+@UseGuards(JwtAuthGuard)
 export class RecordController {
   constructor(
     private readonly dataSource: DataSource,
@@ -16,10 +19,13 @@ export class RecordController {
    * 레코드와 파일이 한 트랜잭션에서 함께 저장됩니다.
    */
   @Post('upload-urls')
-  async createUploadUrls(@Body() dto: CreateUploadUrlsDto) {
+  async createUploadUrls(
+    @CurrentUserId() userId: number,
+    @Body() dto: CreateUploadUrlsDto,
+  ) {
     const uploads = await this.dataSource.transaction(async (manager) =>
       this.recordService.issueUploadUrls(manager, {
-        userId: Number(dto.userId),
+        userId,
         files: dto.files,
       }),
     );

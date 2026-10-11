@@ -7,9 +7,8 @@ import {
   Patch,
   Param,
   Query,
-  Header,
+  UseGuards,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { FeedService } from './feed.service';
 import { CreateFeedDto } from './dto/create-feed.dto';
 import { UpdateFeedDto } from './dto/update-feed.dto';
@@ -21,35 +20,45 @@ import {
 import { GetBookmarkFeedQueryDto } from './dto/get-bookmark-feed-query.dto';
 import { FeedCommentService } from '../feed-comment/feed-comment.service';
 import { CreateFeedCommentDto } from '../feed-comment/dto/create-feed-comment.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUserId } from '../auth/current-user-id.decorator';
 
+// 공유 웹페이지(GET /feed/share/:feedId)는 로그인 없이 열려야 해서 FeedShareController 에 따로 둔다
 @Controller('feed')
+@UseGuards(JwtAuthGuard)
 export class FeedController {
   constructor(
     private readonly feedService: FeedService,
     private readonly feedCommentService: FeedCommentService,
-    private readonly configService: ConfigService,
   ) { }
 
   @Post()
   async createFeed(
+    @CurrentUserId() userId: number,
     @Body() dto: CreateFeedDto,
   ) {
-    return this.feedService.createFeed(dto);
+    return this.feedService.createFeed(userId, dto);
   }
 
   @Get()
-  async getFeeds(@Query() query: GetFeedQueryDto) {
+  async getFeeds(
+    @CurrentUserId() userId: number,
+    @Query() query: GetFeedQueryDto,
+  ) {
     return this.feedService.getFeeds({
-      userId: query.userId,
+      userId,
       cursor: query.cursor,
       limit: query.limit,
     });
   }
 
   @Get('following')
-  async getFollowingFeeds(@Query() query: GetFeedQueryDto) {
+  async getFollowingFeeds(
+    @CurrentUserId() userId: number,
+    @Query() query: GetFeedQueryDto,
+  ) {
     return this.feedService.getFollowingFeeds({
-      userId: query.userId,
+      userId,
       cursor: query.cursor,
       limit: query.limit,
     });
@@ -57,9 +66,12 @@ export class FeedController {
 
   // 보관함 - 내 기록. ':feedId' 보다 위에 있어야 'me' 가 feedId 로 잡히지 않는다
   @Get('me')
-  async getMyFeeds(@Query() query: GetMyFeedQueryDto) {
+  async getMyFeeds(
+    @CurrentUserId() userId: number,
+    @Query() query: GetMyFeedQueryDto,
+  ) {
     return this.feedService.getMyFeeds({
-      userId: query.userId,
+      userId,
       cursor: query.cursor,
       limit: query.limit,
       genre: query.genre,
@@ -70,20 +82,29 @@ export class FeedController {
   }
 
   @Get('me/genres')
-  async getMyFeedGenres(@Query() query: GetMyFeedGroupQueryDto) {
-    return this.feedService.getMyFeedGenres(query.userId, query.limit, query.coverSeed);
+  async getMyFeedGenres(
+    @CurrentUserId() userId: number,
+    @Query() query: GetMyFeedGroupQueryDto,
+  ) {
+    return this.feedService.getMyFeedGenres(userId, query.limit, query.coverSeed);
   }
 
   @Get('me/months')
-  async getMyFeedMonths(@Query() query: GetMyFeedGroupQueryDto) {
-    return this.feedService.getMyFeedMonths(query.userId, query.limit, query.coverSeed, query.keyword);
+  async getMyFeedMonths(
+    @CurrentUserId() userId: number,
+    @Query() query: GetMyFeedGroupQueryDto,
+  ) {
+    return this.feedService.getMyFeedMonths(userId, query.limit, query.coverSeed, query.keyword);
   }
 
   // 보관함 - 북마크
   @Get('bookmark/me')
-  async getMyBookmarkedFeeds(@Query() query: GetBookmarkFeedQueryDto) {
+  async getMyBookmarkedFeeds(
+    @CurrentUserId() userId: number,
+    @Query() query: GetBookmarkFeedQueryDto,
+  ) {
     return this.feedService.getMyBookmarkedFeeds({
-      userId: query.userId,
+      userId,
       cursor: query.cursor,
       limit: query.limit,
       filter: query.filter,
@@ -91,35 +112,23 @@ export class FeedController {
     });
   }
 
-  @Get('share/:feedId')
-  @Header('Content-Type', 'text/html; charset=utf-8')
-  async getFeedSharePage(
-    @Param('feedId') feedId: string,
-  ) {
-    const meta = await this.feedService.getFeedShareMeta(
-      Number(feedId),
-    );
-
-    return this.createFeedShareHtml(feedId, meta);
-  }
-
   @Get(':feedId')
   async getFeedDetail(
     @Param('feedId') feedId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
   ) {
-    return this.feedService.getFeedDetail(Number(feedId), Number(userId));
+    return this.feedService.getFeedDetail(Number(feedId), userId);
   }
 
   @Patch(':feedId')
   async updateFeed(
     @Param('feedId') feedId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
     @Body() dto: UpdateFeedDto,
   ) {
     return this.feedService.updateFeed(
       Number(feedId),
-      Number(userId),
+      userId,
       dto,
     );
   }
@@ -127,52 +136,52 @@ export class FeedController {
   @Delete(':feedId')
   async deleteFeed(
     @Param('feedId') feedId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
   ) {
-    return this.feedService.deleteFeed(Number(feedId), Number(userId));
+    return this.feedService.deleteFeed(Number(feedId), userId);
   }
 
   @Post(':feedId/like')
   async likeFeed(
     @Param('feedId') feedId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
   ) {
-    return this.feedService.likeFeed(Number(feedId), Number(userId));
+    return this.feedService.likeFeed(Number(feedId), userId);
   }
 
   @Delete(':feedId/like')
   async unlikeFeed(
     @Param('feedId') feedId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
   ) {
-    return this.feedService.unlikeFeed(Number(feedId), Number(userId));
+    return this.feedService.unlikeFeed(Number(feedId), userId);
   }
 
   @Post(':feedId/bookmark')
   async bookmarkFeed(
     @Param('feedId') feedId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
   ) {
-    return this.feedService.bookmarkFeed(Number(feedId), Number(userId));
+    return this.feedService.bookmarkFeed(Number(feedId), userId);
   }
 
   @Delete(':feedId/bookmark')
   async unbookmarkFeed(
     @Param('feedId') feedId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
   ) {
-    return this.feedService.unbookmarkFeed(Number(feedId), Number(userId));
+    return this.feedService.unbookmarkFeed(Number(feedId), userId);
   }
 
   @Post(':feedId/comments')
   async createComment(
     @Param('feedId') feedId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
     @Body() dto: CreateFeedCommentDto,
   ) {
     return this.feedCommentService.createComment(
       Number(feedId),
-      Number(userId),
+      userId,
       dto,
     );
   }
@@ -180,111 +189,21 @@ export class FeedController {
   @Get(':feedId/comments')
   async getComments(
     @Param('feedId') feedId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
   ) {
-    return this.feedCommentService.getComments(Number(feedId), Number(userId));
+    return this.feedCommentService.getComments(Number(feedId), userId);
   }
 
   @Delete(':feedId/comments/:commentId')
   async deleteComment(
     @Param('feedId') feedId: string,
     @Param('commentId') commentId: string,
-    @Query('userId') userId: string,
+    @CurrentUserId() userId: number,
   ) {
     return this.feedCommentService.deleteComment(
       Number(feedId),
       Number(commentId),
-      Number(userId),
-    );
-  }
-
-  private createFeedShareHtml(
-    feedId: string,
-    meta: {
-      title: string;
-      description: string;
-      imageUrl: string | null;
-      siteName: string;
-    },
-  ) {
-    const title = this.escapeHtml(meta.title);
-    const description = this.escapeHtml(meta.description);
-    const siteName = this.escapeHtml(meta.siteName);
-    const imageUrl = meta.imageUrl
-      ? this.escapeHtml(meta.imageUrl)
-      : null;
-
-    // 앱 미설치 시 스토어 링크는 출시 전까지 비어있을 수 있으므로,
-    // 값이 없으면 딥링크 실패 후에도 이 웹페이지에 그대로 머무른다.
-    const appScheme =
-      this.configService.get<string>('APP_SCHEME') ?? 'mongle';
-    const iosStoreUrl =
-      this.configService.get<string>('IOS_APP_STORE_URL') ?? '';
-    const androidStoreUrl =
-      this.configService.get<string>('ANDROID_PLAY_STORE_URL') ?? '';
-    const deepLink = `${appScheme}://share?feedId=${encodeURIComponent(feedId)}`;
-
-    return `<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta property="og:type" content="website">
-<meta property="og:title" content="${title}">
-<meta property="og:description" content="${description}">
-<meta property="og:site_name" content="${siteName}">
-${imageUrl ? `<meta property="og:image" content="${imageUrl}">` : ''}
-<title>${title}</title>
-</head>
-<body>
-<h1>${title}</h1>
-<p>${description}</p>
-<script>
-(function () {
-  var deepLink = ${JSON.stringify(deepLink)};
-  var iosStoreUrl = ${JSON.stringify(iosStoreUrl)};
-  var androidStoreUrl = ${JSON.stringify(androidStoreUrl)};
-
-  var isAndroid = /Android/i.test(navigator.userAgent);
-  var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-  if (!isAndroid && !isIOS) {
-    return;
-  }
-
-  var storeUrl = isAndroid ? androidStoreUrl : iosStoreUrl;
-
-  var fallbackTimer = setTimeout(function () {
-    if (storeUrl) {
-      window.location.href = storeUrl;
-    }
-  }, 1500);
-
-  document.addEventListener('visibilitychange', function () {
-    if (document.hidden) {
-      clearTimeout(fallbackTimer);
-    }
-  });
-
-  window.location.href = deepLink;
-})();
-</script>
-</body>
-</html>`;
-  }
-
-  private escapeHtml(value: string) {
-    const characters: Record<string, string> = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;',
-    };
-
-    return value.replace(
-      /[&<>"']/g,
-      character => characters[character],
+      userId,
     );
   }
 }

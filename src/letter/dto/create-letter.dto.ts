@@ -14,9 +14,6 @@ import { Type } from 'class-transformer';
 import { RecordFileDto } from '../../record/dto/record-file.dto';
 
 export class CreateLetterDto {
-  @IsNumberString()
-  userId!: string;
-
   @IsString()
   music!: string;
 
