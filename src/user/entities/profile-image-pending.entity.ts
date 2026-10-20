@@ -13,6 +13,7 @@ import {
  * 그래서 record_file_pending 과 달리 user_id 가 없다.
  *
  * 가입(또는 사진 변경)할 때 이 행을 지우고 user.profile_image_key 에 키를 넣는다.
+ * 사진을 바꾸거나 지우면 예전 키를 purge_after = 지금으로 넣어 다음 정리 때 지워지게 한다.
  * 쓰이지 않고 purge_after 가 지난 행은 정리 크론이 R2 객체와 함께 지운다.
  */
 @Entity('profile_image_pending')

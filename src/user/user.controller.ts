@@ -62,7 +62,7 @@ export class UserController {
     );
   }
 
-  // 내 닉네임 / 아이디 수정
+  // 내 닉네임 / 아이디 / 프로필 사진 수정. 보낸 항목만 한 번에 바꾼다
   @Patch('me')
   @UseGuards(JwtAuthGuard)
   async updateMe(

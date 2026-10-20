@@ -17,7 +17,8 @@ const MAX_PROFILE_IMAGE_SIZE = 5 * 1024 * 1024;
  *
  * 1. 앱이 업로드 URL 을 받아 R2 에 바로 올린다 (createUploadUrl)
  * 2. 가입/변경 요청에 키를 실어 보내면 확인 후 회원에게 붙인다 (verifyUploaded → attach)
- * 3. 붙지 않은 사진은 정리 크론이 지운다 (purgePendingFiles)
+ * 3. 사진을 바꾸거나 지우면 예전 사진을 정리 대상으로 돌려놓는다 (discard)
+ * 4. 붙지 않은 사진은 정리 크론이 지운다 (purgePendingFiles)
  */
 @Injectable()
 export class ProfileImageService {
@@ -74,6 +75,17 @@ export class ProfileImageService {
     }
 
     await manager.delete(ProfileImagePendingEntity, { id: pending.id });
+  }
+
+  /**
+   * 더 이상 쓰지 않는 사진을 대기표에 넣어 다음 정리 때 지워지게 한다.
+   * 회원 저장과 같은 트랜잭션에서 불러서, 저장이 롤백되면 예전 사진도 지워지지 않게 한다.
+   */
+  async discard(manager: EntityManager, key: string) {
+    await manager.insert(ProfileImagePendingEntity, {
+      fileKey: key,
+      purgeAfter: new Date(),
+    });
   }
 
   /**

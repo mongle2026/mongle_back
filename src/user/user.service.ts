@@ -5,11 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { DataSource, Not, Repository } from 'typeorm';
 import { UserEntity } from './entities/user.entity';
 import { R2Service } from '../storage/r2.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { isDuplicateEntryError } from '../database/mysql-error.util';
+import { ProfileImageService } from './profile-image.service';
 
 @Injectable()
 export class UserService {
@@ -17,6 +18,8 @@ export class UserService {
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
     private readonly r2Service: R2Service,
+    private readonly dataSource: DataSource,
+    private readonly profileImageService: ProfileImageService,
   ) { }
 
   async searchUsers(
@@ -207,8 +210,16 @@ export class UserService {
     };
   }
 
+  /**
+   * 프로필 수정. 보낸 항목만 한 트랜잭션으로 바꿔서, 하나라도 실패하면 아무것도 바뀌지 않는다.
+   *
+   * profileImageKey: 보내지 않으면 그대로, 새 키면 그 사진으로, null 이면 사진 삭제.
+   * 바꾸거나 지운 예전 사진은 대기표로 돌려서 정리 크론이 지운다.
+   */
   async updateProfile(userId: number, dto: UpdateUserDto) {
-    const changes: Partial<Pick<UserEntity, 'nickname' | 'userCode'>> = {};
+    const changes: Partial<
+      Pick<UserEntity, 'nickname' | 'userCode' | 'profileImageKey'>
+    > = {};
 
     if (dto.nickname !== undefined) {
       changes.nickname = dto.nickname;
@@ -216,6 +227,10 @@ export class UserService {
 
     if (dto.userCode !== undefined) {
       changes.userCode = dto.userCode;
+    }
+
+    if (dto.profileImageKey !== undefined) {
+      changes.profileImageKey = dto.profileImageKey;
     }
 
     if (Object.keys(changes).length === 0) {
@@ -233,12 +248,49 @@ export class UserService {
       throw new ConflictException('이미 사용 중인 아이디입니다.');
     }
 
-    try {
-      const result = await this.userRepository.update({ id: userId }, changes);
+    // R2 요청이라 트랜잭션 밖에서 확인한다
+    if (changes.profileImageKey) {
+      await this.profileImageService.verifyUploaded(changes.profileImageKey);
+    }
 
-      if (!result.affected) {
-        throw new NotFoundException('사용자를 찾을 수 없습니다.');
-      }
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        // 사진을 연달아 바꿔도 예전 키를 놓치지 않게 내 행을 잠그고 읽는다
+        const user = await manager.findOne(UserEntity, {
+          select: { id: true, profileImageKey: true },
+          where: { id: userId },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (!user) {
+          throw new NotFoundException('사용자를 찾을 수 없습니다.');
+        }
+
+        if (changes.profileImageKey !== undefined) {
+          // 지금 사진과 같으면 바꾸지 않는다. 이미 붙은 키라 attach 하면 거절된다
+          if (changes.profileImageKey === user.profileImageKey) {
+            delete changes.profileImageKey;
+          } else {
+            if (changes.profileImageKey) {
+              await this.profileImageService.attach(
+                manager,
+                changes.profileImageKey,
+              );
+            }
+
+            if (user.profileImageKey) {
+              await this.profileImageService.discard(
+                manager,
+                user.profileImageKey,
+              );
+            }
+          }
+        }
+
+        if (Object.keys(changes).length > 0) {
+          await manager.update(UserEntity, { id: userId }, changes);
+        }
+      });
     } catch (error) {
       // 위 확인과 저장 사이에 다른 사람이 같은 아이디를 가져간 경우
       if (isDuplicateEntryError(error)) {
