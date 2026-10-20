@@ -6,6 +6,7 @@ import {
   Delete,
   Patch,
   Param,
+  ParseUUIDPipe,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import {
   GetMyFeedQueryDto,
 } from './dto/get-my-feed-query.dto';
 import { GetBookmarkFeedQueryDto } from './dto/get-bookmark-feed-query.dto';
+import { UpdateProfileFeedsDto } from './dto/update-profile-feeds.dto';
 import { FeedCommentService } from '../feed-comment/feed-comment.service';
 import { CreateFeedCommentDto } from '../feed-comment/dto/create-feed-comment.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -95,6 +97,30 @@ export class FeedController {
     @Query() query: GetMyFeedGroupQueryDto,
   ) {
     return this.feedService.getMyFeedMonths(userId, query.limit, query.coverSeed, query.keyword);
+  }
+
+  // 프로필 게시글 편집 저장. 바꾼 글만 보낸다
+  @Patch('me/profile')
+  async updateProfileFeeds(
+    @CurrentUserId() userId: number,
+    @Body() dto: UpdateProfileFeedsDto,
+  ) {
+    return this.feedService.updateProfileFeeds(userId, dto);
+  }
+
+  // 프로필 노래 커버 그리드. publicId 는 프로필 주인 (내 프로필이면 내 publicId)
+  @Get('profile/:publicId')
+  async getProfileFeeds(
+    @Param('publicId', ParseUUIDPipe) publicId: string,
+    @CurrentUserId() userId: number,
+    @Query() query: GetFeedQueryDto,
+  ) {
+    return this.feedService.getProfileFeeds({
+      viewerId: userId,
+      ownerPublicId: publicId,
+      cursor: query.cursor,
+      limit: query.limit,
+    });
   }
 
   // 보관함 - 북마크

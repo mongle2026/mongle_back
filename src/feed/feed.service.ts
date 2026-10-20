@@ -10,6 +10,7 @@ import { FeedLikeEntity } from '../like/entities/feed-like.entity';
 import { BookmarkEntity } from '../bookmark/entities/bookmark.entity';
 import { RecordEntity } from '../record/entities/record.entity';
 import { UpdateFeedDto } from './dto/update-feed.dto';
+import { UpdateProfileFeedsDto } from './dto/update-profile-feeds.dto';
 import { MyFeedSort } from './dto/get-my-feed-query.dto';
 import { BookmarkFeedFilter, BookmarkFeedSort } from './dto/get-bookmark-feed-query.dto';
 import { Visibility } from './enums/visibility.enum';
@@ -52,6 +53,7 @@ type MyFeedFileRow = {
 type MyFeedRow = {
   feedId: number | string;
   visibility: Visibility;
+  profileHidden: number | string;
   recordId: number | string;
   font: string;
   text: string | null;
@@ -937,11 +939,8 @@ export class FeedService {
     sort?: MyFeedSort;
     keyword?: string;
   }) {
-    const { userId, cursor, genre, month, sort = 'latest' } = params;
+    const { userId, cursor, limit, genre, month, sort = 'latest' } = params;
     const keywordPattern = toKeywordLikePattern(params.keyword);
-    const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
-    const offset = sort === 'title' ? cursor ?? 0 : 0;
-    const isOldest = sort === 'oldest';
 
     const conditions = ['record.user_id = ?', 'feed.deleted_at IS NULL'];
     const conditionParams: unknown[] = [userId];
@@ -963,6 +962,113 @@ export class FeedService {
       conditionParams.push(keywordPattern, keywordPattern);
     }
 
+    return this.findFeedCardPage({ conditions, conditionParams, cursor, limit, sort });
+  }
+
+  /*
+   * 프로필 노래 커버 그리드 (내 프로필, 다른 사람 프로필 공용). ownerPublicId: 프로필 주인의 publicId
+   * 프로필 게시글 편집에서 뺀 글(profile_hidden)은 누구에게도 보이지 않습니다.
+   * 주인은 공개 범위와 상관없이 모두 보고, 다른 사람은 GET /feed 와 같은 규칙으로 봅니다
+   * (전체 공개 + 팔로우 중이면 팔로워 공개, 비공개는 안 보임). 최신순, feedId 커서.
+   * 사용자 찾기·팔로우 확인을 따로 하지 않고 쿼리 하나로 불러옵니다. 없는 사용자면 빈 목록입니다.
+   */
+  async getProfileFeeds(params: {
+    viewerId: number;
+    ownerPublicId: string;
+    cursor?: number;
+    limit?: number;
+  }) {
+    const { viewerId, ownerPublicId, cursor, limit } = params;
+
+    return this.findFeedCardPage({
+      conditions: [
+        'record.user_id = (SELECT owner.id FROM `user` owner WHERE owner.public_id = ?)',
+        'feed.deleted_at IS NULL',
+        'feed.profile_hidden = 0',
+        `(
+          record.user_id = ?
+          OR feed.visibility = ?
+          OR (
+            feed.visibility = ?
+            AND EXISTS (
+              SELECT 1 FROM follow
+              WHERE follow.follower_id = ? AND follow.following_id = record.user_id
+            )
+          )
+        )`,
+      ],
+      conditionParams: [
+        ownerPublicId,
+        viewerId,
+        Visibility.PUBLIC,
+        Visibility.FOLLOWER,
+        viewerId,
+      ],
+      cursor,
+      limit,
+      sort: 'latest',
+    });
+  }
+
+  /*
+   * 프로필 게시글 편집 저장. 바꾼 글만 받습니다.
+   * 내 글만 바뀌고, 남의 글·삭제된 글 id 는 무시합니다. 보이기·빼기를 쿼리 하나로 같이 바꿉니다.
+   */
+  async updateProfileFeeds(userId: number, dto: UpdateProfileFeedsDto) {
+    const showFeedIds = [...new Set(dto.showFeedIds ?? [])];
+    const hideFeedIds = [...new Set(dto.hideFeedIds ?? [])];
+
+    if (showFeedIds.some(feedId => hideFeedIds.includes(feedId))) {
+      throw new BadRequestException('같은 글을 보이기와 빼기에 함께 보낼 수 없습니다.');
+    }
+
+    const feedIds = [...showFeedIds, ...hideFeedIds];
+
+    if (feedIds.length > 0) {
+      const toPlaceholders = (ids: number[]) => ids.map(() => '?').join(', ');
+
+      // hideFeedIds 에 있으면 1, 아니면(showFeedIds) 0
+      const profileHiddenSql = hideFeedIds.length > 0
+        ? `feed.id IN (${toPlaceholders(hideFeedIds)})`
+        : '0';
+
+      await this.dataSource.query(
+        `
+        UPDATE feed
+        JOIN record ON record.id = feed.record_id
+        SET feed.profile_hidden = ${profileHiddenSql}
+        WHERE record.user_id = ?
+          AND feed.deleted_at IS NULL
+          AND feed.id IN (${toPlaceholders(feedIds)})
+        `,
+        [...hideFeedIds, userId, ...feedIds],
+      );
+    }
+
+    return {
+      showFeedIds,
+      hideFeedIds,
+    };
+  }
+
+  /*
+   * 보관함 내 기록 · 프로필 커버 그리드 공용 목록 쿼리. conditions 는 AND 로 묶인다.
+   * sort: latest / oldest 는 feedId 커서, title 은 offset 커서
+   */
+  private async findFeedCardPage(params: {
+    conditions: string[];
+    conditionParams: unknown[];
+    cursor?: number;
+    limit?: number;
+    sort: MyFeedSort;
+  }) {
+    const { cursor, sort } = params;
+    const conditions = [...params.conditions];
+    const conditionParams = [...params.conditionParams];
+    const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
+    const offset = sort === 'title' ? cursor ?? 0 : 0;
+    const isOldest = sort === 'oldest';
+
     if (sort !== 'title' && cursor !== undefined) {
       conditions.push(isOldest ? 'feed.id > ?' : 'feed.id < ?');
       conditionParams.push(cursor);
@@ -978,6 +1084,7 @@ export class FeedService {
       SELECT
         feed.id AS feedId,
         feed.visibility AS visibility,
+        feed.profile_hidden AS profileHidden,
         record.id AS recordId,
         record.font AS font,
         record.text AS text,
@@ -1419,6 +1526,8 @@ export class FeedService {
     return {
       feedId: row.feedId,
       visibility: row.visibility,
+      // 프로필 게시글 편집에서 뺀 글이면 true
+      profileHidden: Number(row.profileHidden) === 1,
       font: row.font,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
