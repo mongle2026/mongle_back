@@ -10,6 +10,22 @@ import { UserEntity } from '../user/entities/user.entity';
 import { R2Service } from '../storage/r2.service';
 import { UserService } from '../user/user.service';
 
+const FOLLOW_LIST_DEFAULT_LIMIT = 20;
+const FOLLOW_LIST_MAX_LIMIT = 50;
+
+type FollowListQuery = { cursor?: number; limit?: number };
+
+// getRawMany 결과는 bigint 가 문자열로 와서 id 는 둘 다 받는다
+type FollowUserFields = Pick<
+  UserEntity,
+  'publicId' | 'userCode' | 'nickname' | 'profileImageKey'
+> & { id: number | string };
+
+type FollowUserRow = FollowUserFields & {
+  followId: string;
+  isFollowingCount: string;
+};
+
 @Injectable()
 export class FollowService {
   constructor(
@@ -92,73 +108,79 @@ export class FollowService {
     };
   }
 
-  // 앱은 publicId 로 회원을 가리킨다
-  async getFollowingUsersByPublicId(publicId: string) {
-    return this.getFollowingUsers(
-      await this.userService.getIdByPublicId(publicId),
-    );
+  // 내가 팔로우하는 사람
+  async getMyFollowings(currentUserId: number, query: FollowListQuery = {}) {
+    return this.getFollowUserPage(currentUserId, 'followings', query);
   }
 
-  async getFollowerUsersByPublicId(publicId: string) {
-    return this.getFollowerUsers(
-      await this.userService.getIdByPublicId(publicId),
-    );
+  // 나를 팔로우하는 사람
+  async getMyFollowers(currentUserId: number, query: FollowListQuery = {}) {
+    return this.getFollowUserPage(currentUserId, 'followers', query);
   }
 
-  private async getFollowingUsers(userId: number) {
-    const users = await this.userRepository
-      .createQueryBuilder('user')
-      .innerJoin(
-        FollowEntity,
-        'follow',
-        'follow.following_id = user.id AND follow.follower_id = :userId',
-        { userId },
+  /**
+   * 팔로우 / 팔로워 목록. 최근에 팔로우한 순(follow.id 내림차순)으로 커서 페이지네이션.
+   * isFollowing 은 지금 보는 사람(currentUserId)이 그 사람을 팔로우 중인지다.
+   */
+  private async getFollowUserPage(
+    currentUserId: number,
+    type: 'followings' | 'followers',
+    { cursor, limit }: FollowListQuery,
+  ) {
+    const safeLimit = Math.min(
+      Math.max(limit ?? FOLLOW_LIST_DEFAULT_LIMIT, 1),
+      FOLLOW_LIST_MAX_LIMIT,
+    );
+
+    // followings: 내가 누른 행의 상대 / followers: 나를 누른 행의 상대
+    const [myColumn, otherColumn] =
+      type === 'followings'
+        ? ['followerId', 'followingId']
+        : ['followingId', 'followerId'];
+
+    const pageQuery = this.followRepository
+      .createQueryBuilder('follow')
+      .innerJoin(UserEntity, 'user', `user.id = follow.${otherColumn}`)
+      .select('follow.id', 'followId')
+      .addSelect('user.id', 'id')
+      .addSelect('user.publicId', 'publicId')
+      .addSelect('user.userCode', 'userCode')
+      .addSelect('user.nickname', 'nickname')
+      .addSelect('user.profileImageKey', 'profileImageKey')
+      .addSelect(
+        (subQuery) =>
+          subQuery
+            .select('COUNT(*)')
+            .from(FollowEntity, 'myFollow')
+            .where('myFollow.followerId = :currentUserId')
+            .andWhere('myFollow.followingId = user.id'),
+        'isFollowingCount',
       )
-      .select([
-        'user.id',
-        'user.publicId',
-        'user.userCode',
-        'user.nickname',
-        'user.profileImageKey',
-      ])
-      .orderBy('follow.createdAt', 'DESC')
-      .limit(50)
-      .getMany();
+      .where(`follow.${myColumn} = :currentUserId`)
+      .setParameter('currentUserId', currentUserId)
+      .orderBy('follow.id', 'DESC')
+      .limit(safeLimit + 1);
 
-    return users.map((user) =>
-      this.toUserResponse(user, userId, true),
-    );
-  }
+    if (cursor !== undefined) {
+      pageQuery.andWhere('follow.id < :cursor', { cursor });
+    }
 
-  private async getFollowerUsers(userId: number) {
-    const users = await this.userRepository
-      .createQueryBuilder('user')
-      .innerJoin(
-        FollowEntity,
-        'follow',
-        'follow.follower_id = user.id AND follow.following_id = :userId',
-        { userId },
-      )
-      .select([
-        'user.id',
-        'user.publicId',
-        'user.userCode',
-        'user.nickname',
-        'user.profileImageKey',
-      ])
-      .orderBy('follow.createdAt', 'DESC')
-      .limit(50)
-      .getMany();
+    const rows = await pageQuery.getRawMany<FollowUserRow>();
+    const hasNext = rows.length > safeLimit;
+    const pageRows = rows.slice(0, safeLimit);
+    const lastRow = pageRows[pageRows.length - 1];
 
-    const followingIdSet = await this.getFollowingIdSet(userId);
-
-    return users.map((user) =>
-      this.toUserResponse(
-        user,
-        userId,
-        followingIdSet.has(String(user.id)),
+    return {
+      items: pageRows.map((row) =>
+        this.toUserResponse(
+          row,
+          currentUserId,
+          Number(row.isFollowingCount) > 0,
+        ),
       ),
-    );
+      nextCursor: hasNext && lastRow ? Number(lastRow.followId) : null,
+      hasNext,
+    };
   }
 
   /**
@@ -185,11 +207,13 @@ export class FollowService {
       throw new NotFoundException('사용자를 찾을 수 없습니다.');
     }
 
-    const followings = await this.getFollowingUsers(currentUserId);
+    const followings = await this.getMyFollowings(currentUserId, {
+      limit: FOLLOW_LIST_MAX_LIMIT,
+    });
 
     return [
       this.toUserResponse(me, currentUserId, false),
-      ...followings,
+      ...followings.items,
     ];
   }
 
@@ -204,11 +228,6 @@ export class FollowService {
       .getRawMany<{ followingId: string }>();
 
     return rows.map((row) => Number(row.followingId));
-  }
-
-  private async getFollowingIdSet(userId: number) {
-    const followingIds = await this.getFollowingIds(userId);
-    return new Set(followingIds.map((id) => String(id)));
   }
 
   private async ensureUserExists(userId: number) {
@@ -232,7 +251,7 @@ export class FollowService {
   }
 
   private toUserResponse(
-    user: UserEntity,
+    user: FollowUserFields,
     currentUserId: number,
     isFollowing: boolean,
   ) {

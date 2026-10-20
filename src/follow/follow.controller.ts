@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -9,8 +8,8 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { isUUID } from 'class-validator';
 import { FollowService } from './follow.service';
+import { GetFollowListQueryDto } from './dto/get-follow-list-query.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUserId } from '../auth/current-user-id.decorator';
 
@@ -52,17 +51,22 @@ export class FollowController {
     );
   }
 
-  // userId 는 그 사람의 publicId
-  @Get('followings')
-  async getFollowingUsers(@Query('userId') userId: string) {
-    this.validatePublicId(userId, 'userId');
-    return await this.followService.getFollowingUsersByPublicId(userId);
+  // 내가 팔로우하는 사람
+  @Get('me/followings')
+  async getMyFollowings(
+    @CurrentUserId() currentUserId: number,
+    @Query() query: GetFollowListQueryDto,
+  ) {
+    return await this.followService.getMyFollowings(currentUserId, query);
   }
 
-  @Get('followers')
-  async getFollowerUsers(@Query('userId') userId: string) {
-    this.validatePublicId(userId, 'userId');
-    return await this.followService.getFollowerUsersByPublicId(userId);
+  // 나를 팔로우하는 사람
+  @Get('me/followers')
+  async getMyFollowers(
+    @CurrentUserId() currentUserId: number,
+    @Query() query: GetFollowListQueryDto,
+  ) {
+    return await this.followService.getMyFollowers(currentUserId, query);
   }
 
   @Get('recommended-recipients')
@@ -72,11 +76,5 @@ export class FollowController {
     return await this.followService.getRecommendedRecipients(
       currentUserId,
     );
-  }
-
-  private validatePublicId(value: string | undefined, name: string) {
-    if (!value || !isUUID(value)) {
-      throw new BadRequestException(`${name}가 필요합니다.`);
-    }
   }
 }
