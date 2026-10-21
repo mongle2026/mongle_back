@@ -12,7 +12,7 @@ import { NotificationService } from './notification.service';
 import { RegisterPushTokenDto } from './dto/register-push-token.dto';
 import { DeletePushTokenDto } from './dto/delete-push-token.dto';
 import { GetNotificationsQueryDto } from './dto/get-notifications-query.dto';
-import { UpdateNotificationSettingDto } from './dto/update-notification-setting.dto';
+import { UpdateNotificationSettingsDto } from './dto/update-notification-setting.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUserId } from '../auth/current-user-id.decorator';
 
@@ -56,10 +56,10 @@ export class NotificationController {
   }
 
   @Patch('settings')
-  async updateSetting(
+  async updateSettings(
     @CurrentUserId() userId: number,
-    @Body() dto: UpdateNotificationSettingDto,
+    @Body() dto: UpdateNotificationSettingsDto,
   ) {
-    return this.notificationService.updateSetting({ userId, ...dto });
+    return this.notificationService.updateSettings(userId, dto.settings);
   }
 }

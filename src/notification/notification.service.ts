@@ -7,6 +7,9 @@ import { PushTokenEntity } from './entities/push-token.entity';
 import { NotificationSettingEntity } from './entities/notification-setting.entity';
 import { UserEntity } from '../user/entities/user.entity';
 import {
+  NIGHT_END_HOUR,
+  NIGHT_START_HOUR,
+  NIGHT_SUMMARY_CHANNEL_ID,
   NOTIFICATION_RETENTION_DAYS,
   NOTIFICATION_SETTING_DEFAULTS,
   NOTIFICATION_SETTING_KEY_BY_STATUS,
@@ -15,12 +18,33 @@ import {
   NotificationStatus,
   NotificationType,
 } from './enums/notification.enum';
-import { ExpoPushService } from './expo-push.service';
-import { buildPushContent } from './notification-message.util';
+import { ExpoPushMessage, ExpoPushService } from './expo-push.service';
+import {
+  buildNightSummaryPushContent,
+  buildPushContent,
+} from './notification-message.util';
 import { R2Service } from '../storage/r2.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_BATCH_SIZE = 1000;
+
+// 아침에 미뤄둔 푸시를 보낼 때 한 번에 처리할 사람 수와 최대 묶음 수. 남은 사람은 다음 실행(1분 뒤)에 보낸다.
+const PENDING_PUSH_USER_BATCH_SIZE = 100;
+const PENDING_PUSH_MAX_BATCHES_PER_RUN = 20;
+// 사람마다 DB 조회 몇 번 + Expo 요청이라, DB 풀(기본 5)을 넘지 않게 동시에 보낸다
+const PENDING_PUSH_CONCURRENCY = 5;
+
+const KST_OFFSET_HOURS = 9;
+
+// KST 기준 야간(NIGHT_START_HOUR ~ NIGHT_END_HOUR)인지
+const isKstNightTime = (date: Date) => {
+  const kstHour = (date.getUTCHours() + KST_OFFSET_HOURS) % 24;
+
+  return kstHour >= NIGHT_START_HOUR || kstHour < NIGHT_END_HOUR;
+};
+
+// now: 바로 보낸다, later: 아침에 모아서 보낸다, none: 목록에만 남긴다
+type PushTiming = 'now' | 'later' | 'none';
 
 // Expo 푸시 토큰 형식: ExponentPushToken[xxxx] 또는 ExpoPushToken[xxxx]
 const EXPO_PUSH_TOKEN_PATTERN = /^Expo(nent)?PushToken\[.+\]$/;
@@ -39,6 +63,7 @@ export type CreateNotificationInput = {
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
+  private isSendingPendingPushes = false;
 
   constructor(
     @InjectRepository(NotificationEntity)
@@ -60,6 +85,7 @@ export class NotificationService {
   /*
    * 알림 목록에 저장하고 푸시를 보낸다.
    * 받는 사람이 해당 알림을 꺼두었으면 목록에도 남기지 않는다.
+   * 야간 알림을 꺼두었으면 밤에는 목록에만 남기고 푸시는 아침에 모아서 보낸다.
    *
    * 편지/댓글 저장이 끝난 뒤 부르는 부가 작업이라, 실패해도 에러를 던지지 않고 로그만 남긴다.
    */
@@ -72,6 +98,8 @@ export class NotificationService {
         return;
       }
 
+      const pushTiming = await this.getPushTiming(input.userId, settingKey);
+
       const notification = await this.notificationRepository.save(
         this.notificationRepository.create({
           userId: input.userId,
@@ -83,10 +111,13 @@ export class NotificationService {
           commentId: input.commentId ?? null,
           content: input.content ?? null,
           eventTitle: input.eventTitle ?? null,
+          pushPending: pushTiming === 'later',
         }),
       );
 
-      await this.sendPush(notification, settingKey);
+      if (pushTiming === 'now') {
+        await this.sendPush(notification, settingKey);
+      }
     } catch (error) {
       this.logger.error(
         `알림 처리 실패 (userId=${input.userId}, status=${input.status})`,
@@ -179,27 +210,78 @@ export class NotificationService {
     });
   }
 
-  async updateSetting(params: {
-    userId: number;
-    key: NotificationSettingKey;
-    enabled: boolean;
-  }) {
-    const { userId, key, enabled } = params;
+  async updateSettings(
+    userId: number,
+    settings: { key: NotificationSettingKey; enabled: boolean }[],
+  ) {
+    // 같은 key 가 여러 번 오면 마지막 값을 쓴다
+    const enabledByKey = new Map(
+      settings.map(({ key, enabled }) => [key, enabled]),
+    );
 
     await this.settingRepository.upsert(
-      { userId, settingKey: key, enabled },
+      [...enabledByKey].map(([settingKey, enabled]) => ({
+        userId,
+        settingKey,
+        enabled,
+      })),
       { conflictPaths: ['userId', 'settingKey'] },
     );
 
-    const row = await this.settingRepository.findOneOrFail({
-      where: { userId, settingKey: key },
-    });
+    return this.getSettings(userId);
+  }
 
-    return {
-      key,
-      enabled: row.enabled,
-      updatedAt: row.updatedAt,
-    };
+  /*
+   * 야간에 미뤄둔 푸시를 아침에 보낸다. 사람마다 1개면 그 알림을, 2개 이상이면 묶음 푸시 하나를 보낸다.
+   * 8시 정각에 한 번만 돌면 재배포로 놓칠 수 있어서 낮 동안 매분 남은 게 있는지 본다.
+   */
+  @Cron('0 * 8-20 * * *', { timeZone: 'Asia/Seoul' })
+  async sendPendingPushes() {
+    // 처리가 1분을 넘기면 다음 실행은 건너뛴다
+    if (this.isSendingPendingPushes) {
+      return;
+    }
+
+    this.isSendingPendingPushes = true;
+
+    try {
+      for (
+        let batch = 0;
+        batch < PENDING_PUSH_MAX_BATCHES_PER_RUN;
+        batch += 1
+      ) {
+        const users = await this.notificationRepository
+          .createQueryBuilder('notification')
+          .select('DISTINCT notification.userId', 'userId')
+          .where('notification.pushPending = :pushPending', {
+            pushPending: true,
+          })
+          .limit(PENDING_PUSH_USER_BATCH_SIZE)
+          .getRawMany<{ userId: string }>();
+
+        if (users.length === 0) {
+          return;
+        }
+
+        for (let i = 0; i < users.length; i += PENDING_PUSH_CONCURRENCY) {
+          await Promise.all(
+            users
+              .slice(i, i + PENDING_PUSH_CONCURRENCY)
+              .map(({ userId }) =>
+                this.sendPendingPushesToUser(Number(userId)),
+              ),
+          );
+        }
+
+        if (users.length < PENDING_PUSH_USER_BATCH_SIZE) {
+          return;
+        }
+      }
+    } catch (error) {
+      this.logger.error('미뤄둔 푸시 발송 크론 실패', error as Error);
+    } finally {
+      this.isSendingPendingPushes = false;
+    }
   }
 
   @Cron('0 30 3 * * *')
@@ -230,6 +312,84 @@ export class NotificationService {
     }
   }
 
+  /*
+   * 낮에는 바로 보낸다. 밤에는 야간 알림을 켠 사람에게만 바로 보내고, 끈 사람은 아침으로 미룬다.
+   * 광고성 정보(이벤트)는 야간에 보내려면 별도 동의가 필요해서 밤에는 목록에만 남긴다. (정보통신망법 제50조)
+   */
+  private async getPushTiming(
+    userId: number,
+    settingKey: NotificationSettingKey,
+  ): Promise<PushTiming> {
+    if (!isKstNightTime(new Date())) {
+      return 'now';
+    }
+
+    if (settingKey === NotificationSettingKey.EVENT) {
+      return 'none';
+    }
+
+    const isNightEnabled = await this.isSettingEnabled(
+      userId,
+      NotificationSettingKey.NIGHT,
+    );
+
+    return isNightEnabled ? 'now' : 'later';
+  }
+
+  // 한 사람에게 밤사이 쌓인 푸시. 실패해도 다른 사람 발송은 이어간다.
+  private async sendPendingPushesToUser(userId: number) {
+    try {
+      const rows = await this.notificationRepository.find({
+        where: { userId, pushPending: true },
+        order: { id: 'ASC' },
+      });
+
+      if (rows.length === 0) {
+        return;
+      }
+
+      // 재배포 중에는 이전/새 컨테이너가 잠깐 같이 떠 있어서, 표시를 먼저 지운 쪽만 보낸다
+      const result = await this.notificationRepository.update(
+        { id: In(rows.map((row) => row.id)), pushPending: true },
+        { pushPending: false },
+      );
+
+      if ((result.affected ?? 0) === 0) {
+        return;
+      }
+
+      // 밤사이 꺼둔 종류는 빼고 보낸다. 목록에는 이미 남아 있다.
+      const settings = await this.getSettings(userId);
+      const enabledKeys = new Set(
+        settings.filter(({ enabled }) => enabled).map(({ key }) => key),
+      );
+      const pushRows = rows.filter((row) =>
+        enabledKeys.has(NOTIFICATION_SETTING_KEY_BY_STATUS[row.status]),
+      );
+
+      if (pushRows.length === 1) {
+        const [row] = pushRows;
+        await this.sendPush(
+          row,
+          NOTIFICATION_SETTING_KEY_BY_STATUS[row.status],
+        );
+        return;
+      }
+
+      if (pushRows.length > 1) {
+        await this.sendToTokens(await this.getPushTokens(userId), {
+          ...buildNightSummaryPushContent(pushRows.length),
+          channelId: NIGHT_SUMMARY_CHANNEL_ID,
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        `미뤄둔 푸시 발송 실패 (userId=${userId})`,
+        error as Error,
+      );
+    }
+  }
+
   private async isSettingEnabled(userId: number, key: NotificationSettingKey) {
     const row = await this.settingRepository.findOne({
       where: { userId, settingKey: key },
@@ -242,10 +402,7 @@ export class NotificationService {
     notification: NotificationEntity,
     settingKey: NotificationSettingKey,
   ) {
-    const tokens = await this.pushTokenRepository.find({
-      select: { token: true },
-      where: { userId: notification.userId },
-    });
+    const tokens = await this.getPushTokens(notification.userId);
 
     if (tokens.length === 0) {
       return;
@@ -253,7 +410,7 @@ export class NotificationService {
 
     const actor = notification.actorId
       ? await this.userRepository.findOne({
-          select: { id: true, nickname: true, userCode: true },
+          select: { id: true, publicId: true, nickname: true, userCode: true },
           where: { id: notification.actorId },
         })
       : null;
@@ -275,30 +432,55 @@ export class NotificationService {
       letterId: this.toNullableNumber(notification.letterId),
       feedId: this.toNullableNumber(notification.feedId),
       commentId: this.toNullableNumber(notification.commentId),
+      // 팔로우 알림을 누르면 그 사람 프로필로 간다
+      actorPublicId: actor?.publicId ?? null,
     };
 
+    await this.sendToTokens(tokens, {
+      title,
+      body,
+      data,
+      channelId: settingKey,
+    });
+  }
+
+  private async getPushTokens(userId: number) {
+    const rows = await this.pushTokenRepository.find({
+      select: { token: true },
+      where: { userId },
+    });
+
+    return rows.map(({ token }) => token);
+  }
+
+  private async sendToTokens(
+    tokens: string[],
+    message: Omit<ExpoPushMessage, 'to'>,
+  ) {
+    if (tokens.length === 0) {
+      return;
+    }
+
     await this.expoPushService.send(
-      tokens.map(({ token }) => ({
-        to: token,
-        title,
-        body,
-        data,
-        channelId: settingKey,
-      })),
+      tokens.map((token) => ({ to: token, ...message })),
     );
   }
 
   // NotificationListItem 이 받는 props 형태
   private formatNotificationItem(notification: NotificationEntity) {
     const { actor } = notification;
-    const isFeed = notification.type === NotificationType.FEED;
+    const showsUserCode =
+      notification.status === NotificationStatus.COMMENT ||
+      notification.status === NotificationStatus.REPLY;
 
     return {
       notificationId: Number(notification.id),
       type: notification.type,
       status: notification.status,
-      // 편지는 닉네임, 피드는 아이디(userCode)
-      name: actor ? (isFeed ? actor.userCode : actor.nickname) : null,
+      // 댓글/답글은 아이디(userCode), 나머지(편지, 팔로우)는 닉네임
+      name: actor ? (showsUserCode ? actor.userCode : actor.nickname) : null,
+      // 팔로우 알림을 누르면 그 사람 프로필로 간다
+      actorPublicId: actor?.publicId ?? null,
       profileImageUrl: actor
         ? this.r2Service.getProfileImageUrl(actor.profileImageKey)
         : null,

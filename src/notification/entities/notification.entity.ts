@@ -18,6 +18,7 @@ import {
 @Index('idx_notification_user_id', ['userId', 'id'])
 @Index('idx_notification_user_type_id', ['userId', 'type', 'id'])
 @Index('idx_notification_created_at', ['createdAt'])
+@Index('idx_notification_push_pending', ['pushPending', 'userId'])
 @Entity('notification')
 export class NotificationEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })
@@ -34,7 +35,7 @@ export class NotificationEntity {
   status!: NotificationStatus;
 
   // 목록에 이름/프로필로 보이는 상대방.
-  // 편지 send: 받는 사람, 편지 receive: 보낸 사람, 댓글/답글: 작성자, 소식: null
+  // 편지 send: 받는 사람, 편지 receive: 보낸 사람, 댓글/답글: 작성자, 팔로우: 팔로우한 사람, 소식: null
   @Column({ name: 'actor_id', type: 'bigint', nullable: true })
   actorId!: number | null;
 
@@ -60,6 +61,10 @@ export class NotificationEntity {
 
   @Column({ name: 'event_title', type: 'varchar', length: 100, nullable: true })
   eventTitle!: string | null;
+
+  // 야간 알림을 끈 사람에게 밤에 생긴 알림. 목록에는 바로 보이고 푸시만 아침에 모아서 보낸다.
+  @Column({ name: 'push_pending', type: 'boolean', default: false })
+  pushPending!: boolean;
 
   @CreateDateColumn({ name: 'created_at', type: 'datetime' })
   createdAt!: Date;

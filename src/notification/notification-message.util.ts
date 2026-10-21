@@ -28,6 +28,10 @@ const getFromSuffix = (name: string) => {
     : '으로부터';
 };
 
+// 주격 조사 '이/가'. 받침 있으면 '이', 없거나 한글이 아니면 '가'
+const getSubjectParticle = (name: string) =>
+  getLastSyllableJongseong(name) === 0 ? '가' : '이';
+
 const toUserCode = (userCode: string) => `@${userCode.replace(/^@+/, '')}`;
 
 export const buildPushContent = (params: {
@@ -73,5 +77,16 @@ export const buildPushContent = (params: {
         title: '(광고) 이벤트 알림',
         body: `${params.eventTitle ?? ''} 이벤트가 시작됐습니다.\n지금 바로 참여해 보세요.`,
       };
+    case NotificationStatus.FOLLOW:
+      return {
+        title: `${nickname}${getSubjectParticle(nickname)} 팔로우 했어요`,
+        body: '',
+      };
   }
 };
+
+// 야간에 미뤄둔 알림이 2개 이상일 때 아침에 한 번에 보내는 푸시
+export const buildNightSummaryPushContent = (count: number) => ({
+  title: `밤사이 새 알림 ${count}개가 도착했어요`,
+  body: '알림함에서 확인해 주세요.',
+});

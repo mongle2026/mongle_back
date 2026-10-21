@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -9,6 +10,8 @@ import { FollowEntity } from './entities/follow.entity';
 import { UserEntity } from '../user/entities/user.entity';
 import { R2Service } from '../storage/r2.service';
 import { UserService } from '../user/user.service';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationStatus } from '../notification/enums/notification.enum';
 
 const FOLLOW_LIST_DEFAULT_LIMIT = 20;
 const FOLLOW_LIST_MAX_LIMIT = 50;
@@ -28,6 +31,8 @@ type FollowUserRow = FollowUserFields & {
 
 @Injectable()
 export class FollowService {
+  private readonly logger = new Logger(FollowService.name);
+
   constructor(
     @InjectRepository(FollowEntity)
     private readonly followRepository: Repository<FollowEntity>,
@@ -37,6 +42,7 @@ export class FollowService {
 
     private readonly r2Service: R2Service,
     private readonly userService: UserService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async followUser(currentUserId: number, targetPublicId: string) {
@@ -54,6 +60,8 @@ export class FollowService {
       const targetUserId =
         await this.userService.getIdByPublicId(targetPublicId);
       this.validateDifferentUser(currentUserId, targetUserId);
+    } else {
+      void this.notifyFollowed(currentUserId, targetPublicId);
     }
 
     return {
@@ -242,6 +250,25 @@ export class FollowService {
     }
 
     return user;
+  }
+
+  // 새로 팔로우했을 때만 보낸다. 응답을 기다리게 하지 않고, 실패해도 팔로우는 성공으로 둔다.
+  private async notifyFollowed(currentUserId: number, targetPublicId: string) {
+    try {
+      const targetUserId =
+        await this.userService.getIdByPublicId(targetPublicId);
+
+      await this.notificationService.notify({
+        userId: targetUserId,
+        status: NotificationStatus.FOLLOW,
+        actorId: currentUserId,
+      });
+    } catch (error) {
+      this.logger.error(
+        `팔로우 알림 실패 (targetPublicId=${targetPublicId})`,
+        error as Error,
+      );
+    }
   }
 
   private validateDifferentUser(currentUserId: number, targetUserId: number) {
