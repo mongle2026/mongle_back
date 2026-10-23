@@ -6,6 +6,7 @@ import { LetterEntity } from './entities/letter.entity';
 import { RecordModule } from '../record/record.module';
 import { NotificationModule } from '../notification/notification.module';
 import { LetterNotificationScheduler } from './letter-notification.scheduler';
+import { LetterCleanupService } from './letter-cleanup.service';
 import { UserModule } from '../user/user.module';
 
 @Module({
@@ -16,7 +17,7 @@ import { UserModule } from '../user/user.module';
     UserModule,
   ],
   controllers: [LetterController],
-  providers: [LetterService, LetterNotificationScheduler],
+  providers: [LetterService, LetterNotificationScheduler, LetterCleanupService],
   exports: [LetterService],
 })
 export class LetterModule {}

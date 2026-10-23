@@ -4,13 +4,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Brackets, DataSource } from 'typeorm';
+import { Brackets, DataSource, In } from 'typeorm';
 import { CreateMusicDto } from '../music/dto/create-music.dto';
 import { CreateLetterDto } from './dto/create-letter.dto';
 import { LetterEntity } from './entities/letter.entity';
 import { LetterboxTab } from './enums/letterbox-tab.enum';
 import { UserEntity } from '../user/entities/user.entity';
 import { RecordService } from '../record/record.service';
+import { RecordEntity } from '../record/entities/record.entity';
+import { RecordFileEntity } from '../record/entities/record-file.entity';
 import { R2Service } from '../storage/r2.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
@@ -381,6 +383,83 @@ export class LetterService {
       return {
         message: '편지가 삭제되었습니다.',
         letterId,
+      };
+    });
+  }
+
+  async purgeDeletedLetters(days = 30, limit = 100) {
+    const cutoff = new Date(Date.now() - days * DAY_MS);
+
+    return this.dataSource.transaction(async (manager) => {
+      // 보낸 사람과 받는 사람이 모두 삭제했고, 늦게 삭제한 쪽 기준으로 보관 기간이 지난 편지
+      const letters = await manager
+        .getRepository(LetterEntity)
+        .createQueryBuilder('letter')
+        .select(['letter.id', 'letter.recordId', 'letter.senderId'])
+        .where('letter.senderDeletedAt <= :cutoff', { cutoff })
+        .andWhere('letter.receiverDeletedAt <= :cutoff', { cutoff })
+        .orderBy('letter.id', 'ASC')
+        .limit(limit)
+        .getMany();
+
+      if (letters.length === 0) {
+        return {
+          message: '물리 삭제할 편지가 없습니다.',
+          targetCount: 0,
+          deletedLetterCount: 0,
+          deletedRecordFileCount: 0,
+          deletedRecordCount: 0,
+        };
+      }
+
+      const letterIds = letters.map((letter) => Number(letter.id));
+      const recordIds = [
+        ...new Set(letters.map((letter) => Number(letter.recordId))),
+      ];
+
+      // 편지 record의 작성자는 보낸 사람이다 (senderId = record.userId)
+      const senderIdByRecordId = new Map(
+        letters.map((letter) => [
+          Number(letter.recordId),
+          Number(letter.senderId),
+        ]),
+      );
+
+      const filesToDelete = await manager.find(RecordFileEntity, {
+        where: { recordId: In(recordIds) },
+      });
+
+      const letterDeleteResult = await manager.delete(LetterEntity, {
+        id: In(letterIds),
+      });
+
+      const recordFileDeleteResult = await manager.delete(RecordFileEntity, {
+        recordId: In(recordIds),
+      });
+
+      const recordDeleteResult = await manager.delete(RecordEntity, {
+        id: In(recordIds),
+      });
+
+      /*
+       * R2 삭제는 크론에 맡깁니다.
+       * 여기서 바로 지우면 이 트랜잭션이 롤백됐을 때 객체만 사라집니다.
+       */
+      await this.recordService.detachFiles(
+        manager,
+        filesToDelete.map((file) => ({
+          userId: senderIdByRecordId.get(Number(file.recordId)) ?? 0,
+          fileKey: file.fileKey,
+          mimeType: file.mimeType,
+        })),
+      );
+
+      return {
+        message: '삭제 보관 기간이 지난 편지가 물리 삭제되었습니다.',
+        targetCount: letters.length,
+        deletedLetterCount: letterDeleteResult.affected ?? 0,
+        deletedRecordFileCount: recordFileDeleteResult.affected ?? 0,
+        deletedRecordCount: recordDeleteResult.affected ?? 0,
       };
     });
   }

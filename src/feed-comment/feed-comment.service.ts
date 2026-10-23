@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { FeedEntity } from '../feed/entities/feed.entity';
 import { FeedCommentEntity } from './entities/feed-comment.entity';
 import { CreateFeedCommentDto } from './dto/create-feed-comment.dto';
@@ -191,6 +191,54 @@ export class FeedCommentService {
     return {
       message: '댓글이 삭제되었습니다.',
     };
+  }
+
+  async purgeDeletedComments(days = 30, limit = 100) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    return this.feedCommentRepository.manager.transaction(async (manager) => {
+      const comments = await manager
+        .getRepository(FeedCommentEntity)
+        .createQueryBuilder('comment')
+        .withDeleted()
+        .select(['comment.id'])
+        .where('comment.deletedAt IS NOT NULL')
+        .andWhere('comment.deletedAt <= :cutoff', { cutoff })
+        .orderBy('comment.deletedAt', 'ASC')
+        .limit(limit)
+        .getMany();
+
+      if (comments.length === 0) {
+        return {
+          message: '물리 삭제할 댓글이 없습니다.',
+          targetCount: 0,
+          deletedCommentCount: 0,
+        };
+      }
+
+      const commentIds = comments.map((comment) => Number(comment.id));
+
+      /*
+       * 원댓글만 지우면 FK(SET NULL) 때문에 답글이 원댓글로 바뀌어 다시 보입니다.
+       * 원댓글이 삭제된 답글은 이미 목록에서 빠져 있으므로 함께 지웁니다.
+       */
+      const replyDeleteResult = await manager.delete(FeedCommentEntity, {
+        rootCommentId: In(commentIds),
+      });
+
+      const commentDeleteResult = await manager.delete(FeedCommentEntity, {
+        id: In(commentIds),
+      });
+
+      return {
+        message: '삭제 보관 기간이 지난 댓글이 물리 삭제되었습니다.',
+        targetCount: comments.length,
+        deletedCommentCount:
+          (replyDeleteResult.affected ?? 0) +
+          (commentDeleteResult.affected ?? 0),
+      };
+    });
   }
 
   private filterVisibleCommentsForUser(
