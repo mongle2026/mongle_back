@@ -3,8 +3,6 @@ export enum NotificationType {
   FEED = 'feed',
   LETTER = 'letter',
   NEWS = 'news',
-  // 밤사이 쌓인 알림 묶음. 어느 탭에도 속하지 않아 '전체' 탭에서만 보인다.
-  SUMMARY = 'summary',
 }
 
 // 분류 안의 세부 종류. 목록 문구는 type + status 조합으로 프론트가 만든다.
@@ -19,8 +17,6 @@ export enum NotificationStatus {
   EVENT = 'event',
   // 피드 탭: 나를 팔로우한 사람
   FOLLOW = 'follow',
-  // 야간 알림을 끈 사람에게 밤사이 쌓인 알림을 아침에 한 줄로 묶은 것
-  NIGHT_SUMMARY = 'night_summary',
 }
 
 // 사용자가 켜고 끄는 단위. 여러 status 가 하나의 설정으로 묶일 수 있다. (댓글 + 답글)
@@ -47,7 +43,6 @@ export const NOTIFICATION_TYPE_BY_STATUS: Record<
   [NotificationStatus.SYSTEM]: NotificationType.NEWS,
   [NotificationStatus.EVENT]: NotificationType.NEWS,
   [NotificationStatus.FOLLOW]: NotificationType.FEED,
-  [NotificationStatus.NIGHT_SUMMARY]: NotificationType.SUMMARY,
 };
 
 export const NOTIFICATION_SETTING_KEY_BY_STATUS: Record<
@@ -61,7 +56,6 @@ export const NOTIFICATION_SETTING_KEY_BY_STATUS: Record<
   [NotificationStatus.SYSTEM]: NotificationSettingKey.SYSTEM,
   [NotificationStatus.EVENT]: NotificationSettingKey.EVENT,
   [NotificationStatus.FOLLOW]: NotificationSettingKey.FOLLOW,
-  [NotificationStatus.NIGHT_SUMMARY]: NotificationSettingKey.NIGHT,
 };
 
 // 설정 행이 없을 때의 값. 이벤트(광고성 정보)는 사용자가 직접 동의해야 해서 기본 OFF.

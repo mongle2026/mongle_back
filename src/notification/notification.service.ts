@@ -19,7 +19,10 @@ import {
   NotificationType,
 } from './enums/notification.enum';
 import { ExpoPushMessage, ExpoPushService } from './expo-push.service';
-import { buildPushContent } from './notification-message.util';
+import {
+  buildNightSummaryPushContent,
+  buildPushContent,
+} from './notification-message.util';
 import { R2Service } from '../storage/r2.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -82,7 +85,7 @@ export class NotificationService {
   /*
    * 알림 목록에 저장하고 푸시를 보낸다.
    * 받는 사람이 해당 알림을 꺼두었으면 목록에도 남기지 않는다.
-   * 야간 알림을 꺼두었으면 밤에는 숨겨두고, 아침에 'n개 알림' 한 줄과 푸시 하나로 묶어서 보여준다.
+   * 야간 알림을 꺼두었으면 밤에는 목록에만 남기고 푸시는 아침에 모아서 보낸다.
    *
    * 편지/댓글 저장이 끝난 뒤 부르는 부가 작업이라, 실패해도 에러를 던지지 않고 로그만 남긴다.
    */
@@ -109,7 +112,6 @@ export class NotificationService {
           content: input.content ?? null,
           eventTitle: input.eventTitle ?? null,
           pushPending: pushTiming === 'later',
-          hiddenInList: pushTiming === 'later',
         }),
       );
 
@@ -164,9 +166,6 @@ export class NotificationService {
       .createQueryBuilder('notification')
       .leftJoinAndSelect('notification.actor', 'actor')
       .where('notification.userId = :userId', { userId })
-      .andWhere('notification.hiddenInList = :hiddenInList', {
-        hiddenInList: false,
-      })
       // 정리 크론이 하루 밀려도 30일이 지난 알림은 보이지 않게 한 번 더 거른다
       .andWhere('notification.createdAt >= :since', {
         since: new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * DAY_MS),
@@ -233,9 +232,8 @@ export class NotificationService {
   }
 
   /*
-   * 야간에 미뤄둔 알림을 아침에 보낸다.
-   * 사람마다 1개면 그 알림을 목록에 보이고 푸시도 그대로 보낸다.
-   * 2개 이상이면 묶음 알림('n개 알림') 한 줄을 목록에 남기고 그 푸시 하나만 보낸다. 묶인 알림은 목록에 따로 보이지 않는다.
+   * 야간에 미뤄둔 푸시를 아침에 보낸다. 사람마다 1개면 그 알림을, 2개 이상이면 묶음 푸시('새로운 알림 n개') 하나를 보낸다.
+   * 묶음 푸시는 목록에 따로 남기지 않는다. 밤사이 온 알림은 목록에 하나씩 이미 남아 있다.
    * 8시 정각에 한 번만 돌면 재배포로 놓칠 수 있어서 낮 동안 매분 남은 게 있는지 본다.
    */
   @Cron('0 * 8-20 * * *', { timeZone: 'Asia/Seoul' })
@@ -361,7 +359,7 @@ export class NotificationService {
         return;
       }
 
-      // 밤사이 꺼둔 종류는 빼고 보낸다. 꺼둔 종류는 목록에도 보이지 않는다.
+      // 밤사이 꺼둔 종류는 빼고 보낸다. 목록에는 이미 남아 있다.
       const settings = await this.getSettings(userId);
       const enabledKeys = new Set(
         settings.filter(({ enabled }) => enabled).map(({ key }) => key),
@@ -372,10 +370,6 @@ export class NotificationService {
 
       if (pushRows.length === 1) {
         const [row] = pushRows;
-        await this.notificationRepository.update(
-          { id: row.id },
-          { hiddenInList: false },
-        );
         await this.sendPush(
           row,
           NOTIFICATION_SETTING_KEY_BY_STATUS[row.status],
@@ -383,16 +377,12 @@ export class NotificationService {
         return;
       }
 
+      // 이동할 원본이 없어서 data 를 넣지 않는다. 누르면 프론트가 알림 목록으로 보낸다.
       if (pushRows.length > 1) {
-        const summary = await this.notificationRepository.save(
-          this.notificationRepository.create({
-            userId,
-            type: NotificationType.SUMMARY,
-            status: NotificationStatus.NIGHT_SUMMARY,
-            summaryCount: pushRows.length,
-          }),
-        );
-        await this.sendPush(summary, NIGHT_SUMMARY_CHANNEL_ID);
+        await this.sendToTokens(await this.getPushTokens(userId), {
+          ...buildNightSummaryPushContent(pushRows.length),
+          channelId: NIGHT_SUMMARY_CHANNEL_ID,
+        });
       }
     } catch (error) {
       this.logger.error(
@@ -410,8 +400,10 @@ export class NotificationService {
     return row ? row.enabled : NOTIFICATION_SETTING_DEFAULTS[key];
   }
 
-  // channelId: 안드로이드 알림 채널. 알림 종류 key 를 그대로 쓰고, 묶음 알림만 따로 있다.
-  private async sendPush(notification: NotificationEntity, channelId: string) {
+  private async sendPush(
+    notification: NotificationEntity,
+    settingKey: NotificationSettingKey,
+  ) {
     const tokens = await this.getPushTokens(notification.userId);
 
     if (tokens.length === 0) {
@@ -442,7 +434,6 @@ export class NotificationService {
       isToSelf: this.isToSelf(notification),
       content: notification.content,
       eventTitle: notification.eventTitle,
-      summaryCount: notification.summaryCount,
     });
 
     // 알림을 눌렀을 때 이동할 화면을 프론트가 고를 수 있게 넘긴다
@@ -461,7 +452,7 @@ export class NotificationService {
       title,
       body,
       data,
-      channelId,
+      channelId: settingKey,
     });
   }
 
@@ -508,8 +499,6 @@ export class NotificationService {
         : null,
       content: notification.content,
       eventTitle: notification.eventTitle,
-      // night_summary: 묶인 알림 개수
-      summaryCount: notification.summaryCount,
       isToSelf: this.isToSelf(notification),
       letterId: this.toNullableNumber(notification.letterId),
       feedId: this.toNullableNumber(notification.feedId),

@@ -62,17 +62,9 @@ export class NotificationEntity {
   @Column({ name: 'event_title', type: 'varchar', length: 100, nullable: true })
   eventTitle!: string | null;
 
-  // 야간 알림을 끈 사람에게 밤에 생긴 알림. 푸시는 아침에 모아서 보낸다.
+  // 야간 알림을 끈 사람에게 밤에 생긴 알림. 목록에는 바로 보이고 푸시만 아침에 모아서 보낸다.
   @Column({ name: 'push_pending', type: 'boolean', default: false })
   pushPending!: boolean;
-
-  // 목록에 따로 보이지 않는 알림. 밤사이 쌓인 알림은 아침에 'n개 알림' 한 줄로 묶여서 보인다.
-  @Column({ name: 'hidden_in_list', type: 'boolean', default: false })
-  hiddenInList!: boolean;
-
-  // 묶음 알림(night_summary)에 들어간 알림 개수
-  @Column({ name: 'summary_count', type: 'int', nullable: true })
-  summaryCount!: number | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'datetime' })
   createdAt!: Date;

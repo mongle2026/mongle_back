@@ -39,7 +39,6 @@ export const buildPushContent = (params: {
   isToSelf?: boolean;
   content?: string | null;
   eventTitle?: string | null;
-  summaryCount?: number | null;
 }): { title: string; body: string } => {
   const nickname = params.actorNickname ?? '';
   const userCode = params.actorUserCode ?? '';
@@ -81,13 +80,11 @@ export const buildPushContent = (params: {
         title: `${toUserCode(userCode)}님의 새로운 팔로우`,
         body: `${toUserCode(userCode)}님이 ${params.recipientNickname ?? ''}님을 팔로우하기 시작했습니다.`,
       };
-    case NotificationStatus.NIGHT_SUMMARY:
-      return buildNightSummaryPushContent(params.summaryCount ?? 0);
   }
 };
 
-// 야간에 미뤄둔 알림이 2개 이상일 때 아침에 한 번에 보내는 푸시
-const buildNightSummaryPushContent = (count: number) => ({
-  title: `${count}개 알림`,
-  body: `지난 밤 동안 알림이 ${count}개 왔습니다.`,
+// 야간에 미뤄둔 알림이 2개 이상일 때 아침에 한 번에 보내는 푸시. 목록에는 각 알림이 따로 남아 있다.
+export const buildNightSummaryPushContent = (count: number) => ({
+  title: `새로운 알림 ${count}개`,
+  body: '지난밤 도착한 알림을 확인해 주세요.',
 });
