@@ -284,7 +284,7 @@ export class NotificationService {
     }
   }
 
-  @Cron('0 30 3 * * *')
+  @Cron('0 30 3 * * *', { timeZone: 'Asia/Seoul' })
   async purgeExpiredNotifications() {
     const threshold = new Date(
       Date.now() - NOTIFICATION_RETENTION_DAYS * DAY_MS,

@@ -6,7 +6,8 @@ import { RecordService } from './record.service';
 export class RecordFileCleanupService {
   constructor(private readonly recordService: RecordService) {}
 
-  @Cron('0 4 * * *')
+  // 피드·편지 정리(03:00, 03:20)가 대기표에 넘긴 파일까지 그날 지우도록 그 뒤에 돈다
+  @Cron('40 3 * * *', { timeZone: 'Asia/Seoul' })
   async handlePendingFileCleanup() {
     /*
      * 사진을 고르자마자 미리 올리므로 쓰이지 않은 파일이 하루 100개를 넘을 수 있습니다.

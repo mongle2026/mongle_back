@@ -708,6 +708,7 @@ export class FeedService {
       if (feeds.length === 0) {
         return {
           message: '물리 삭제할 피드가 없습니다.',
+          targetCount: 0,
           deletedFeedCount: 0,
           deletedRecordFileCount: 0,
           deletedRecordCount: 0,
@@ -769,6 +770,7 @@ export class FeedService {
 
       return {
         message: '삭제 보관 기간이 지난 피드가 물리 삭제되었습니다.',
+        targetCount: feeds.length,
         deletedFeedCount: feedDeleteResult.affected ?? 0,
         deletedRecordFileCount: recordFileDeleteResult.affected ?? 0,
         deletedRecordCount: recordDeleteResult.affected ?? 0,

@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -12,6 +13,8 @@ import {
 import { FeedEntity } from '../../feed/entities/feed.entity';
 import { UserEntity } from '../../user/entities/user.entity';
 
+// 삭제 보관 기간이 지난 댓글을 찾는 정리 크론용
+@Index('idx_feed_comment_deleted_at', ['deletedAt'])
 @Entity('feed_comment')
 export class FeedCommentEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })

@@ -6,8 +6,8 @@ import { ProfileImageService } from './profile-image.service';
 export class ProfileImageCleanupService {
   constructor(private readonly profileImageService: ProfileImageService) {}
 
-  // 레코드 파일 정리(04:00)와 겹치지 않게 30분 뒤에 돈다
-  @Cron('30 4 * * *')
+  // 레코드 파일 정리(03:40)와 겹치지 않게 10분 뒤에 돈다
+  @Cron('50 3 * * *', { timeZone: 'Asia/Seoul' })
   async handlePendingFileCleanup() {
     // 남은 게 없을 때까지 반복하되, 한 번도 지우지 못하면(R2 오류 등) 다음 실행으로 넘긴다
     const batchSize = 100;

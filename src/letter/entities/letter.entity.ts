@@ -16,6 +16,8 @@ import { UserEntity } from '../../user/entities/user.entity';
 @Index('idx_letter_receiver_stamp', ['receiverId', 'stamp'])
 @Index('idx_letter_received_notified', ['receivedNotifiedAt', 'deliveryAt'])
 @Index('idx_letter_arriving_soon_notified', ['arrivingSoonNotifiedAt', 'deliveryAt'])
+// 양쪽 모두 삭제하고 보관 기간이 지난 편지를 찾는 정리 크론용
+@Index('idx_letter_deleted_at', ['senderDeletedAt', 'receiverDeletedAt'])
 @Entity('letter')
 export class LetterEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })

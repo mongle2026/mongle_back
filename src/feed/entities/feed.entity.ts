@@ -2,6 +2,7 @@ import {
   Column,
   DeleteDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -13,6 +14,8 @@ import { FeedLikeEntity } from '../../like/entities/feed-like.entity';
 import { BookmarkEntity } from '../../bookmark/entities/bookmark.entity';
 import { FeedCommentEntity } from '../../feed-comment/entities/feed-comment.entity';
 
+// 삭제 보관 기간이 지난 피드를 찾는 정리 크론용
+@Index('idx_feed_deleted_at', ['deletedAt'])
 @Entity('feed')
 export class FeedEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })
