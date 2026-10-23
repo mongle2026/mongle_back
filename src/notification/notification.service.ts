@@ -19,10 +19,7 @@ import {
   NotificationType,
 } from './enums/notification.enum';
 import { ExpoPushMessage, ExpoPushService } from './expo-push.service';
-import {
-  buildNightSummaryPushContent,
-  buildPushContent,
-} from './notification-message.util';
+import { buildPushContent } from './notification-message.util';
 import { R2Service } from '../storage/r2.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -85,7 +82,7 @@ export class NotificationService {
   /*
    * 알림 목록에 저장하고 푸시를 보낸다.
    * 받는 사람이 해당 알림을 꺼두었으면 목록에도 남기지 않는다.
-   * 야간 알림을 꺼두었으면 밤에는 목록에만 남기고 푸시는 아침에 모아서 보낸다.
+   * 야간 알림을 꺼두었으면 밤에는 숨겨두고, 아침에 'n개 알림' 한 줄과 푸시 하나로 묶어서 보여준다.
    *
    * 편지/댓글 저장이 끝난 뒤 부르는 부가 작업이라, 실패해도 에러를 던지지 않고 로그만 남긴다.
    */
@@ -112,6 +109,7 @@ export class NotificationService {
           content: input.content ?? null,
           eventTitle: input.eventTitle ?? null,
           pushPending: pushTiming === 'later',
+          hiddenInList: pushTiming === 'later',
         }),
       );
 
@@ -166,6 +164,9 @@ export class NotificationService {
       .createQueryBuilder('notification')
       .leftJoinAndSelect('notification.actor', 'actor')
       .where('notification.userId = :userId', { userId })
+      .andWhere('notification.hiddenInList = :hiddenInList', {
+        hiddenInList: false,
+      })
       // 정리 크론이 하루 밀려도 30일이 지난 알림은 보이지 않게 한 번 더 거른다
       .andWhere('notification.createdAt >= :since', {
         since: new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * DAY_MS),
@@ -232,7 +233,9 @@ export class NotificationService {
   }
 
   /*
-   * 야간에 미뤄둔 푸시를 아침에 보낸다. 사람마다 1개면 그 알림을, 2개 이상이면 묶음 푸시 하나를 보낸다.
+   * 야간에 미뤄둔 알림을 아침에 보낸다.
+   * 사람마다 1개면 그 알림을 목록에 보이고 푸시도 그대로 보낸다.
+   * 2개 이상이면 묶음 알림('n개 알림') 한 줄을 목록에 남기고 그 푸시 하나만 보낸다. 묶인 알림은 목록에 따로 보이지 않는다.
    * 8시 정각에 한 번만 돌면 재배포로 놓칠 수 있어서 낮 동안 매분 남은 게 있는지 본다.
    */
   @Cron('0 * 8-20 * * *', { timeZone: 'Asia/Seoul' })
@@ -358,7 +361,7 @@ export class NotificationService {
         return;
       }
 
-      // 밤사이 꺼둔 종류는 빼고 보낸다. 목록에는 이미 남아 있다.
+      // 밤사이 꺼둔 종류는 빼고 보낸다. 꺼둔 종류는 목록에도 보이지 않는다.
       const settings = await this.getSettings(userId);
       const enabledKeys = new Set(
         settings.filter(({ enabled }) => enabled).map(({ key }) => key),
@@ -369,6 +372,10 @@ export class NotificationService {
 
       if (pushRows.length === 1) {
         const [row] = pushRows;
+        await this.notificationRepository.update(
+          { id: row.id },
+          { hiddenInList: false },
+        );
         await this.sendPush(
           row,
           NOTIFICATION_SETTING_KEY_BY_STATUS[row.status],
@@ -377,10 +384,15 @@ export class NotificationService {
       }
 
       if (pushRows.length > 1) {
-        await this.sendToTokens(await this.getPushTokens(userId), {
-          ...buildNightSummaryPushContent(pushRows.length),
-          channelId: NIGHT_SUMMARY_CHANNEL_ID,
-        });
+        const summary = await this.notificationRepository.save(
+          this.notificationRepository.create({
+            userId,
+            type: NotificationType.SUMMARY,
+            status: NotificationStatus.NIGHT_SUMMARY,
+            summaryCount: pushRows.length,
+          }),
+        );
+        await this.sendPush(summary, NIGHT_SUMMARY_CHANNEL_ID);
       }
     } catch (error) {
       this.logger.error(
@@ -398,10 +410,8 @@ export class NotificationService {
     return row ? row.enabled : NOTIFICATION_SETTING_DEFAULTS[key];
   }
 
-  private async sendPush(
-    notification: NotificationEntity,
-    settingKey: NotificationSettingKey,
-  ) {
+  // channelId: 안드로이드 알림 채널. 알림 종류 key 를 그대로 쓰고, 묶음 알림만 따로 있다.
+  private async sendPush(notification: NotificationEntity, channelId: string) {
     const tokens = await this.getPushTokens(notification.userId);
 
     if (tokens.length === 0) {
@@ -415,13 +425,24 @@ export class NotificationService {
         })
       : null;
 
+    // 팔로우 알림 본문에 내 닉네임이 들어간다
+    const recipient =
+      notification.status === NotificationStatus.FOLLOW
+        ? await this.userRepository.findOne({
+            select: { id: true, nickname: true },
+            where: { id: notification.userId },
+          })
+        : null;
+
     const { title, body } = buildPushContent({
       status: notification.status,
       actorNickname: actor?.nickname,
       actorUserCode: actor?.userCode,
+      recipientNickname: recipient?.nickname,
       isToSelf: this.isToSelf(notification),
       content: notification.content,
       eventTitle: notification.eventTitle,
+      summaryCount: notification.summaryCount,
     });
 
     // 알림을 눌렀을 때 이동할 화면을 프론트가 고를 수 있게 넘긴다
@@ -440,7 +461,7 @@ export class NotificationService {
       title,
       body,
       data,
-      channelId: settingKey,
+      channelId,
     });
   }
 
@@ -471,13 +492,14 @@ export class NotificationService {
     const { actor } = notification;
     const showsUserCode =
       notification.status === NotificationStatus.COMMENT ||
-      notification.status === NotificationStatus.REPLY;
+      notification.status === NotificationStatus.REPLY ||
+      notification.status === NotificationStatus.FOLLOW;
 
     return {
       notificationId: Number(notification.id),
       type: notification.type,
       status: notification.status,
-      // 댓글/답글은 아이디(userCode), 나머지(편지, 팔로우)는 닉네임
+      // 댓글/답글/팔로우는 아이디(userCode), 편지는 닉네임
       name: actor ? (showsUserCode ? actor.userCode : actor.nickname) : null,
       // 팔로우 알림을 누르면 그 사람 프로필로 간다
       actorPublicId: actor?.publicId ?? null,
@@ -486,6 +508,8 @@ export class NotificationService {
         : null,
       content: notification.content,
       eventTitle: notification.eventTitle,
+      // night_summary: 묶인 알림 개수
+      summaryCount: notification.summaryCount,
       isToSelf: this.isToSelf(notification),
       letterId: this.toNullableNumber(notification.letterId),
       feedId: this.toNullableNumber(notification.feedId),

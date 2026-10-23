@@ -28,19 +28,18 @@ const getFromSuffix = (name: string) => {
     : '으로부터';
 };
 
-// 주격 조사 '이/가'. 받침 있으면 '이', 없거나 한글이 아니면 '가'
-const getSubjectParticle = (name: string) =>
-  getLastSyllableJongseong(name) === 0 ? '가' : '이';
-
 const toUserCode = (userCode: string) => `@${userCode.replace(/^@+/, '')}`;
 
 export const buildPushContent = (params: {
   status: NotificationStatus;
   actorNickname?: string | null;
   actorUserCode?: string | null;
+  // 팔로우 알림 본문에 들어가는 받는 사람(나) 닉네임
+  recipientNickname?: string | null;
   isToSelf?: boolean;
   content?: string | null;
   eventTitle?: string | null;
+  summaryCount?: number | null;
 }): { title: string; body: string } => {
   const nickname = params.actorNickname ?? '';
   const userCode = params.actorUserCode ?? '';
@@ -79,14 +78,16 @@ export const buildPushContent = (params: {
       };
     case NotificationStatus.FOLLOW:
       return {
-        title: `${nickname}${getSubjectParticle(nickname)} 팔로우 했어요`,
-        body: '',
+        title: `${toUserCode(userCode)}님의 새로운 팔로우`,
+        body: `${toUserCode(userCode)}님이 ${params.recipientNickname ?? ''}님을 팔로우하기 시작했습니다.`,
       };
+    case NotificationStatus.NIGHT_SUMMARY:
+      return buildNightSummaryPushContent(params.summaryCount ?? 0);
   }
 };
 
 // 야간에 미뤄둔 알림이 2개 이상일 때 아침에 한 번에 보내는 푸시
-export const buildNightSummaryPushContent = (count: number) => ({
-  title: `밤사이 새 알림 ${count}개가 도착했어요`,
-  body: '알림함에서 확인해 주세요.',
+const buildNightSummaryPushContent = (count: number) => ({
+  title: `${count}개 알림`,
+  body: `지난 밤 동안 알림이 ${count}개 왔습니다.`,
 });
