@@ -6,10 +6,11 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { KakaoApiService } from './kakao-api.service';
 import { AppleApiService } from './apple-api.service';
+import { WithdrawalService } from './withdrawal.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([UserEntity]), UserModule],
   controllers: [AuthController],
-  providers: [AuthService, KakaoApiService, AppleApiService],
+  providers: [AuthService, KakaoApiService, AppleApiService, WithdrawalService],
 })
 export class AuthModule {}

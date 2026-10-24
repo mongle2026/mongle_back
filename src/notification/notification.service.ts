@@ -24,6 +24,7 @@ import {
   buildPushContent,
 } from './notification-message.util';
 import { R2Service } from '../storage/r2.service';
+import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_BATCH_SIZE = 1000;
@@ -412,7 +413,13 @@ export class NotificationService {
 
     const actor = notification.actorId
       ? await this.userRepository.findOne({
-          select: { id: true, publicId: true, nickname: true, userCode: true },
+          select: {
+            id: true,
+            publicId: true,
+            nickname: true,
+            userCode: true,
+            withdrawnAt: true,
+          },
           where: { id: notification.actorId },
         })
       : null;
@@ -428,7 +435,7 @@ export class NotificationService {
 
     const { title, body } = buildPushContent({
       status: notification.status,
-      actorNickname: actor?.nickname,
+      actorNickname: actor ? getDisplayNickname(actor) : null,
       actorUserCode: actor?.userCode,
       recipientNickname: recipient?.nickname,
       isToSelf: this.isToSelf(notification),
@@ -444,8 +451,8 @@ export class NotificationService {
       letterId: this.toNullableNumber(notification.letterId),
       feedId: this.toNullableNumber(notification.feedId),
       commentId: this.toNullableNumber(notification.commentId),
-      // 팔로우 알림을 누르면 그 사람 프로필로 간다
-      actorPublicId: actor?.publicId ?? null,
+      // 팔로우 알림을 누르면 그 사람 프로필로 간다. 탈퇴한 회원은 프로필이 없다.
+      actorPublicId: actor && !isWithdrawnUser(actor) ? actor.publicId : null,
     };
 
     await this.sendToTokens(tokens, {
@@ -485,15 +492,21 @@ export class NotificationService {
       notification.status === NotificationStatus.COMMENT ||
       notification.status === NotificationStatus.REPLY ||
       notification.status === NotificationStatus.FOLLOW;
+    const isActorWithdrawn = !!actor && isWithdrawnUser(actor);
 
     return {
       notificationId: Number(notification.id),
       type: notification.type,
       status: notification.status,
-      // 댓글/답글/팔로우는 아이디(userCode), 편지는 닉네임
-      name: actor ? (showsUserCode ? actor.userCode : actor.nickname) : null,
+      // 댓글/답글/팔로우는 아이디(userCode), 편지는 닉네임. 탈퇴한 회원은 아이디가 없어서 이름으로 보여준다.
+      name: actor
+        ? showsUserCode && !isActorWithdrawn
+          ? actor.userCode
+          : getDisplayNickname(actor)
+        : null,
       // 팔로우 알림을 누르면 그 사람 프로필로 간다
       actorPublicId: actor?.publicId ?? null,
+      isActorWithdrawn,
       profileImageUrl: actor
         ? this.r2Service.getProfileImageUrl(actor.profileImageKey)
         : null,

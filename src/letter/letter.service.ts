@@ -17,6 +17,7 @@ import { R2Service } from '../storage/r2.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
 import { UserService } from '../user/user.service';
+import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -186,10 +187,11 @@ export class LetterService {
           user: letter.record.user
             ? {
               id: letter.record.user.publicId,
-              nickname: letter.record.user.nickname,
+              nickname: getDisplayNickname(letter.record.user),
               profileImageUrl: this.r2Service.getProfileImageUrl(
                 letter.record.user.profileImageKey,
               ),
+              isWithdrawn: isWithdrawnUser(letter.record.user),
             }
             : null,
           music: letter.record.music,
@@ -524,10 +526,11 @@ export class LetterService {
 
     return {
       userId: user.publicId,
-      nickname: user.nickname,
+      nickname: getDisplayNickname(user),
       profileImageUrl: this.r2Service.getProfileImageUrl(
         user.profileImageKey,
       ),
+      isWithdrawn: isWithdrawnUser(user),
     };
   }
 

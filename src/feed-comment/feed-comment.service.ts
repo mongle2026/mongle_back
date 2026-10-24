@@ -13,6 +13,7 @@ import { R2Service } from '../storage/r2.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
 import { UserEntity } from '../user/entities/user.entity';
+import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
 
 @Injectable()
 export class FeedCommentService {
@@ -411,12 +412,13 @@ export class FeedCommentService {
 
     return {
       userId: user.publicId,
-      nickname: user.nickname,
+      nickname: getDisplayNickname(user),
       userCode: user.userCode,
       hasProfileImage: !!user.profileImageKey,
       profileImageUrl: this.r2Service.getProfileImageUrl(
         user.profileImageKey,
       ),
+      isWithdrawn: isWithdrawnUser(user),
     };
   }
 }

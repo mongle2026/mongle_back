@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -16,12 +17,14 @@ import { KakaoLoginDto } from './dto/kakao-login.dto';
 import { AppleLoginDto } from './dto/apple-login.dto';
 import { SignupDto } from './dto/signup.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { WithdrawalService } from './withdrawal.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly userService: UserService,
+    private readonly withdrawalService: WithdrawalService,
   ) {}
 
   @Post('kakao')
@@ -63,5 +66,12 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getMe(@CurrentUserId() userId: number) {
     return this.userService.getUserById(userId);
+  }
+
+  // 회원 탈퇴. 처리 범위는 WithdrawalService 참고
+  @Delete('me')
+  @UseGuards(JwtAuthGuard)
+  async withdraw(@CurrentUserId() userId: number) {
+    return this.withdrawalService.withdraw(userId);
   }
 }

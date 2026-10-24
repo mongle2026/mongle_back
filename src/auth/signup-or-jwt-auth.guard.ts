@@ -5,20 +5,24 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
 import {
   getJwtSecret,
   verifyAuthToken,
   verifySignupToken,
 } from './auth-token';
-import { AuthenticatedRequest } from './jwt-auth.guard';
+import { assertActiveUser, AuthenticatedRequest } from './jwt-auth.guard';
 
 // 가입 전(signupToken)과 로그인 후(accessToken) 모두 부를 수 있는 API 용.
 // Authorization: Bearer <signupToken | accessToken>. accessToken 이면 req.userId 도 넣는다.
 @Injectable()
 export class SignupOrJwtAuthGuard implements CanActivate {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const [scheme, token] = request.headers.authorization?.split(' ') ?? [];
 
@@ -30,7 +34,10 @@ export class SignupOrJwtAuthGuard implements CanActivate {
     const payload = verifyAuthToken(token, 'access', secret);
 
     if (payload) {
-      request.userId = Number(payload.sub);
+      const userId = Number(payload.sub);
+      await assertActiveUser(this.dataSource, userId);
+
+      request.userId = userId;
       return true;
     }
 

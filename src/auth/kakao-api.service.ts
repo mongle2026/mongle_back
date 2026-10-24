@@ -9,6 +9,7 @@ import axios from 'axios';
 
 const KAKAO_TOKEN_INFO_URL = 'https://kapi.kakao.com/v1/user/access_token_info';
 const KAKAO_USER_ME_URL = 'https://kapi.kakao.com/v2/user/me';
+const KAKAO_UNLINK_URL = 'https://kapi.kakao.com/v1/user/unlink';
 
 const REQUEST_TIMEOUT = 5_000;
 
@@ -91,5 +92,26 @@ export class KakaoApiService {
       this.logger.warn(`카카오 프로필 조회 실패: ${String(error)}`);
       return null;
     }
+  }
+
+  // 탈퇴할 때 우리 앱과 카카오 계정의 연결을 끊는다.
+  // 사용자 토큰 없이 부를 수 있도록 Admin 키를 쓴다. Admin 키는 서버에만 둔다.
+  async unlink(kakaoUserId: string): Promise<void> {
+    const adminKey = this.configService.get<string>('KAKAO_ADMIN_KEY');
+
+    if (!adminKey) {
+      throw new InternalServerErrorException(
+        '카카오 연결 끊기 설정(KAKAO_ADMIN_KEY)이 되어 있지 않습니다.',
+      );
+    }
+
+    await axios.post(
+      KAKAO_UNLINK_URL,
+      new URLSearchParams({ target_id_type: 'user_id', target_id: kakaoUserId }),
+      {
+        headers: { Authorization: `KakaoAK ${adminKey}` },
+        timeout: REQUEST_TIMEOUT,
+      },
+    );
   }
 }

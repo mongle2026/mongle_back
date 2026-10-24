@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, Repository } from 'typeorm';
+import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import { UserEntity } from './entities/user.entity';
 import { R2Service } from '../storage/r2.service';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -59,6 +59,7 @@ export class UserService {
           keyword: `%${searchKeyword}%`,
         },
       )
+      .andWhere('user.withdrawnAt IS NULL')
       .orderBy(
         `
         CASE
@@ -109,11 +110,12 @@ export class UserService {
     };
   }
 
-  // 앱이 보낸 publicId 를 서버 안에서 쓰는 user.id 로 바꾼다
+  // 앱이 보낸 publicId 를 서버 안에서 쓰는 user.id 로 바꾼다.
+  // 탈퇴한 회원은 없는 회원으로 본다 (편지 보내기, 팔로우 대상이 될 수 없다)
   async getIdByPublicId(publicId: string): Promise<number> {
     const user = await this.userRepository.findOne({
       select: { id: true },
-      where: { publicId },
+      where: { publicId, withdrawnAt: IsNull() },
     });
 
     if (!user) {
@@ -132,6 +134,7 @@ export class UserService {
     return this.getUserProfile({ publicId });
   }
 
+  // 탈퇴한 회원의 프로필은 없다
   private async getUserProfile(where: { id: number } | { publicId: string }) {
     const user = await this.userRepository.findOne({
       select: {
@@ -141,7 +144,7 @@ export class UserService {
         nickname: true,
         profileImageKey: true,
       },
-      where,
+      where: { ...where, withdrawnAt: IsNull() },
     });
 
     if (!user) {
@@ -239,9 +242,9 @@ export class UserService {
 
     // 내 아이디의 대소문자만 바꾸는 경우는 허용되도록 나는 빼고 확인한다
     if (
-      changes.userCode !== undefined &&
+      dto.userCode !== undefined &&
       (await this.userRepository.existsBy({
-        userCode: changes.userCode,
+        userCode: dto.userCode,
         id: Not(userId),
       }))
     ) {

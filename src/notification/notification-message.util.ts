@@ -41,7 +41,10 @@ export const buildPushContent = (params: {
   eventTitle?: string | null;
 }): { title: string; body: string } => {
   const nickname = params.actorNickname ?? '';
-  const userCode = params.actorUserCode ?? '';
+  // 아이디가 없으면(탈퇴한 회원) 이름으로 보여준다
+  const actorLabel = params.actorUserCode
+    ? toUserCode(params.actorUserCode)
+    : nickname;
 
   switch (params.status) {
     case NotificationStatus.SEND:
@@ -56,12 +59,12 @@ export const buildPushContent = (params: {
       };
     case NotificationStatus.COMMENT:
       return {
-        title: `${toUserCode(userCode)}의 댓글`,
+        title: `${actorLabel}의 댓글`,
         body: params.content ?? '',
       };
     case NotificationStatus.REPLY:
       return {
-        title: `${toUserCode(userCode)}의 답글`,
+        title: `${actorLabel}의 답글`,
         body: params.content ?? '',
       };
     case NotificationStatus.SYSTEM:
@@ -77,8 +80,8 @@ export const buildPushContent = (params: {
       };
     case NotificationStatus.FOLLOW:
       return {
-        title: `${toUserCode(userCode)}님의 새로운 팔로우`,
-        body: `${toUserCode(userCode)}님이 ${params.recipientNickname ?? ''}님을 팔로우하기 시작했습니다.`,
+        title: `${actorLabel}님의 새로운 팔로우`,
+        body: `${actorLabel}님이 ${params.recipientNickname ?? ''}님을 팔로우하기 시작했습니다.`,
       };
   }
 };

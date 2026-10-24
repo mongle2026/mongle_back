@@ -47,15 +47,16 @@ export class FollowService {
 
   async followUser(currentUserId: number, targetPublicId: string) {
     // DB 왕복 한 번으로 처리한다. publicId 로 찾은 사용자를 그대로 넣는다.
-    // 이미 팔로우 중이면 유니크 키에 걸려 아무것도 바뀌지 않는다.
+    // 이미 팔로우 중이면 유니크 키에 걸려 아무것도 바뀌지 않는다. 탈퇴한 회원은 팔로우할 수 없다.
     const result: { affectedRows: number } = await this.followRepository.query(
       `INSERT INTO \`follow\` (\`follower_id\`, \`following_id\`)
-        SELECT ?, \`id\` FROM \`user\` WHERE \`public_id\` = ? AND \`id\` <> ?
+        SELECT ?, \`id\` FROM \`user\`
+        WHERE \`public_id\` = ? AND \`id\` <> ? AND \`withdrawn_at\` IS NULL
         ON DUPLICATE KEY UPDATE \`follower_id\` = \`follower_id\``,
       [currentUserId, targetPublicId, currentUserId],
     );
 
-    // 넣은 행이 없으면 이미 팔로우 중이거나, 없는 사용자거나, 나 자신이다
+    // 넣은 행이 없으면 이미 팔로우 중이거나, 없는(탈퇴한) 사용자거나, 나 자신이다
     if (result.affectedRows === 0) {
       const targetUserId =
         await this.userService.getIdByPublicId(targetPublicId);
@@ -100,6 +101,7 @@ export class FollowService {
         'followCount',
       )
       .where('user.publicId = :targetPublicId', { targetPublicId })
+      .andWhere('user.withdrawnAt IS NULL')
       .setParameter('currentUserId', currentUserId)
       .getRawOne<{ id: string; followCount: string }>();
 
