@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import axios from 'axios';
 import { DataSource, In, IsNull, MoreThan } from 'typeorm';
 import { UserEntity } from '../user/entities/user.entity';
 import { AuthProvider } from '../user/enums/auth-provider.enum';
@@ -12,6 +18,7 @@ import { NotificationEntity } from '../notification/entities/notification.entity
 import { PushTokenEntity } from '../notification/entities/push-token.entity';
 import { NotificationSettingEntity } from '../notification/entities/notification-setting.entity';
 import { KakaoApiService } from './kakao-api.service';
+import { AppleApiService } from './apple-api.service';
 
 /**
  * 회원 탈퇴.
@@ -30,9 +37,11 @@ export class WithdrawalService {
     private readonly dataSource: DataSource,
     private readonly profileImageService: ProfileImageService,
     private readonly kakaoApiService: KakaoApiService,
+    private readonly appleApiService: AppleApiService,
   ) {}
 
-  async withdraw(userId: number) {
+  // authorizationCode: 애플 회원만. 탈퇴 직전에 애플 로그인을 한 번 더 해서 받은 값
+  async withdraw(userId: number, authorizationCode?: string) {
     const account = await this.dataSource.transaction(async (manager) => {
       const user = await manager.findOne(UserEntity, {
         select: {
@@ -48,6 +57,13 @@ export class WithdrawalService {
 
       if (!user || user.withdrawnAt) {
         throw new NotFoundException('사용자를 찾을 수 없습니다.');
+      }
+
+      // 애플은 연결을 끊으려면 앱에서 받은 코드가 꼭 있어야 해서, 빠뜨리면 탈퇴 전에 막는다
+      if (user.provider === AuthProvider.APPLE && !authorizationCode) {
+        throw new BadRequestException(
+          '애플 계정은 탈퇴할 때 애플 로그인 인증(authorizationCode)이 필요합니다.',
+        );
       }
 
       const now = new Date();
@@ -125,7 +141,11 @@ export class WithdrawalService {
     });
 
     // 탈퇴가 커밋된 뒤에 끊는다. 실패해도 탈퇴는 그대로 두고 로그만 남긴다.
-    await this.unlinkSocialAccount(account.provider, account.providerUserId);
+    await this.unlinkSocialAccount(
+      account.provider,
+      account.providerUserId,
+      authorizationCode,
+    );
 
     return { message: '탈퇴되었습니다.' };
   }
@@ -133,6 +153,7 @@ export class WithdrawalService {
   private async unlinkSocialAccount(
     provider: AuthProvider,
     providerUserId: string | null,
+    authorizationCode?: string,
   ) {
     if (!providerUserId) {
       return;
@@ -144,12 +165,23 @@ export class WithdrawalService {
           await this.kakaoApiService.unlink(providerUserId);
           break;
         case AuthProvider.APPLE:
-          // TODO: 애플 토큰 revoke. 앱에서 탈퇴할 때 받은 authorizationCode 로 토큰을 발급받아 revoke 한다.
+          // 코드가 없으면 탈퇴 트랜잭션에서 이미 막았다
+          if (authorizationCode) {
+            await this.appleApiService.revoke(
+              authorizationCode,
+              providerUserId,
+            );
+          }
           break;
       }
     } catch (error) {
+      // 카카오/애플이 돌려준 에러 본문(예: 애플 코드 만료 invalid_grant)도 함께 남긴다
+      const response = axios.isAxiosError(error)
+        ? ` response=${JSON.stringify(error.response?.data)}`
+        : '';
+
       this.logger.error(
-        `소셜 연결 끊기 실패 (provider=${provider}, providerUserId=${providerUserId})`,
+        `소셜 연결 끊기 실패 (provider=${provider}, providerUserId=${providerUserId})${response}`,
         error as Error,
       );
     }

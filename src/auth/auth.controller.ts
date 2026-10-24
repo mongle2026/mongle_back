@@ -17,6 +17,7 @@ import { KakaoLoginDto } from './dto/kakao-login.dto';
 import { AppleLoginDto } from './dto/apple-login.dto';
 import { SignupDto } from './dto/signup.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { WithdrawDto } from './dto/withdraw.dto';
 import { WithdrawalService } from './withdrawal.service';
 
 @Controller('auth')
@@ -71,7 +72,7 @@ export class AuthController {
   // 회원 탈퇴. 처리 범위는 WithdrawalService 참고
   @Delete('me')
   @UseGuards(JwtAuthGuard)
-  async withdraw(@CurrentUserId() userId: number) {
-    return this.withdrawalService.withdraw(userId);
+  async withdraw(@CurrentUserId() userId: number, @Body() dto: WithdrawDto) {
+    return this.withdrawalService.withdraw(userId, dto.authorizationCode);
   }
 }
