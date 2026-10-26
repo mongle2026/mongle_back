@@ -22,7 +22,7 @@ import { GetBookmarkFeedQueryDto } from './dto/get-bookmark-feed-query.dto';
 import { UpdateProfileFeedsDto } from './dto/update-profile-feeds.dto';
 import { FeedCommentService } from '../feed-comment/feed-comment.service';
 import { CreateFeedCommentDto } from '../feed-comment/dto/create-feed-comment.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtAuthGuard, OptionalAuth } from '../auth/jwt-auth.guard';
 import { CurrentUserId } from '../auth/current-user-id.decorator';
 
 // 공유 웹페이지(GET /feed/share/:feedId)는 로그인 없이 열려야 해서 FeedShareController 에 따로 둔다
@@ -42,9 +42,11 @@ export class FeedController {
     return this.feedService.createFeed(userId, dto);
   }
 
+  // 추천 피드는 로그인하지 않아도 볼 수 있다 (전체 공개 글만)
   @Get()
+  @OptionalAuth()
   async getFeeds(
-    @CurrentUserId() userId: number,
+    @CurrentUserId() userId: number | undefined,
     @Query() query: GetFeedQueryDto,
   ) {
     return this.feedService.getFeeds({
@@ -139,9 +141,10 @@ export class FeedController {
   }
 
   @Get(':feedId')
+  @OptionalAuth()
   async getFeedDetail(
     @Param('feedId') feedId: string,
-    @CurrentUserId() userId: number,
+    @CurrentUserId() userId: number | undefined,
   ) {
     return this.feedService.getFeedDetail(Number(feedId), userId);
   }

@@ -162,15 +162,16 @@ export class FeedService {
     });
   }
 
+  // userId 가 없으면(로그인 전) 전체 공개 글만, 좋아요 · 북마크 · 팔로우는 모두 false 로 준다
   async getFeeds(params: {
-    userId: number;
+    userId?: number;
     cursor?: number;
     limit?: number;
   }) {
     const { userId, cursor } = params;
     const limit = params.limit ?? 20;
 
-    if (!userId || Number.isNaN(userId)) {
+    if (userId !== undefined && (!userId || Number.isNaN(userId))) {
       throw new BadRequestException('userId가 올바르지 않습니다.');
     }
 
@@ -183,7 +184,9 @@ export class FeedService {
     }
 
     const safeLimit = Math.min(Math.max(limit, 1), 50);
-    const followingIds = await this.followService.getFollowingIds(userId);
+    const followingIds = userId
+      ? await this.followService.getFollowingIds(userId)
+      : [];
 
     const queryBuilder = this.dataSource
       .getRepository(FeedEntity)
@@ -265,7 +268,8 @@ export class FeedService {
           }
         }),
       )
-      .setParameter('userId', userId)
+      // 로그인 전이면 NULL 이라 내 글 · 내 좋아요 · 내 북마크 조건에 걸리지 않는다
+      .setParameter('userId', userId ?? null)
       .orderBy('feed.id', 'DESC')
       .take(safeLimit + 1);
 
@@ -499,12 +503,14 @@ export class FeedService {
     };
   }
 
-  async getFeedDetail(feedId: number, userId: number) {
+  // 남의 글은 GET /feed 와 같은 기준으로 보여준다: 나만 보기는 404, 팔로워 공개는 팔로우 중일 때만.
+  // userId 가 없으면(로그인 전) 전체 공개 글만 볼 수 있다
+  async getFeedDetail(feedId: number, userId?: number) {
     if (!Number.isInteger(feedId) || feedId < 1) {
       throw new BadRequestException('feedId가 올바르지 않습니다.');
     }
 
-    if (!Number.isInteger(userId) || userId < 1) {
+    if (userId !== undefined && (!Number.isInteger(userId) || userId < 1)) {
       throw new BadRequestException('userId가 올바르지 않습니다.');
     }
 
@@ -547,7 +553,7 @@ export class FeedService {
       }, 'bookmarkCount')
 
       .where('feed.id = :feedId', { feedId })
-      .setParameter('userId', userId)
+      .setParameter('userId', userId ?? null)
       .getRawAndEntities();
 
     const feed = result.entities[0];
@@ -562,7 +568,13 @@ export class FeedService {
     let isFollowing = false;
 
     if (!isMine) {
-      const followingIds = await this.followService.getFollowingIds(userId);
+      if (feed.visibility === Visibility.PRIVACY) {
+        throw new NotFoundException('피드를 찾을 수 없습니다.');
+      }
+
+      const followingIds = userId
+        ? await this.followService.getFollowingIds(userId)
+        : [];
       isFollowing = followingIds.includes(authorId);
 
       if (
