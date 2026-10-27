@@ -125,21 +125,27 @@ export class UserService {
     return Number(user.id);
   }
 
+  // 내 프로필 조회. 설정 > 계정 정보에서 연동된 계정을 보여주도록 provider / email 을 함께 준다.
   async getUserById(userId: number) {
-    return this.getUserProfile({ id: userId });
+    return this.getUserProfile({ id: userId }, true);
   }
 
   // 다른 사람 프로필 조회. 앱은 publicId 로만 회원을 가리킨다.
   async getUserByPublicId(publicId: string) {
-    return this.getUserProfile({ publicId });
+    return this.getUserProfile({ publicId }, false);
   }
 
   // 탈퇴한 회원의 프로필은 없다
-  private async getUserProfile(where: { id: number } | { publicId: string }) {
+  private async getUserProfile(
+    where: { id: number } | { publicId: string },
+    includeAccount: boolean,
+  ) {
     const user = await this.userRepository.findOne({
       select: {
         id: true,
         publicId: true,
+        provider: true,
+        email: true,
         userCode: true,
         nickname: true,
         profileImageKey: true,
@@ -164,6 +170,9 @@ export class UserService {
       profileImageUrl: this.r2Service.getProfileImageUrl(
         user.profileImageKey,
       ),
+
+      // email 은 못 받은 회원(카카오, 이메일 저장 전 애플 가입자)이면 null
+      ...(includeAccount && { provider: user.provider, email: user.email }),
     };
   }
 

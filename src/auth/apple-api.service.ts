@@ -26,6 +26,13 @@ type AppleKeysResponse = {
   keys: (JsonWebKey & { kid: string })[];
 };
 
+// identity token 에서 우리가 쓰는 값
+export type AppleIdentity = {
+  sub: string;
+  // 앱이 이메일을 요청했을 때만 들어 있다. 사용자가 '나의 이메일 가리기'를 고르면 애플 중계 주소(@privaterelay.appleid.com)다.
+  email: string | null;
+};
+
 type AppleTokenResponse = {
   refresh_token?: string;
   id_token?: string;
@@ -41,9 +48,10 @@ export class AppleApiService {
 
   constructor(private readonly configService: ConfigService) {}
 
-  // 앱에서 애플 로그인 후 받은 identity token(JWT)을 애플 공개키로 검증하고 애플 회원 식별값(sub)을 돌려준다.
+  // 앱에서 애플 로그인 후 받은 identity token(JWT)을 애플 공개키로 검증하고 애플 회원 식별값(sub)과 이메일을 돌려준다.
   // 다른 앱용으로 발급된 토큰으로 로그인하는 것을 막기 위해 aud 가 우리 번들 ID 인지 꼭 확인한다.
-  async verifyIdentityToken(identityToken: string): Promise<string> {
+  // 이메일은 앱이 따로 보내는 값 대신 서명을 확인한 토큰 안의 값을 쓴다.
+  async verifyIdentityToken(identityToken: string): Promise<AppleIdentity> {
     const bundleId = this.configService.get<string>('APPLE_BUNDLE_ID');
 
     if (!bundleId) {
@@ -75,7 +83,10 @@ export class AppleApiService {
       throw new UnauthorizedException(INVALID_TOKEN_MESSAGE);
     }
 
-    return payload.sub;
+    return {
+      sub: payload.sub,
+      email: typeof payload.email === 'string' ? payload.email : null,
+    };
   }
 
   /**

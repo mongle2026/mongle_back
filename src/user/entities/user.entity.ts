@@ -34,6 +34,10 @@ export class UserEntity {
   @Column({ name: 'provider_user_id', type: 'varchar', length: 100, nullable: true })
   providerUserId!: string | null;
 
+  // 소셜 계정에서 받은 이메일. 지금은 애플 가입 때만 받는다. 못 받았거나 탈퇴하면 null
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  email!: string | null;
+
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
 

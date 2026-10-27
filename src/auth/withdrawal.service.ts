@@ -130,6 +130,7 @@ export class WithdrawalService {
         {
           withdrawnAt: now,
           providerUserId: null,
+          email: null,
           userCode: null,
           nickname: '',
           profileImageKey: null,

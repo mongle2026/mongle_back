@@ -53,17 +53,21 @@ export type SignupTokenPayload = {
   typ: 'signup';
   provider: AuthProvider;
   providerUserId: string;
+  // 소셜 계정에서 받은 이메일. 못 받았으면 null
+  email: string | null;
 };
 
 export function signSignupToken(
   provider: AuthProvider,
   providerUserId: string,
+  email: string | null,
   secret: string,
 ): string {
   const payload: SignupTokenPayload = {
     typ: 'signup',
     provider,
     providerUserId,
+    email,
   };
 
   return jwt.sign(payload, secret, {
@@ -89,7 +93,11 @@ export function verifySignupToken(
       return null;
     }
 
-    return payload as SignupTokenPayload;
+    // 이메일을 넣기 전에 발급한 토큰에는 email 이 없다
+    return {
+      ...(payload as SignupTokenPayload),
+      email: typeof payload.email === 'string' ? payload.email : null,
+    };
   } catch {
     return null;
   }

@@ -61,18 +61,20 @@ export class AuthService {
         AuthProvider.KAKAO,
         kakaoUserId,
         await this.kakaoApiService.getNickname(kakaoAccessToken),
+        null,
       )
     );
   }
 
   // 애플은 이름을 최초 인증 때 앱에만 알려줘서 서버는 닉네임 기본값을 줄 수 없다.
+  // 이메일은 identity token 에 들어 있어서 가입할 때 저장하도록 signupToken 에 담는다.
   async loginWithApple(identityToken: string) {
-    const appleUserId =
+    const { sub: appleUserId, email } =
       await this.appleApiService.verifyIdentityToken(identityToken);
 
     return (
       (await this.loginIfRegistered(AuthProvider.APPLE, appleUserId)) ??
-      this.toNewUserResponse(AuthProvider.APPLE, appleUserId, null)
+      this.toNewUserResponse(AuthProvider.APPLE, appleUserId, null, email)
     );
   }
 
@@ -90,7 +92,7 @@ export class AuthService {
       );
     }
 
-    const { provider, providerUserId } = account;
+    const { provider, providerUserId, email } = account;
 
     if (await this.userRepository.existsBy({ provider, providerUserId })) {
       throw new ConflictException(
@@ -122,6 +124,7 @@ export class AuthService {
             publicId: randomUUID(),
             provider,
             providerUserId,
+            email,
             nickname: dto.nickname,
             userCode: dto.userCode,
             profileImageKey: profileImageKey ?? null,
@@ -223,12 +226,14 @@ export class AuthService {
     provider: AuthProvider,
     providerUserId: string,
     suggestedNickname: string | null,
+    email: string | null,
   ) {
     return {
       isNewUser: true as const,
       signupToken: signSignupToken(
         provider,
         providerUserId,
+        email,
         getJwtSecret(this.configService),
       ),
       // 가입 화면에서 닉네임 기본값으로 보여줄 값
