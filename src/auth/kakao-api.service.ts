@@ -12,6 +12,8 @@ const KAKAO_USER_ME_URL = 'https://kapi.kakao.com/v2/user/me';
 const KAKAO_UNLINK_URL = 'https://kapi.kakao.com/v1/user/unlink';
 
 const REQUEST_TIMEOUT = 5_000;
+// 카카오 에러 코드: 앱과 연결되지 않은 사용자
+const KAKAO_NOT_LINKED_USER_CODE = -101;
 
 type KakaoTokenInfoResponse = {
   id: number;
@@ -105,13 +107,28 @@ export class KakaoApiService {
       );
     }
 
-    await axios.post(
-      KAKAO_UNLINK_URL,
-      new URLSearchParams({ target_id_type: 'user_id', target_id: kakaoUserId }),
-      {
-        headers: { Authorization: `KakaoAK ${adminKey}` },
-        timeout: REQUEST_TIMEOUT,
-      },
-    );
+    try {
+      await axios.post(
+        KAKAO_UNLINK_URL,
+        new URLSearchParams({
+          target_id_type: 'user_id',
+          target_id: kakaoUserId,
+        }),
+        {
+          headers: { Authorization: `KakaoAK ${adminKey}` },
+          timeout: REQUEST_TIMEOUT,
+        },
+      );
+    } catch (error) {
+      // 이미 연결이 끊긴 사용자면 끊긴 것으로 본다. 사용자가 카카오 설정에서 직접 끊었을 수 있다.
+      if (
+        axios.isAxiosError<{ code?: number }>(error) &&
+        error.response?.data?.code === KAKAO_NOT_LINKED_USER_CODE
+      ) {
+        return;
+      }
+
+      throw error;
+    }
   }
 }

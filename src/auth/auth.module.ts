@@ -7,10 +7,21 @@ import { AuthService } from './auth.service';
 import { KakaoApiService } from './kakao-api.service';
 import { AppleApiService } from './apple-api.service';
 import { WithdrawalService } from './withdrawal.service';
+import { SocialUnlinkService } from './social-unlink.service';
+import { SocialUnlinkPendingEntity } from './entities/social-unlink-pending.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity]), UserModule],
+  imports: [
+    TypeOrmModule.forFeature([UserEntity, SocialUnlinkPendingEntity]),
+    UserModule,
+  ],
   controllers: [AuthController],
-  providers: [AuthService, KakaoApiService, AppleApiService, WithdrawalService],
+  providers: [
+    AuthService,
+    KakaoApiService,
+    AppleApiService,
+    WithdrawalService,
+    SocialUnlinkService,
+  ],
 })
 export class AuthModule {}
