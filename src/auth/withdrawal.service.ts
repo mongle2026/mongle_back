@@ -146,8 +146,9 @@ export class WithdrawalService {
     });
 
     // 탈퇴가 커밋된 뒤에 끊는다. 실패해도 탈퇴는 그대로 두고 나중에 다시 시도한다.
+    // 카카오 · 애플 응답을 기다리지 않고 바로 응답한다 (unlinkNow 는 예외를 던지지 않는다)
     if (pendingId) {
-      await this.socialUnlinkService.unlinkNow(pendingId);
+      void this.socialUnlinkService.unlinkNow(pendingId);
     }
 
     return { message: '탈퇴되었습니다.' };
