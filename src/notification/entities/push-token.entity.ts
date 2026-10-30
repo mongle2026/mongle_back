@@ -9,6 +9,7 @@ import {
 
 // 기기별 Expo 푸시 토큰. 한 사용자가 여러 기기를 쓸 수 있어서 user 와 1:N.
 // 같은 기기에서 다른 계정으로 바꾸면 토큰 주인만 바뀌도록 token 을 unique 로 둔다.
+// 로그인하지 않은 기기는 user_id 가 null 이고 공지(시스템 알림) 푸시만 받는다.
 @Index('idx_push_token_user_id', ['userId'])
 @Index('uq_push_token_token', ['token'], { unique: true })
 @Entity('push_token')
@@ -16,8 +17,8 @@ export class PushTokenEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id!: number;
 
-  @Column({ name: 'user_id', type: 'bigint' })
-  userId!: number;
+  @Column({ name: 'user_id', type: 'bigint', nullable: true })
+  userId!: number | null;
 
   @Column({ type: 'varchar', length: 255 })
   token!: string;

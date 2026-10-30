@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron } from '@nestjs/schedule';
-import { In, LessThan, Repository } from 'typeorm';
+import { In, IsNull, LessThan, MoreThan, Repository } from 'typeorm';
 import { NotificationEntity } from './entities/notification.entity';
 import { PushTokenEntity } from './entities/push-token.entity';
 import { NotificationSettingEntity } from './entities/notification-setting.entity';
@@ -34,6 +34,9 @@ const PENDING_PUSH_USER_BATCH_SIZE = 100;
 const PENDING_PUSH_MAX_BATCHES_PER_RUN = 20;
 // 사람마다 DB 조회 몇 번 + Expo 요청이라, DB 풀(기본 5)을 넘지 않게 동시에 보낸다
 const PENDING_PUSH_CONCURRENCY = 5;
+
+// 공지를 보낼 때 한 번에 처리할 회원 수 · 기기 수
+const BROADCAST_BATCH_SIZE = 500;
 
 const KST_OFFSET_HOURS = 9;
 
@@ -127,8 +130,9 @@ export class NotificationService {
     }
   }
 
+  // userId 가 null 이면 로그인하지 않은 기기로 남긴다
   async registerPushToken(params: {
-    userId: number;
+    userId: number | null;
     token: string;
     platform: string;
   }) {
@@ -138,7 +142,7 @@ export class NotificationService {
       throw new BadRequestException('푸시 토큰 형식이 올바르지 않습니다.');
     }
 
-    // 같은 기기에서 다른 계정으로 바꾸면 토큰 주인만 바뀐다
+    // 같은 기기에서 다른 계정으로 바꾸거나 로그아웃하면 토큰 주인만 바뀐다
     await this.pushTokenRepository.upsert(
       { userId, token, platform },
       { conflictPaths: ['token'] },
@@ -147,11 +151,133 @@ export class NotificationService {
     return { message: '푸시 토큰이 등록되었습니다.' };
   }
 
-  // 내 계정에 등록된 토큰만 지운다
-  async deletePushToken(userId: number, token: string) {
-    await this.pushTokenRepository.delete({ userId, token });
+  // 내 계정에 등록된 토큰만 계정에서 뗀다. 로그인하지 않은 기기로 남아서 공지 푸시는 계속 받는다
+  async detachPushToken(userId: number, token: string) {
+    await this.pushTokenRepository.update({ userId, token }, { userId: null });
 
-    return { message: '푸시 토큰이 삭제되었습니다.' };
+    return { message: '푸시 토큰이 계정에서 해제되었습니다.' };
+  }
+
+  /*
+   * 공지(시스템 알림)를 모든 회원과 로그인하지 않은 기기에 보낸다. 서버에서 스크립트로 실행한다. (npm run notify:system)
+   * 회원: notify 와 같은 규칙이다. 꺼둔 사람은 빼고, 목록에 남기고, 야간 알림을 끈 사람은 밤에 생긴 푸시를 아침으로 미룬다.
+   * 로그인하지 않은 기기: 남길 목록이 없어서 푸시만 보낸다. 설정이 없으니 회원 기본값(켜짐 · 야간 켜짐)처럼 바로 보내고,
+   * 끄려면 기기 알림 설정에서 끈다.
+   * 광고성 정보(이벤트)는 수신 동의가 필요해서 로그인하지 않은 기기에는 보내지 않는다.
+   */
+  async broadcastSystemNotice() {
+    const status = NotificationStatus.SYSTEM;
+    const type = NOTIFICATION_TYPE_BY_STATUS[status];
+    const settingKey = NOTIFICATION_SETTING_KEY_BY_STATUS[status];
+    const isNight = isKstNightTime(new Date());
+
+    // 이동할 원본이 없어서 종류만 넘긴다. 누르면 프론트가 알림 목록으로 보낸다.
+    const message = {
+      ...buildPushContent({ status }),
+      data: { type, status },
+      channelId: settingKey,
+    };
+
+    let memberCount = 0;
+    let guestTokenCount = 0;
+
+    for (let lastUserId = 0; ; ) {
+      const users = await this.userRepository.find({
+        select: { id: true },
+        where: { id: MoreThan(lastUserId), withdrawnAt: IsNull() },
+        order: { id: 'ASC' },
+        take: BROADCAST_BATCH_SIZE,
+      });
+
+      if (users.length === 0) {
+        break;
+      }
+
+      const userIds = users.map(({ id }) => Number(id));
+      lastUserId = userIds[userIds.length - 1];
+
+      const settingRows = await this.settingRepository.find({
+        where: {
+          userId: In(userIds),
+          settingKey: In([settingKey, NotificationSettingKey.NIGHT]),
+        },
+      });
+      const enabledByUserKey = new Map(
+        settingRows.map((row) => [
+          `${Number(row.userId)}:${row.settingKey}`,
+          row.enabled,
+        ]),
+      );
+      const isEnabled = (userId: number, key: NotificationSettingKey) =>
+        enabledByUserKey.get(`${userId}:${key}`) ??
+        NOTIFICATION_SETTING_DEFAULTS[key];
+
+      const targetIds = userIds.filter((userId) =>
+        isEnabled(userId, settingKey),
+      );
+
+      if (targetIds.length === 0) {
+        continue;
+      }
+
+      // 아침으로 미룬 푸시는 sendPendingPushes 가 보낸다
+      const laterIds = new Set(
+        isNight
+          ? targetIds.filter(
+              (userId) => !isEnabled(userId, NotificationSettingKey.NIGHT),
+            )
+          : [],
+      );
+
+      await this.notificationRepository.insert(
+        targetIds.map((userId) => ({
+          userId,
+          type,
+          status,
+          pushPending: laterIds.has(userId),
+        })),
+      );
+
+      const nowIds = targetIds.filter((userId) => !laterIds.has(userId));
+
+      if (nowIds.length > 0) {
+        const tokenRows = await this.pushTokenRepository.find({
+          select: { token: true },
+          where: { userId: In(nowIds) },
+        });
+
+        await this.sendToTokens(
+          tokenRows.map(({ token }) => token),
+          message,
+        );
+      }
+
+      memberCount += targetIds.length;
+    }
+
+    for (let lastTokenId = 0; ; ) {
+      const tokenRows = await this.pushTokenRepository.find({
+        select: { id: true, token: true },
+        where: { id: MoreThan(lastTokenId), userId: IsNull() },
+        order: { id: 'ASC' },
+        take: BROADCAST_BATCH_SIZE,
+      });
+
+      if (tokenRows.length === 0) {
+        break;
+      }
+
+      lastTokenId = Number(tokenRows[tokenRows.length - 1].id);
+
+      await this.sendToTokens(
+        tokenRows.map(({ token }) => token),
+        message,
+      );
+
+      guestTokenCount += tokenRows.length;
+    }
+
+    return { memberCount, guestTokenCount };
   }
 
   async getNotifications(params: {

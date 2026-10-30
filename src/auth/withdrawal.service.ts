@@ -112,7 +112,8 @@ export class WithdrawalService {
 
       // 내가 받은 알림만 지운다. 내가 상대(actor)인 다른 사람의 알림은 "(탈퇴한 회원)"으로 남는다.
       await manager.delete(NotificationEntity, { userId });
-      await manager.delete(PushTokenEntity, { userId });
+      // 기기 토큰은 계정에서만 뗀다. 로그인하지 않은 기기로 남아서 공지 푸시는 계속 받는다
+      await manager.update(PushTokenEntity, { userId }, { userId: null });
       await manager.delete(NotificationSettingEntity, { userId });
 
       if (user.profileImageKey) {

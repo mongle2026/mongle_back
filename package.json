@@ -17,6 +17,7 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs}/**/*.ts\" --fix",
     "seed:user-images": "ts-node -r tsconfig-paths/register src/database/seed/seed-user-images.ts",
+    "notify:system": "ts-node -r tsconfig-paths/register src/notification/scripts/send-system-notice.ts",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate": "npm run typeorm -- migration:generate -d src/database/data-source.ts",
     "migration:create": "npm run typeorm -- migration:create",
