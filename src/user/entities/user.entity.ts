@@ -51,9 +51,9 @@ export class UserEntity {
   @Column({ name: 'user_code', type: 'varchar', length: 30, unique: true, nullable: true })
   userCode!: string | null;
 
-  // 사용자가 정한 이름. 중복 가능. 탈퇴하면 빈 문자열이고, 화면에는 withdrawn-user.ts 의 이름으로 보여준다.
-  @Column({ type: 'varchar', length: 50 })
-  nickname!: string;
+  // 사용자가 정한 이름. 중복 가능. 탈퇴하면 null 이고, 화면에는 withdrawn-user.ts 의 이름으로 보여준다.
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  nickname!: string | null;
 
   // 탈퇴한 시각. 탈퇴한 회원도 행은 남긴다.
   // 남긴 댓글/편지/우표에서 보낸 사람을 사람마다 구분해야 해서 지우지 않고 개인정보만 비운다.

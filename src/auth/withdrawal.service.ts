@@ -137,7 +137,7 @@ export class WithdrawalService {
           providerUserId: null,
           email: null,
           userCode: null,
-          nickname: '',
+          nickname: null,
           profileImageKey: null,
           refreshTokenHash: null,
         },
