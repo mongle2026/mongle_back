@@ -6,12 +6,14 @@ import { FollowEntity } from './entities/follow.entity';
 import { UserEntity } from '../user/entities/user.entity';
 import { UserModule } from '../user/user.module';
 import { NotificationModule } from '../notification/notification.module';
+import { BlockModule } from '../block/block.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([FollowEntity, UserEntity]),
     UserModule,
     NotificationModule,
+    BlockModule,
   ],
   controllers: [FollowController],
   providers: [FollowService],

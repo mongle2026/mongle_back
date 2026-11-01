@@ -7,6 +7,7 @@ import { NotificationEntity } from './entities/notification.entity';
 import { PushTokenEntity } from './entities/push-token.entity';
 import { NotificationSettingEntity } from './entities/notification-setting.entity';
 import { UserEntity } from '../user/entities/user.entity';
+import { BlockModule } from '../block/block.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { UserEntity } from '../user/entities/user.entity';
       NotificationSettingEntity,
       UserEntity,
     ]),
+    BlockModule,
   ],
   controllers: [NotificationController],
   providers: [NotificationService, ExpoPushService],

@@ -5,6 +5,7 @@ import { FeedCommentCleanupService } from './feed-comment-cleanup.service';
 import { FeedCommentEntity } from './entities/feed-comment.entity';
 import { FeedEntity } from '../feed/entities/feed.entity';
 import { NotificationModule } from '../notification/notification.module';
+import { BlockModule } from '../block/block.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { NotificationModule } from '../notification/notification.module';
       FeedEntity,
     ]),
     NotificationModule,
+    BlockModule,
   ],
   providers: [FeedCommentService, FeedCommentCleanupService],
   exports: [FeedCommentService],

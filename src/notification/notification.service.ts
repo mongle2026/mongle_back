@@ -25,6 +25,8 @@ import {
 } from './notification-message.util';
 import { R2Service } from '../storage/r2.service';
 import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
+import { BlockService } from '../block/block.service';
+import { notBlockedBetweenSql } from '../block/block.sql';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_BATCH_SIZE = 1000;
@@ -84,17 +86,27 @@ export class NotificationService {
 
     private readonly expoPushService: ExpoPushService,
     private readonly r2Service: R2Service,
+    private readonly blockService: BlockService,
   ) {}
 
   /*
    * 알림 목록에 저장하고 푸시를 보낸다.
    * 받는 사람이 해당 알림을 꺼두었으면 목록에도 남기지 않는다.
    * 야간 알림을 꺼두었으면 밤에는 목록에만 남기고 푸시는 아침에 모아서 보낸다.
+   * 받는 사람과 알림을 만든 사람(actor)이 차단 사이(누가 차단했든)면 목록에도 남기지 않는다.
    *
    * 편지/댓글 저장이 끝난 뒤 부르는 부가 작업이라, 실패해도 에러를 던지지 않고 로그만 남긴다.
    */
   async notify(input: CreateNotificationInput) {
     try {
+      if (
+        input.actorId &&
+        Number(input.actorId) !== Number(input.userId) &&
+        (await this.blockService.isBlockedBetween(input.userId, input.actorId))
+      ) {
+        return;
+      }
+
       const settingKey = NOTIFICATION_SETTING_KEY_BY_STATUS[input.status];
       const enabled = await this.isSettingEnabled(input.userId, settingKey);
 
@@ -297,6 +309,10 @@ export class NotificationService {
       .andWhere('notification.createdAt >= :since', {
         since: new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * DAY_MS),
       })
+      // 차단하기 전에 남은 알림도 차단 사이인 사람이 만든 것은 보이지 않게 한다
+      .andWhere(
+        `(notification.actorId IS NULL OR ${notBlockedBetweenSql(':userId', 'notification.actor_id')})`,
+      )
       .orderBy('notification.id', 'DESC')
       .limit(safeLimit + 1);
 
@@ -486,13 +502,19 @@ export class NotificationService {
         return;
       }
 
-      // 밤사이 꺼둔 종류는 빼고 보낸다. 목록에는 이미 남아 있다.
-      const settings = await this.getSettings(userId);
+      // 밤사이 꺼둔 종류, 밤사이 차단 사이가 된 사람의 알림은 빼고 보낸다. 목록에는 이미 남아 있다.
+      const [settings, blockedUserIds] = await Promise.all([
+        this.getSettings(userId),
+        this.blockService.getBlockedPairUserIds(userId),
+      ]);
       const enabledKeys = new Set(
         settings.filter(({ enabled }) => enabled).map(({ key }) => key),
       );
-      const pushRows = rows.filter((row) =>
-        enabledKeys.has(NOTIFICATION_SETTING_KEY_BY_STATUS[row.status]),
+      const blockedUserIdSet = new Set(blockedUserIds);
+      const pushRows = rows.filter(
+        (row) =>
+          enabledKeys.has(NOTIFICATION_SETTING_KEY_BY_STATUS[row.status]) &&
+          !(row.actorId && blockedUserIdSet.has(Number(row.actorId))),
       );
 
       if (pushRows.length === 1) {

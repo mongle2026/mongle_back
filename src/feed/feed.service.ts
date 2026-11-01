@@ -18,6 +18,7 @@ import { FollowService } from '../follow/follow.service';
 import { FollowEntity } from '../follow/entities/follow.entity';
 import { R2Service } from '../storage/r2.service';
 import { UserEntity } from '../user/entities/user.entity';
+import { blockedBetweenSql, notBlockedBetweenSql } from '../block/block.sql';
 
 // 보관함 장르별 기록에서 빼는 장르. 한국/영어 스토어프런트 표기를 모두 둔다
 const EXCLUDED_ARCHIVE_GENRES = ['음악', 'Music'];
@@ -268,7 +269,9 @@ export class FeedService {
           }
         }),
       )
-      // 로그인 전이면 NULL 이라 내 글 · 내 좋아요 · 내 북마크 조건에 걸리지 않는다
+      // 내가 차단했거나 나를 차단한 사람의 글은 뺀다
+      .andWhere(notBlockedBetweenSql(':userId', 'record.user_id'))
+      // 로그인 전이면 NULL 이라 내 글 · 내 좋아요 · 내 북마크 · 차단 조건에 걸리지 않는다
       .setParameter('userId', userId ?? null)
       .orderBy('feed.id', 'DESC')
       .take(safeLimit + 1);
@@ -503,7 +506,7 @@ export class FeedService {
     };
   }
 
-  // 남의 글은 GET /feed 와 같은 기준으로 보여준다: 나만 보기는 404, 팔로워 공개는 팔로우 중일 때만.
+  // 남의 글은 GET /feed 와 같은 기준으로 보여준다: 나만 보기 · 차단 사이는 404, 팔로워 공개는 팔로우 중일 때만.
   // userId 가 없으면(로그인 전) 전체 공개 글만 볼 수 있다
   async getFeedDetail(feedId: number, userId?: number) {
     if (!Number.isInteger(feedId) || feedId < 1) {
@@ -552,6 +555,8 @@ export class FeedService {
           .where('bookmark.feedId = feed.id');
       }, 'bookmarkCount')
 
+      .addSelect(blockedBetweenSql(':userId', 'record.user_id'), 'isBlocked')
+
       .where('feed.id = :feedId', { feedId })
       .setParameter('userId', userId ?? null)
       .getRawAndEntities();
@@ -565,10 +570,12 @@ export class FeedService {
     const authorId = Number(feed.record.user.id);
     const isMine = authorId === userId;
 
+    const raw = result.raw[0];
     let isFollowing = false;
 
     if (!isMine) {
-      if (feed.visibility === Visibility.PRIVACY) {
+      // 차단 사이(누가 차단했든)면 없는 글로 본다
+      if (feed.visibility === Visibility.PRIVACY || Number(raw.isBlocked) > 0) {
         throw new NotFoundException('피드를 찾을 수 없습니다.');
       }
 
@@ -584,8 +591,6 @@ export class FeedService {
         throw new NotFoundException('피드를 찾을 수 없습니다.');
       }
     }
-
-    const raw = result.raw[0];
 
     return this.formatFeedResponse(feed, {
       likeCount: Number(raw.likeCount ?? 0),
@@ -983,7 +988,7 @@ export class FeedService {
    * 프로필 노래 커버 그리드 (내 프로필, 다른 사람 프로필 공용). ownerPublicId: 프로필 주인의 publicId
    * 프로필 게시글 편집에서 뺀 글(profile_hidden)은 누구에게도 보이지 않습니다.
    * 주인은 공개 범위와 상관없이 모두 보고, 다른 사람은 GET /feed 와 같은 규칙으로 봅니다
-   * (전체 공개 + 팔로우 중이면 팔로워 공개, 비공개는 안 보임). 최신순, feedId 커서.
+   * (전체 공개 + 팔로우 중이면 팔로워 공개, 비공개는 안 보임, 차단 사이면 모두 안 보임). 최신순, feedId 커서.
    * 사용자 찾기·팔로우 확인을 따로 하지 않고 쿼리 하나로 불러옵니다. 없는 사용자면 빈 목록입니다.
    */
   async getProfileFeeds(params: {
@@ -1010,12 +1015,15 @@ export class FeedService {
             )
           )
         )`,
+        notBlockedBetweenSql('?', 'record.user_id'),
       ],
       conditionParams: [
         ownerPublicId,
         viewerId,
         Visibility.PUBLIC,
         Visibility.FOLLOWER,
+        viewerId,
+        viewerId,
         viewerId,
       ],
       cursor,
@@ -1271,7 +1279,7 @@ export class FeedService {
    * 보관함 - 북마크 목록
    * filter: all(기본) / following(내가 팔로우한 사람 글만, 내 글 제외)
    * sort: latest(기본, 최근에 북마크한 순) / oldest. 커서는 bookmark.id 입니다.
-   * 북마크한 뒤 공개 범위가 바뀌거나 언팔로우해 지금 볼 수 없는 글, 삭제된 글은 빠집니다.
+   * 북마크한 뒤 공개 범위가 바뀌거나 언팔로우해 지금 볼 수 없는 글, 차단 사이가 된 사람의 글, 삭제된 글은 빠집니다.
    */
   async getMyBookmarkedFeeds(params: {
     userId: number;
@@ -1293,6 +1301,7 @@ export class FeedService {
       .addSelect('feed.id', 'feedId')
       .where('bookmark.userId = :userId', { userId })
       .andWhere('feed.deletedAt IS NULL')
+      .andWhere(notBlockedBetweenSql(':userId', 'record.user_id'))
       .limit(safeLimit + 1);
 
     // 팔로우 목록을 따로 불러오지 않고 쿼리 안에서 확인해 DB 왕복을 줄인다.

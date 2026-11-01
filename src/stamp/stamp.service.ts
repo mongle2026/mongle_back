@@ -7,6 +7,7 @@ import { DataSource } from 'typeorm';
 import { LetterEntity } from '../letter/entities/letter.entity';
 import { LetterService } from '../letter/letter.service';
 import { StampEntity } from './entities/stamp.entity';
+import { notBlockedBetweenSql } from '../block/block.sql';
 
 @Injectable()
 export class StampService {
@@ -37,6 +38,8 @@ export class StampService {
           'letter.receiverId = :userId',
           'letter.receiverDeletedAt IS NULL',
           '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
+          // 차단 사이인 사람에게 받은 편지는 세지 않는다 (편지함과 같은 기준)
+          notBlockedBetweenSql(':userId', 'letter.sender_id'),
         ].join(' AND '),
         { userId, now: new Date() },
       )

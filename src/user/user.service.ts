@@ -11,6 +11,7 @@ import { R2Service } from '../storage/r2.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { isDuplicateEntryError } from '../database/mysql-error.util';
 import { ProfileImageService } from './profile-image.service';
+import { notBlockedBetweenSql } from '../block/block.sql';
 
 @Injectable()
 export class UserService {
@@ -60,6 +61,8 @@ export class UserService {
         },
       )
       .andWhere('user.withdrawnAt IS NULL')
+      // 차단 사이인 사람에게는 편지를 보낼 수 없어서 검색에서도 뺀다
+      .andWhere(notBlockedBetweenSql(':currentUserId', 'user.id'))
       .orderBy(
         `
         CASE

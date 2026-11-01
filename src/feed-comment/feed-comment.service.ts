@@ -14,6 +14,7 @@ import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
 import { UserEntity } from '../user/entities/user.entity';
 import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
+import { BlockService } from '../block/block.service';
 
 @Injectable()
 export class FeedCommentService {
@@ -26,6 +27,7 @@ export class FeedCommentService {
 
     private readonly r2Service: R2Service,
     private readonly notificationService: NotificationService,
+    private readonly blockService: BlockService,
   ) { }
 
   async createComment(
@@ -36,7 +38,10 @@ export class FeedCommentService {
     this.validateId(feedId, 'feedId');
     this.validateId(userId, 'userId');
 
-    const feed = await this.findFeedOrFail(feedId);
+    const { feed, blockedUserIds } = await this.findVisibleFeedOrFail(
+      feedId,
+      userId,
+    );
 
     const feedAuthorId = Number(feed.record.userId);
     const isFeedAuthor = feedAuthorId === Number(userId);
@@ -79,6 +84,11 @@ export class FeedCommentService {
 
       if (!rootComment) {
         throw new NotFoundException('원댓글을 찾을 수 없습니다.');
+      }
+
+      // 글 작성자는 차단 사이가 된 사람의 댓글 묶음을 볼 수 없으니 답글도 달 수 없다
+      if (blockedUserIds.has(Number(rootComment.userId))) {
+        throw new NotFoundException('답글을 달 댓글을 찾을 수 없습니다.');
       }
 
       if (!isFeedAuthor && Number(rootComment.userId) !== Number(userId)) {
@@ -152,7 +162,10 @@ export class FeedCommentService {
     this.validateId(feedId, 'feedId');
     this.validateId(userId, 'userId');
 
-    const feed = await this.findFeedOrFail(feedId);
+    const { feed, blockedUserIds } = await this.findVisibleFeedOrFail(
+      feedId,
+      userId,
+    );
 
     const feedAuthorId = Number(feed.record.userId);
     const isFeedAuthor = feedAuthorId === Number(userId);
@@ -170,8 +183,11 @@ export class FeedCommentService {
       },
     });
 
+    // 차단 사이인 사람의 댓글은 뺀다. 원댓글이 빠지면 그 묶음의 답글도 함께 빠진다 (toCommentGroups)
     const visibleComments = isFeedAuthor
-      ? comments
+      ? comments.filter(
+          (comment) => !blockedUserIds.has(Number(comment.userId)),
+        )
       : this.filterVisibleCommentsForUser(comments, userId, feedAuthorId);
 
     return this.toCommentGroups(visibleComments);
@@ -342,6 +358,24 @@ export class FeedCommentService {
     }
 
     return Number(comment.id);
+  }
+
+  /*
+   * 댓글을 보거나 달 글. 글 작성자와 차단 사이(누가 차단했든)면 없는 글로 본다.
+   * 차단 사이인 사람 목록도 같이 돌려줘서 댓글을 거를 때 쓴다. 두 조회는 동시에 한다.
+   */
+  private async findVisibleFeedOrFail(feedId: number, userId: number) {
+    const [feed, blockedUserIds] = await Promise.all([
+      this.findFeedOrFail(feedId),
+      this.blockService.getBlockedPairUserIds(userId),
+    ]);
+    const blockedUserIdSet = new Set(blockedUserIds);
+
+    if (blockedUserIdSet.has(Number(feed.record.userId))) {
+      throw new NotFoundException('피드를 찾을 수 없습니다.');
+    }
+
+    return { feed, blockedUserIds: blockedUserIdSet };
   }
 
   private async findFeedOrFail(feedId: number) {

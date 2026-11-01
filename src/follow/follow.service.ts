@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,6 +13,9 @@ import { R2Service } from '../storage/r2.service';
 import { UserService } from '../user/user.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
+import { BlockService } from '../block/block.service';
+import { notBlockedBetweenSql } from '../block/block.sql';
+import { UserBlockEntity } from '../block/entities/user-block.entity';
 
 const FOLLOW_LIST_DEFAULT_LIMIT = 20;
 const FOLLOW_LIST_MAX_LIMIT = 50;
@@ -43,24 +47,37 @@ export class FollowService {
     private readonly r2Service: R2Service,
     private readonly userService: UserService,
     private readonly notificationService: NotificationService,
+    private readonly blockService: BlockService,
   ) {}
 
   async followUser(currentUserId: number, targetPublicId: string) {
     // DB 왕복 한 번으로 처리한다. publicId 로 찾은 사용자를 그대로 넣는다.
-    // 이미 팔로우 중이면 유니크 키에 걸려 아무것도 바뀌지 않는다. 탈퇴한 회원은 팔로우할 수 없다.
+    // 이미 팔로우 중이면 유니크 키에 걸려 아무것도 바뀌지 않는다.
+    // 탈퇴한 회원, 내가 차단했거나 나를 차단한 회원은 팔로우할 수 없다.
     const result: { affectedRows: number } = await this.followRepository.query(
       `INSERT INTO \`follow\` (\`follower_id\`, \`following_id\`)
         SELECT ?, \`id\` FROM \`user\`
         WHERE \`public_id\` = ? AND \`id\` <> ? AND \`withdrawn_at\` IS NULL
+          AND ${notBlockedBetweenSql('?', '`user`.`id`')}
         ON DUPLICATE KEY UPDATE \`follower_id\` = \`follower_id\``,
-      [currentUserId, targetPublicId, currentUserId],
+      [
+        currentUserId,
+        targetPublicId,
+        currentUserId,
+        currentUserId,
+        currentUserId,
+      ],
     );
 
-    // 넣은 행이 없으면 이미 팔로우 중이거나, 없는(탈퇴한) 사용자거나, 나 자신이다
+    // 넣은 행이 없으면 이미 팔로우 중이거나, 없는(탈퇴한) 사용자거나, 나 자신이거나, 차단 사이다
     if (result.affectedRows === 0) {
       const targetUserId =
         await this.userService.getIdByPublicId(targetPublicId);
       this.validateDifferentUser(currentUserId, targetUserId);
+
+      if (await this.blockService.isBlockedBetween(currentUserId, targetUserId)) {
+        throw new ForbiddenException('팔로우할 수 없는 사용자입니다.');
+      }
     } else {
       void this.notifyFollowed(currentUserId, targetPublicId);
     }
@@ -100,10 +117,19 @@ export class FollowService {
             .andWhere('follow.followingId = user.id'),
         'followCount',
       )
+      .addSelect(
+        (subQuery) =>
+          subQuery
+            .select('COUNT(*)')
+            .from(UserBlockEntity, 'block')
+            .where('block.blockerId = :currentUserId')
+            .andWhere('block.blockedId = user.id'),
+        'blockCount',
+      )
       .where('user.publicId = :targetPublicId', { targetPublicId })
       .andWhere('user.withdrawnAt IS NULL')
       .setParameter('currentUserId', currentUserId)
-      .getRawOne<{ id: string; followCount: string }>();
+      .getRawOne<{ id: string; followCount: string; blockCount: string }>();
 
     if (!target) {
       throw new NotFoundException('사용자를 찾을 수 없습니다.');
@@ -115,6 +141,8 @@ export class FollowService {
       followingId: targetPublicId,
       isFollowing: !isMe && Number(target.followCount) > 0,
       isMe,
+      // 내가 이 사람을 차단했는지 (차단 해제 버튼용). 상대가 나를 차단한 것은 알려 주지 않는다
+      isBlocked: Number(target.blockCount) > 0,
     };
   }
 

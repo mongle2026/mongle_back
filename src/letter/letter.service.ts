@@ -18,6 +18,8 @@ import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
 import { UserService } from '../user/user.service';
 import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
+import { BlockService } from '../block/block.service';
+import { notBlockedBetweenSql } from '../block/block.sql';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -29,6 +31,7 @@ export class LetterService {
     private readonly r2Service: R2Service,
     private readonly notificationService: NotificationService,
     private readonly userService: UserService,
+    private readonly blockService: BlockService,
   ) { }
 
   async createLetter(senderId: number, dto: CreateLetterDto) {
@@ -36,6 +39,15 @@ export class LetterService {
 
     const now = new Date();
     const receiverId = await this.userService.getIdByPublicId(dto.receiverId);
+
+    // 내가 차단했거나 나를 차단한 사람에게는 보낼 수 없다
+    if (
+      senderId !== receiverId &&
+      (await this.blockService.isBlockedBetween(senderId, receiverId))
+    ) {
+      throw new ForbiddenException('편지를 보낼 수 없는 사용자입니다.');
+    }
+
     const deliveryAt = dto.deliveryAt ? new Date(dto.deliveryAt) : null;
     const isDelivered = deliveryAt === null || deliveryAt <= now;
 
@@ -157,6 +169,15 @@ export class LetterService {
 
       if (isReceiver && !isDelivered) {
         throw new ForbiddenException('아직 열람할 수 없는 편지입니다.');
+      }
+
+      // 차단 사이인 사람에게 받은 편지는 없는 편지로 본다 (내가 보낸 편지는 그대로 보인다)
+      if (
+        isReceiver &&
+        !isSender &&
+        (await this.blockService.isBlockedBetween(userId, senderId))
+      ) {
+        throw new NotFoundException('편지를 찾을 수 없습니다.');
       }
 
       if (isReceiver && !letter.isRead) {
@@ -285,6 +306,11 @@ export class LetterService {
         throw new BadRequestException('tab 값이 올바르지 않습니다.');
     }
 
+    // 차단 사이인 사람에게 받은 편지는 뺀다. 내가 보낸 편지는 그대로 둔다
+    qb.andWhere(
+      `(letter.receiverId != :userId OR ${notBlockedBetweenSql(':userId', 'letter.sender_id')})`,
+    );
+
     if (cursor !== undefined) {
       qb.andWhere('letter.id < :cursor', { cursor });
     }
@@ -304,7 +330,7 @@ export class LetterService {
   }
 
   // 우표 상세의 편지 목록. 이 우표가 붙은 "수집한 편지"를 도착 시각이 최근인 순으로 준다.
-  // 수집한 편지 = 나에게 도착한 편지(나에게 쓴 편지 포함), 내가 삭제한 편지는 제외.
+  // 수집한 편지 = 나에게 도착한 편지(나에게 쓴 편지 포함), 내가 삭제한 편지 · 차단 사이인 사람의 편지는 제외.
   // (StampService.getStampCollection의 count와 같은 조건)
   async getCollectedLettersByStamp(params: { userId: number; stamp: string }) {
     const { userId, stamp } = params;
@@ -316,6 +342,7 @@ export class LetterService {
       .andWhere('(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)', {
         now: new Date(),
       })
+      .andWhere(notBlockedBetweenSql(':userId', 'letter.sender_id'))
       .getMany();
 
     return rows

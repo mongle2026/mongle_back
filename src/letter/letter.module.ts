@@ -8,6 +8,7 @@ import { NotificationModule } from '../notification/notification.module';
 import { LetterNotificationScheduler } from './letter-notification.scheduler';
 import { LetterCleanupService } from './letter-cleanup.service';
 import { UserModule } from '../user/user.module';
+import { BlockModule } from '../block/block.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { UserModule } from '../user/user.module';
     RecordModule,
     NotificationModule,
     UserModule,
+    BlockModule,
   ],
   controllers: [LetterController],
   providers: [LetterService, LetterNotificationScheduler, LetterCleanupService],
