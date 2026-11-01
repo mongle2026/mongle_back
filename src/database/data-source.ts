@@ -21,6 +21,7 @@ import { PushTokenEntity } from '../notification/entities/push-token.entity';
 import { NotificationSettingEntity } from '../notification/entities/notification-setting.entity';
 import { SocialUnlinkPendingEntity } from '../auth/entities/social-unlink-pending.entity';
 import { UserBlockEntity } from '../block/entities/user-block.entity';
+import { ReportEntity } from '../report/entities/report.entity';
 
 export const AppDataSource = new DataSource({
     type: 'mysql',
@@ -57,6 +58,7 @@ export const AppDataSource = new DataSource({
         NotificationSettingEntity,
         SocialUnlinkPendingEntity,
         UserBlockEntity,
+        ReportEntity,
     ],
 
     migrations: [__dirname + '/migrations/*.ts'],

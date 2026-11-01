@@ -30,12 +30,14 @@ import { StampModule } from './stamp/stamp.module';
 import { NotificationModule } from './notification/notification.module';
 import { AuthModule } from './auth/auth.module';
 import { BlockModule } from './block/block.module';
+import { ReportModule } from './report/report.module';
 import { StampEntity } from './stamp/entities/stamp.entity';
 import { NotificationEntity } from './notification/entities/notification.entity';
 import { PushTokenEntity } from './notification/entities/push-token.entity';
 import { NotificationSettingEntity } from './notification/entities/notification-setting.entity';
 import { SocialUnlinkPendingEntity } from './auth/entities/social-unlink-pending.entity';
 import { UserBlockEntity } from './block/entities/user-block.entity';
+import { ReportEntity } from './report/entities/report.entity';
 
 @Module({
   imports: [
@@ -90,6 +92,7 @@ import { UserBlockEntity } from './block/entities/user-block.entity';
           NotificationSettingEntity,
             SocialUnlinkPendingEntity,
             UserBlockEntity,
+            ReportEntity,
           ],
 
           // 초반에만, 얼추되면 false
@@ -108,6 +111,7 @@ import { UserBlockEntity } from './block/entities/user-block.entity';
     BookmarkModule,
     FollowModule,
     BlockModule,
+    ReportModule,
     StampModule,
     NotificationModule,
   ],
