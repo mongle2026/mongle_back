@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { IsNickname, IsUserCode } from '../../user/user-profile.validation';
 
 export class SignupDto {
@@ -18,4 +18,9 @@ export class SignupDto {
   @IsString()
   @IsNotEmpty()
   profileImageKey?: string;
+
+  // 약관 화면의 (선택) 광고성 정보 수신 동의. 이벤트 알림 설정으로 저장한다. 보내지 않으면 비동의로 본다.
+  @IsOptional()
+  @IsBoolean()
+  isMarketingAgreed?: boolean;
 }

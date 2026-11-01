@@ -11,6 +11,8 @@ import * as jwt from 'jsonwebtoken';
 import { DataSource, Repository } from 'typeorm';
 import { UserEntity } from '../user/entities/user.entity';
 import { AuthProvider } from '../user/enums/auth-provider.enum';
+import { NotificationSettingEntity } from '../notification/entities/notification-setting.entity';
+import { NotificationSettingKey } from '../notification/enums/notification.enum';
 import {
   normalizeUserCode,
   USER_CODE_PATTERN,
@@ -113,13 +115,14 @@ export class AuthService {
     let user: UserEntity;
 
     try {
-      // 사진을 대기표에서 빼는 것과 회원 저장을 함께 처리한다. 저장이 실패하면 사진은 대기표로 돌아가 정리된다.
+      // 사진을 대기표에서 빼는 것, 회원 저장, 광고성 정보 수신 동의 저장을 함께 처리한다.
+      // 저장이 실패하면 사진은 대기표로 돌아가 정리된다.
       user = await this.dataSource.transaction(async (manager) => {
         if (profileImageKey) {
           await this.profileImageService.attach(manager, profileImageKey);
         }
 
-        return manager.save(
+        const savedUser = await manager.save(
           manager.create(UserEntity, {
             publicId: randomUUID(),
             provider,
@@ -130,6 +133,17 @@ export class AuthService {
             profileImageKey: profileImageKey ?? null,
           }),
         );
+
+        // 동의 여부를 이벤트 알림 설정으로 남긴다. 비동의도 행을 남겨 가입 때 고른 시각(updated_at)을 보관한다.
+        await manager.save(
+          manager.create(NotificationSettingEntity, {
+            userId: Number(savedUser.id),
+            settingKey: NotificationSettingKey.EVENT,
+            enabled: dto.isMarketingAgreed ?? false,
+          }),
+        );
+
+        return savedUser;
       });
     } catch (error) {
       // 위 확인과 저장 사이에 같은 소셜 계정/아이디로 동시에 가입한 경우
