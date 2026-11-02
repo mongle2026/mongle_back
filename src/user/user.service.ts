@@ -22,7 +22,7 @@ export class UserService {
     private readonly r2Service: R2Service,
     private readonly dataSource: DataSource,
     private readonly profileImageService: ProfileImageService,
-  ) { }
+  ) {}
 
   // 기본 프로필 사진 목록. 가입 화면이 하나를 랜덤으로 골라 미리 보여주고, 그 번호를 가입 요청에 보낸다
   getDefaultProfileImages() {
@@ -41,10 +41,7 @@ export class UserService {
     const searchKeyword = keyword?.trim() ?? '';
 
     if (!searchKeyword) {
-      return await this.getDefaultRecipients(
-        currentUserId,
-        page,
-      );
+      return await this.getDefaultRecipients(currentUserId, page);
     }
 
     const skip = (page - 1) * limit;
@@ -98,14 +95,8 @@ export class UserService {
       .addOrderBy('user.userCode', 'ASC')
       .addOrderBy('user.id', 'ASC')
       .setParameter('currentUserId', currentUserId)
-      .setParameter(
-        'prefixKeyword',
-        `${searchKeyword}%`,
-      )
-      .setParameter(
-        'keyword',
-        `%${searchKeyword}%`,
-      )
+      .setParameter('prefixKeyword', `${searchKeyword}%`)
+      .setParameter('keyword', `%${searchKeyword}%`)
       .skip(skip)
       .take(limit + 1)
       .getMany();
@@ -168,9 +159,7 @@ export class UserService {
     });
 
     if (!user) {
-      throw new NotFoundException(
-        '사용자를 찾을 수 없습니다.',
-      );
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
     }
 
     return {
@@ -178,8 +167,7 @@ export class UserService {
       userCode: user.userCode,
       nickname: user.nickname,
 
-      hasProfileImage:
-        !!user.profileImageKey,
+      hasProfileImage: !!user.profileImageKey,
 
       profileImageUrl: this.r2Service.getProfileImageUrl(user),
 
@@ -195,10 +183,7 @@ export class UserService {
     };
   }
 
-  private async getDefaultRecipients(
-    currentUserId: number,
-    page: number,
-  ) {
+  private async getDefaultRecipients(currentUserId: number, page: number) {
     if (page > 1) {
       return {
         items: [],
@@ -224,18 +209,11 @@ export class UserService {
       .getOne();
 
     if (!me) {
-      throw new NotFoundException(
-        '사용자를 찾을 수 없습니다.',
-      );
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
     }
 
     return {
-      items: [
-        this.toRecipientResponse(
-          me,
-          currentUserId,
-        ),
-      ],
+      items: [this.toRecipientResponse(me, currentUserId)],
       page: 1,
       nextPage: null,
       hasNextPage: false,

@@ -79,7 +79,9 @@ export class FollowService {
         await this.userService.getIdByPublicId(targetPublicId);
       this.validateDifferentUser(currentUserId, targetUserId);
 
-      if (await this.blockService.isBlockedBetween(currentUserId, targetUserId)) {
+      if (
+        await this.blockService.isBlockedBetween(currentUserId, targetUserId)
+      ) {
         throw new ForbiddenException('팔로우할 수 없는 사용자입니다.');
       }
     } else {
@@ -255,10 +257,7 @@ export class FollowService {
       limit: FOLLOW_LIST_MAX_LIMIT,
     });
 
-    return [
-      this.toUserResponse(me, currentUserId, false),
-      ...followings.items,
-    ];
+    return [this.toUserResponse(me, currentUserId, false), ...followings.items];
   }
 
   /**

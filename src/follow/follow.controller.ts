@@ -23,10 +23,7 @@ export class FollowController {
     @Param('targetUserId', ParseUUIDPipe) targetUserId: string,
     @CurrentUserId() currentUserId: number,
   ) {
-    return await this.followService.followUser(
-      currentUserId,
-      targetUserId,
-    );
+    return await this.followService.followUser(currentUserId, targetUserId);
   }
 
   @Delete(':targetUserId')
@@ -34,10 +31,7 @@ export class FollowController {
     @Param('targetUserId', ParseUUIDPipe) targetUserId: string,
     @CurrentUserId() currentUserId: number,
   ) {
-    return await this.followService.unfollowUser(
-      currentUserId,
-      targetUserId,
-    );
+    return await this.followService.unfollowUser(currentUserId, targetUserId);
   }
 
   @Get(':targetUserId/status')
@@ -70,11 +64,7 @@ export class FollowController {
   }
 
   @Get('recommended-recipients')
-  async getRecommendedRecipients(
-    @CurrentUserId() currentUserId: number,
-  ) {
-    return await this.followService.getRecommendedRecipients(
-      currentUserId,
-    );
+  async getRecommendedRecipients(@CurrentUserId() currentUserId: number) {
+    return await this.followService.getRecommendedRecipients(currentUserId);
   }
 }
