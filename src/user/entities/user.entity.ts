@@ -50,6 +50,11 @@ export class UserEntity {
   @Column({ name: 'default_profile_image_no', type: 'tinyint', unsigned: true, nullable: true })
   defaultProfileImageNo!: number | null;
 
+  // 알림 화면을 마지막으로 나갈 때 와 있던 가장 큰 알림 id. 알림마다 읽음을 따지지 않고,
+  // 이보다 큰 알림이 있으면 종 아이콘에 레드닷을 띄운다
+  @Column({ name: 'notification_checked_id', type: 'bigint', default: 0 })
+  notificationCheckedId!: number;
+
 
   // 서비스 안에서 회원을 구별하는 아이디. 화면의 @ 없이 저장한다. 규칙은 user-profile.validation.ts
   // 탈퇴하면 null. 다른 회원이 이 아이디를 다시 쓸 수 있다.

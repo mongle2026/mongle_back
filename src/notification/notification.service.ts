@@ -301,18 +301,8 @@ export class NotificationService {
     const { userId, type, cursor } = params;
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
 
-    const qb = this.notificationRepository
-      .createQueryBuilder('notification')
+    const qb = this.createVisibleNotificationQuery(userId)
       .leftJoinAndSelect('notification.actor', 'actor')
-      .where('notification.userId = :userId', { userId })
-      // 정리 크론이 하루 밀려도 30일이 지난 알림은 보이지 않게 한 번 더 거른다
-      .andWhere('notification.createdAt >= :since', {
-        since: new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * DAY_MS),
-      })
-      // 차단하기 전에 남은 알림도 차단 사이인 사람이 만든 것은 보이지 않게 한다
-      .andWhere(
-        `(notification.actorId IS NULL OR ${notBlockedBetweenSql(':userId', 'notification.actor_id')})`,
-      )
       .orderBy('notification.id', 'DESC')
       .limit(safeLimit + 1);
 
@@ -336,6 +326,45 @@ export class NotificationService {
       nextCursor: hasNext && lastItem ? lastItem.notificationId : null,
       hasNext,
     };
+  }
+
+  // 알림 화면을 마지막으로 나간 뒤에 목록에 보일 새 알림이 있는지. 종 아이콘 레드닷에 쓴다
+  async hasUnreadNotification(userId: number) {
+    const user = await this.userRepository.findOne({
+      select: { id: true, notificationCheckedId: true },
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return { hasUnread: false };
+    }
+
+    const unread = await this.createVisibleNotificationQuery(userId)
+      .andWhere('notification.id > :checkedId', {
+        checkedId: user.notificationCheckedId,
+      })
+      .select('notification.id')
+      .getOne();
+
+    return { hasUnread: Boolean(unread) };
+  }
+
+  /*
+   * 알림 화면을 나갈 때 부른다. 알림마다 읽음을 따지지 않고 지금까지 온 알림을 모두 확인한 것으로 본다.
+   * 기준은 그 시점의 가장 큰 알림 id 이고, 줄어들지는 않는다.
+   */
+  async checkNotifications(userId: number) {
+    await this.userRepository.query(
+      `UPDATE \`user\`
+       SET notification_checked_id = GREATEST(
+         notification_checked_id,
+         COALESCE((SELECT MAX(id) FROM notification WHERE user_id = ?), 0)
+       )
+       WHERE id = ?`,
+      [userId, userId],
+    );
+
+    return { hasUnread: false };
   }
 
   async getSettings(userId: number) {
@@ -460,6 +489,23 @@ export class NotificationService {
    * 낮에는 바로 보낸다. 밤에는 야간 알림을 켠 사람에게만 바로 보내고, 끈 사람은 아침으로 미룬다.
    * 광고성 정보(이벤트)는 야간에 보내려면 별도 동의가 필요해서 밤에는 목록에만 남긴다. (정보통신망법 제50조)
    */
+  // 목록에 보이는 알림 조건. 목록 조회와 레드닷이 같은 알림을 보도록 함께 쓴다
+  private createVisibleNotificationQuery(userId: number) {
+    return (
+      this.notificationRepository
+        .createQueryBuilder('notification')
+        .where('notification.userId = :userId', { userId })
+        // 정리 크론이 하루 밀려도 30일이 지난 알림은 보이지 않게 한 번 더 거른다
+        .andWhere('notification.createdAt >= :since', {
+          since: new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * DAY_MS),
+        })
+        // 차단하기 전에 남은 알림도 차단 사이인 사람이 만든 것은 보이지 않게 한다
+        .andWhere(
+          `(notification.actorId IS NULL OR ${notBlockedBetweenSql(':userId', 'notification.actor_id')})`,
+        )
+    );
+  }
+
   private async getPushTiming(
     userId: number,
     settingKey: NotificationSettingKey,

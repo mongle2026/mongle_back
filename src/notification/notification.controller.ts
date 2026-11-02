@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Patch,
   Post,
   Query,
@@ -32,6 +34,19 @@ export class NotificationController {
       cursor: query.cursor,
       limit: query.limit,
     });
+  }
+
+  // 알림 화면을 마지막으로 나간 뒤에 새 알림이 있는지 (종 아이콘 레드닷)
+  @Get('unread')
+  async hasUnreadNotification(@CurrentUserId() userId: number) {
+    return this.notificationService.hasUnreadNotification(userId);
+  }
+
+  // 알림 화면을 나갈 때 부른다. 지금까지 온 알림을 모두 확인한 것으로 본다
+  @Post('check')
+  @HttpCode(HttpStatus.OK)
+  async checkNotifications(@CurrentUserId() userId: number) {
+    return this.notificationService.checkNotifications(userId);
   }
 
   // 로그인하지 않은 기기도 공지 푸시를 받을 수 있게 계정 없이 등록한다
