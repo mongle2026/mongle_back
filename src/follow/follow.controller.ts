@@ -62,9 +62,4 @@ export class FollowController {
   ) {
     return await this.followService.getMyFollowers(currentUserId, query);
   }
-
-  @Get('recommended-recipients')
-  async getRecommendedRecipients(@CurrentUserId() currentUserId: number) {
-    return await this.followService.getRecommendedRecipients(currentUserId);
-  }
 }

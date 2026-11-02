@@ -229,38 +229,6 @@ export class FollowService {
   }
 
   /**
-   * 수신인 선택 화면에서 추천 유저로 사용할 수 있는 목록.
-   * 지금은 내가 팔로우한 사람을 반환.
-   * 추후에는 자주 보낸 사람, 최근 상호작용한 사람 등을 섞기 좋음.
-   */
-  async getRecommendedRecipients(currentUserId: number) {
-    await this.ensureUserExists(currentUserId);
-
-    const me = await this.userRepository
-      .createQueryBuilder('user')
-      .select([
-        'user.id',
-        'user.publicId',
-        'user.userCode',
-        'user.nickname',
-        'user.profileImageKey',
-        'user.defaultProfileImageNo',
-      ])
-      .where('user.id = :currentUserId', { currentUserId })
-      .getOne();
-
-    if (!me) {
-      throw new NotFoundException('사용자를 찾을 수 없습니다.');
-    }
-
-    const followings = await this.getMyFollowings(currentUserId, {
-      limit: FOLLOW_LIST_MAX_LIMIT,
-    });
-
-    return [this.toUserResponse(me, currentUserId, false), ...followings.items];
-  }
-
-  /**
    * 나중에 "내가 팔로우한 사람들의 글만 보기"에서 사용.
    */
   async getFollowingIds(userId: number): Promise<number[]> {
@@ -271,20 +239,6 @@ export class FollowService {
       .getRawMany<{ followingId: string }>();
 
     return rows.map((row) => Number(row.followingId));
-  }
-
-  private async ensureUserExists(userId: number) {
-    const user = await this.userRepository
-      .createQueryBuilder('user')
-      .select(['user.id'])
-      .where('user.id = :userId', { userId })
-      .getOne();
-
-    if (!user) {
-      throw new NotFoundException('사용자를 찾을 수 없습니다.');
-    }
-
-    return user;
   }
 
   // 새로 팔로우했을 때만 보낸다. 응답을 기다리게 하지 않고, 실패해도 팔로우는 성공으로 둔다.
