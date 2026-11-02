@@ -21,6 +21,7 @@ import {
 import { isDuplicateEntryError } from '../database/mysql-error.util';
 import { UserService } from '../user/user.service';
 import { ProfileImageService } from '../user/profile-image.service';
+import { pickDefaultProfileImageNo } from '../user/default-profile-image';
 import { KakaoApiService } from './kakao-api.service';
 import { AppleApiService } from './apple-api.service';
 import {
@@ -131,6 +132,8 @@ export class AuthService {
             nickname: dto.nickname,
             userCode: dto.userCode,
             profileImageKey: profileImageKey ?? null,
+            defaultProfileImageNo:
+              dto.defaultProfileImageNo ?? pickDefaultProfileImageNo(),
           }),
         );
 

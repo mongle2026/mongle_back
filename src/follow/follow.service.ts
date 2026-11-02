@@ -25,7 +25,11 @@ type FollowListQuery = { cursor?: number; limit?: number };
 // getRawMany 결과는 bigint 가 문자열로 와서 id 는 둘 다 받는다
 type FollowUserFields = Pick<
   UserEntity,
-  'publicId' | 'userCode' | 'nickname' | 'profileImageKey'
+  | 'publicId'
+  | 'userCode'
+  | 'nickname'
+  | 'profileImageKey'
+  | 'defaultProfileImageNo'
 > & { id: number | string };
 
 type FollowUserRow = FollowUserFields & {
@@ -185,6 +189,7 @@ export class FollowService {
       .addSelect('user.userCode', 'userCode')
       .addSelect('user.nickname', 'nickname')
       .addSelect('user.profileImageKey', 'profileImageKey')
+      .addSelect('user.defaultProfileImageNo', 'defaultProfileImageNo')
       .addSelect(
         (subQuery) =>
           subQuery
@@ -237,6 +242,7 @@ export class FollowService {
         'user.userCode',
         'user.nickname',
         'user.profileImageKey',
+        'user.defaultProfileImageNo',
       ])
       .where('user.id = :currentUserId', { currentUserId })
       .getOne();
@@ -317,9 +323,7 @@ export class FollowService {
       userCode: user.userCode,
       nickname: user.nickname,
       hasProfileImage: !!user.profileImageKey,
-      profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.profileImageKey,
-      ),
+      profileImageUrl: this.r2Service.getProfileImageUrl(user),
       isMe: String(user.id) === String(currentUserId),
       isFollowing,
     };

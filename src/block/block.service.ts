@@ -13,7 +13,11 @@ type BlockListQuery = { cursor?: number; limit?: number };
 
 type BlockUserRow = Pick<
   UserEntity,
-  'publicId' | 'userCode' | 'nickname' | 'profileImageKey'
+  | 'publicId'
+  | 'userCode'
+  | 'nickname'
+  | 'profileImageKey'
+  | 'defaultProfileImageNo'
 > & {
   blockId: string;
   blockedAt: Date;
@@ -106,6 +110,7 @@ export class BlockService {
       .addSelect('user.userCode', 'userCode')
       .addSelect('user.nickname', 'nickname')
       .addSelect('user.profileImageKey', 'profileImageKey')
+      .addSelect('user.defaultProfileImageNo', 'defaultProfileImageNo')
       .where('block.blockerId = :currentUserId', { currentUserId })
       .andWhere('user.withdrawnAt IS NULL')
       .orderBy('block.id', 'DESC')
@@ -126,7 +131,7 @@ export class BlockService {
         userCode: row.userCode,
         nickname: row.nickname,
         hasProfileImage: !!row.profileImageKey,
-        profileImageUrl: this.r2Service.getProfileImageUrl(row.profileImageKey),
+        profileImageUrl: this.r2Service.getProfileImageUrl(row),
         blockedAt: row.blockedAt,
       })),
       nextCursor: hasNext && lastRow ? Number(lastRow.blockId) : null,

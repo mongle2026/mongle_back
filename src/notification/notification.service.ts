@@ -656,7 +656,7 @@ export class NotificationService {
       actorPublicId: actor?.publicId ?? null,
       isActorWithdrawn,
       profileImageUrl: actor
-        ? this.r2Service.getProfileImageUrl(actor.profileImageKey)
+        ? this.r2Service.getProfileImageUrl(actor)
         : null,
       content: notification.content,
       eventTitle: notification.eventTitle,

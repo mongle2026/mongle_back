@@ -139,6 +139,7 @@ export class WithdrawalService {
           userCode: null,
           nickname: null,
           profileImageKey: null,
+          defaultProfileImageNo: null,
           refreshTokenHash: null,
         },
       );

@@ -48,6 +48,7 @@ export class UserService {
         'user.userCode',
         'user.nickname',
         'user.profileImageKey',
+        'user.defaultProfileImageNo',
       ])
       .where(
         `
@@ -152,6 +153,7 @@ export class UserService {
         userCode: true,
         nickname: true,
         profileImageKey: true,
+        defaultProfileImageNo: true,
       },
       where: { ...where, withdrawnAt: IsNull() },
     });
@@ -170,12 +172,17 @@ export class UserService {
       hasProfileImage:
         !!user.profileImageKey,
 
-      profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.profileImageKey,
-      ),
+      profileImageUrl: this.r2Service.getProfileImageUrl(user),
 
-      // email 은 못 받은 회원(카카오, 이메일 저장 전 애플 가입자)이면 null
-      ...(includeAccount && { provider: user.provider, email: user.email }),
+      // email 은 못 받은 회원(카카오, 이메일 저장 전 애플 가입자)이면 null.
+      // defaultProfileImageUrl 은 프로필 정보 편집에서 '기본 이미지로 변경'하면 보여줄 사진
+      ...(includeAccount && {
+        provider: user.provider,
+        email: user.email,
+        defaultProfileImageUrl: this.r2Service.getDefaultProfileImageUrl(
+          user.defaultProfileImageNo,
+        ),
+      }),
     };
   }
 
@@ -200,6 +207,7 @@ export class UserService {
         'user.userCode',
         'user.nickname',
         'user.profileImageKey',
+        'user.defaultProfileImageNo',
       ])
       .where('user.id = :currentUserId', {
         currentUserId,
@@ -228,7 +236,7 @@ export class UserService {
   /**
    * 프로필 수정. 보낸 항목만 한 트랜잭션으로 바꿔서, 하나라도 실패하면 아무것도 바뀌지 않는다.
    *
-   * profileImageKey: 보내지 않으면 그대로, 새 키면 그 사진으로, null 이면 사진 삭제.
+   * profileImageKey: 보내지 않으면 그대로, 새 키면 그 사진으로, null 이면 사진을 지워서 기본 사진으로.
    * 바꾸거나 지운 예전 사진은 대기표로 돌려서 정리 크론이 지운다.
    */
   async updateProfile(userId: number, dto: UpdateUserDto) {
@@ -324,9 +332,7 @@ export class UserService {
       userCode: user.userCode,
       nickname: user.nickname,
       hasProfileImage: !!user.profileImageKey,
-      profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.profileImageKey,
-      ),
+      profileImageUrl: this.r2Service.getProfileImageUrl(user),
       isMe: String(user.id) === String(currentUserId),
     };
   }

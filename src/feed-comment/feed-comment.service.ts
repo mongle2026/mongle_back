@@ -449,9 +449,7 @@ export class FeedCommentService {
       nickname: getDisplayNickname(user),
       userCode: user.userCode,
       hasProfileImage: !!user.profileImageKey,
-      profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.profileImageKey,
-      ),
+      profileImageUrl: this.r2Service.getProfileImageUrl(user),
       isWithdrawn: isWithdrawnUser(user),
     };
   }

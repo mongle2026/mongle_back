@@ -41,9 +41,14 @@ export class UserEntity {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
 
-  // 프로필 사진의 R2 키(profile/{uuid}.jpg). null 이면 사진 없음
+  // 직접 올린 프로필 사진의 R2 키(profile/{uuid}.jpg). null 이면 기본 사진(defaultProfileImageNo)을 보여준다
   @Column({ name: 'profile_image_key', type: 'varchar', length: 100, nullable: true })
   profileImageKey!: string | null;
+
+  // 기본 프로필 사진 번호(1~5). 가입할 때 정하고 바뀌지 않아서, 사진을 지우면 늘 같은 기본 사진으로 돌아간다.
+  // 사진 파일은 모든 회원이 함께 쓴다(R2 defaults/profile_{번호}.png). 탈퇴하면 null
+  @Column({ name: 'default_profile_image_no', type: 'tinyint', unsigned: true, nullable: true })
+  defaultProfileImageNo!: number | null;
 
 
   // 서비스 안에서 회원을 구별하는 아이디. 화면의 @ 없이 저장한다. 규칙은 user-profile.validation.ts

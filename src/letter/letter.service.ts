@@ -209,9 +209,7 @@ export class LetterService {
             ? {
               id: letter.record.user.publicId,
               nickname: getDisplayNickname(letter.record.user),
-              profileImageUrl: this.r2Service.getProfileImageUrl(
-                letter.record.user.profileImageKey,
-              ),
+              profileImageUrl: this.r2Service.getProfileImageUrl(letter.record.user),
               isWithdrawn: isWithdrawnUser(letter.record.user),
             }
             : null,
@@ -554,9 +552,7 @@ export class LetterService {
     return {
       userId: user.publicId,
       nickname: getDisplayNickname(user),
-      profileImageUrl: this.r2Service.getProfileImageUrl(
-        user.profileImageKey,
-      ),
+      profileImageUrl: this.r2Service.getProfileImageUrl(user),
       isWithdrawn: isWithdrawnUser(user),
     };
   }

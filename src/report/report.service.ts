@@ -139,6 +139,7 @@ export class ReportService {
         userCode: true,
         nickname: true,
         profileImageKey: true,
+        defaultProfileImageNo: true,
       },
       where: { publicId: targetPublicId, withdrawnAt: IsNull() },
     });
@@ -157,6 +158,7 @@ export class ReportService {
         userCode: user.userCode,
         nickname: user.nickname,
         profileImageKey: user.profileImageKey,
+        defaultProfileImageNo: user.defaultProfileImageNo,
       },
       dto,
     });

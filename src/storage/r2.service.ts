@@ -8,6 +8,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
+import type { UserEntity } from '../user/entities/user.entity';
 
 const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -113,8 +114,21 @@ export class R2Service {
     return `${this.publicUrl}/${key}`;
   }
 
-  // 프로필 사진이 없으면 null
-  getProfileImageUrl(profileImageKey: string | null): string | null {
-    return profileImageKey ? this.getPublicUrl(profileImageKey) : null;
+  // 직접 올린 사진이 없으면 기본 사진. 탈퇴한 회원처럼 둘 다 없으면 null
+  getProfileImageUrl(
+    user: Pick<UserEntity, 'profileImageKey' | 'defaultProfileImageNo'>,
+  ): string | null {
+    return user.profileImageKey
+      ? this.getPublicUrl(user.profileImageKey)
+      : this.getDefaultProfileImageUrl(user.defaultProfileImageNo);
+  }
+
+  // 기본 사진은 모든 회원이 함께 쓴다. 파일은 npm run seed:default-profile-images 로 한 번 올려 둔다
+  getDefaultProfileImageUrl(
+    defaultProfileImageNo: number | null,
+  ): string | null {
+    return defaultProfileImageNo
+      ? this.getPublicUrl(`defaults/profile_${defaultProfileImageNo}.png`)
+      : null;
   }
 }
