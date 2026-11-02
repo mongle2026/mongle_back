@@ -13,6 +13,7 @@ import { isDuplicateEntryError } from '../database/mysql-error.util';
 import { ProfileImageService } from './profile-image.service';
 import { notBlockedBetweenSql } from '../block/block.sql';
 import { DEFAULT_PROFILE_IMAGE_COUNT } from './default-profile-image';
+import { FollowEntity } from '../follow/entities/follow.entity';
 
 @Injectable()
 export class UserService {
@@ -41,7 +42,7 @@ export class UserService {
     const searchKeyword = keyword?.trim() ?? '';
 
     if (!searchKeyword) {
-      return await this.getDefaultRecipients(currentUserId, page);
+      return await this.getDefaultRecipients(currentUserId, page, limit);
     }
 
     const skip = (page - 1) * limit;
@@ -183,18 +184,48 @@ export class UserService {
     };
   }
 
-  private async getDefaultRecipients(currentUserId: number, page: number) {
-    if (page > 1) {
-      return {
-        items: [],
-        page,
-        nextPage: null,
-        hasNextPage: false,
-      };
+  /**
+   * 검색어 없이 수신인 선택 화면을 열었을 때의 목록.
+   * 맨 앞에 나, 그 뒤로 내가 팔로우한 사람을 최근에 팔로우한 순으로 보여준다.
+   * 나를 한 칸으로 쳐서 페이지를 나눈다 (1페이지는 나 + 팔로잉 limit - 1 명).
+   */
+  private async getDefaultRecipients(
+    currentUserId: number,
+    page: number,
+    limit: number,
+  ) {
+    const followingOffset = Math.max((page - 1) * limit - 1, 0);
+    const followingLimit = page === 1 ? limit - 1 : limit;
+
+    let me: UserEntity | null = null;
+
+    if (page === 1) {
+      me = await this.userRepository
+        .createQueryBuilder('user')
+        .select([
+          'user.id',
+          'user.publicId',
+          'user.userCode',
+          'user.nickname',
+          'user.profileImageKey',
+          'user.defaultProfileImageNo',
+        ])
+        .where('user.id = :currentUserId', { currentUserId })
+        .getOne();
+
+      if (!me) {
+        throw new NotFoundException('사용자를 찾을 수 없습니다.');
+      }
     }
 
-    const me = await this.userRepository
+    // 탈퇴 · 차단하면 팔로우도 지워지지만, 편지를 보낼 수 없는 사람이 섞이지 않도록 한 번 더 거른다
+    const followings = await this.userRepository
       .createQueryBuilder('user')
+      .innerJoin(
+        FollowEntity,
+        'follow',
+        'follow.followingId = user.id AND follow.followerId = :currentUserId',
+      )
       .select([
         'user.id',
         'user.publicId',
@@ -203,20 +234,27 @@ export class UserService {
         'user.profileImageKey',
         'user.defaultProfileImageNo',
       ])
-      .where('user.id = :currentUserId', {
-        currentUserId,
-      })
-      .getOne();
+      .where('user.withdrawnAt IS NULL')
+      .andWhere(notBlockedBetweenSql(':currentUserId', 'user.id'))
+      .setParameter('currentUserId', currentUserId)
+      .orderBy('follow.id', 'DESC')
+      .offset(followingOffset)
+      .limit(followingLimit + 1)
+      .getMany();
 
-    if (!me) {
-      throw new NotFoundException('사용자를 찾을 수 없습니다.');
-    }
+    const hasNextPage = followings.length > followingLimit;
+    const currentPageUsers = [
+      ...(me ? [me] : []),
+      ...followings.slice(0, followingLimit),
+    ];
 
     return {
-      items: [this.toRecipientResponse(me, currentUserId)],
-      page: 1,
-      nextPage: null,
-      hasNextPage: false,
+      items: currentPageUsers.map((user) =>
+        this.toRecipientResponse(user, currentUserId),
+      ),
+      page,
+      nextPage: hasNextPage ? page + 1 : null,
+      hasNextPage,
     };
   }
 
