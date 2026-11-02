@@ -12,6 +12,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { isDuplicateEntryError } from '../database/mysql-error.util';
 import { ProfileImageService } from './profile-image.service';
 import { notBlockedBetweenSql } from '../block/block.sql';
+import { DEFAULT_PROFILE_IMAGE_COUNT } from './default-profile-image';
 
 @Injectable()
 export class UserService {
@@ -22,6 +23,14 @@ export class UserService {
     private readonly dataSource: DataSource,
     private readonly profileImageService: ProfileImageService,
   ) { }
+
+  // 기본 프로필 사진 목록. 가입 화면이 하나를 랜덤으로 골라 미리 보여주고, 그 번호를 가입 요청에 보낸다
+  getDefaultProfileImages() {
+    return Array.from({ length: DEFAULT_PROFILE_IMAGE_COUNT }, (_, index) => ({
+      no: index + 1,
+      url: this.r2Service.getDefaultProfileImageUrl(index + 1),
+    }));
+  }
 
   async searchUsers(
     keyword: string,

@@ -34,6 +34,12 @@ export class UserController {
     return this.profileImageService.createUploadUrl();
   }
 
+  // 기본 프로필 사진 목록 [{ no, url }]. 가입 전에 부르므로 로그인하지 않아도 된다
+  @Get('default-profile-images')
+  getDefaultProfileImages() {
+    return this.userService.getDefaultProfileImages();
+  }
+
   @Get('search')
   @UseGuards(JwtAuthGuard)
   async searchUsers(
