@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -36,6 +36,15 @@ interface AppleMusicSearchResponse {
   };
 }
 
+interface AppleMusicChartsResponse {
+  results?: {
+    songs?: {
+      chart: string;
+      data: AppleMusicSong[];
+    }[];
+  };
+}
+
 interface AppleMusicLookupResponse {
   data?: AppleMusicSong[];
 }
@@ -67,6 +76,8 @@ const ARTWORK_TARGET_SIZE = 1200;
 // Apple Music Catalog Search API는 한 요청당 최대 25건만 반환한다.
 const APPLE_MUSIC_API_PAGE_LIMIT = 25;
 const APPLE_MUSIC_SEARCH_TOTAL = 100;
+// Apple Music Charts API는 차트당 최대 50건까지 한 번에 받을 수 있다.
+const POPULAR_MUSIC_TOTAL = 50;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -337,20 +348,26 @@ export class MusicService {
   async refreshPopularMusics() {
     const storefront = this.getStorefront();
 
-    const response = await axios.get<AppleMusicSearchResponse>(
-      `https://api.music.apple.com/v1/catalog/${storefront}/search`,
+    // 장르 구분 없이 스토어프런트 전체의 '가장 많이 재생된 곡' 차트를 순위대로 받는다.
+    const response = await axios.get<AppleMusicChartsResponse>(
+      `https://api.music.apple.com/v1/catalog/${storefront}/charts`,
       {
         params: {
-          term: 'kpop',
           types: 'songs',
-          limit: 10,
+          chart: 'most-played',
+          limit: POPULAR_MUSIC_TOTAL,
           l: APPLE_MUSIC_LANGUAGE,
         },
         headers: this.getAuthHeaders(),
       },
     );
 
-    const songs = response.data.results?.songs?.data ?? [];
+    const songs = response.data.results?.songs?.[0]?.data ?? [];
+
+    // 빈 응답으로 테이블을 비우면 인기곡 목록이 통째로 사라지니 기존 목록을 그대로 둔다.
+    if (songs.length === 0) {
+      throw new BadGatewayException('Apple Music 인기곡 차트가 비어 있어 갱신하지 않았습니다.');
+    }
     // 한국 시간 기준 날짜 (크론이 한국 새벽 4시에 돌아서 UTC 로 자르면 전날이 된다)
     const chartDate = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
@@ -386,7 +403,7 @@ export class MusicService {
     });
 
     return {
-      message: 'Apple Music 인기곡 10개가 갱신되었습니다.',
+      message: `Apple Music 인기곡 ${songs.length}개가 갱신되었습니다.`,
     };
   }
 
