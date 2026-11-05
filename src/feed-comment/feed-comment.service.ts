@@ -43,6 +43,11 @@ export class FeedCommentService {
       userId,
     );
 
+    // 운영자가 가린 글에는 댓글을 달 수 없다
+    if (feed.blindedAt) {
+      throw new NotFoundException('피드를 찾을 수 없습니다.');
+    }
+
     const feedAuthorId = Number(feed.record.userId);
     const isFeedAuthor = feedAuthorId === Number(userId);
 
@@ -84,6 +89,11 @@ export class FeedCommentService {
 
       if (!rootComment) {
         throw new NotFoundException('원댓글을 찾을 수 없습니다.');
+      }
+
+      // 운영자가 가린 원댓글에는 답글을 달 수 없다
+      if (rootComment.blindedAt) {
+        throw new NotFoundException('답글을 달 댓글을 찾을 수 없습니다.');
       }
 
       // 글 작성자는 차단 사이가 된 사람의 댓글 묶음을 볼 수 없으니 답글도 달 수 없다
@@ -306,14 +316,8 @@ export class FeedCommentService {
       }
 
       const rootComment = {
-        commentId: Number(comment.id),
-        feedId: Number(comment.feedId),
-        userId: comment.user?.publicId ?? null,
-        user: this.toCommentUser(comment.user),
-        content: comment.content,
+        ...this.toCommentItem(comment),
         rootCommentId: null,
-        createdAt: comment.createdAt,
-        updatedAt: comment.updatedAt,
         replies: [],
       };
 
@@ -329,23 +333,37 @@ export class FeedCommentService {
       const rootId = this.getRootId(comment);
       const rootComment = rootCommentMap.get(rootId);
 
-      if (!rootComment) {
+      // 원댓글이 가려졌으면 삭제됐을 때처럼 그 묶음의 답글은 보여주지 않는다
+      if (!rootComment || rootComment.isBlinded) {
         return;
       }
 
       rootComment.replies.push({
-        commentId: Number(comment.id),
-        feedId: Number(comment.feedId),
-        userId: comment.user?.publicId ?? null,
-        user: this.toCommentUser(comment.user),
-        content: comment.content,
+        ...this.toCommentItem(comment),
         rootCommentId: rootId,
-        createdAt: comment.createdAt,
-        updatedAt: comment.updatedAt,
       });
     });
 
     return result;
+  }
+
+  /*
+   * 댓글 목록의 댓글 하나 (원댓글 · 답글 공용).
+   * 운영자가 가린 댓글은 내용 · 작성자를 비우고 isBlinded 만 알려준다 (작성자 본인에게도 같다)
+   */
+  private toCommentItem(comment: FeedCommentEntity) {
+    const isBlinded = !!comment.blindedAt;
+
+    return {
+      commentId: Number(comment.id),
+      feedId: Number(comment.feedId),
+      isBlinded,
+      userId: isBlinded ? null : (comment.user?.publicId ?? null),
+      user: isBlinded ? null : this.toCommentUser(comment.user),
+      content: isBlinded ? null : comment.content,
+      createdAt: comment.createdAt,
+      updatedAt: comment.updatedAt,
+    };
   }
 
   private isRootComment(comment: FeedCommentEntity) {

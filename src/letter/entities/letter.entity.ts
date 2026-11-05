@@ -94,6 +94,11 @@ export class LetterEntity {
   })
   receiverDeletedAt!: Date | null;
 
+  // 운영자가 신고를 확인하고 가린 시각. 관리 화면이 없어서 DB 에서 직접 채운다.
+  // 가린 편지는 보낸 사람 · 받는 사람 모두에게 내용 없이 "삭제된 편지"로 내려간다
+  @Column({ name: 'blinded_at', type: 'datetime', nullable: true })
+  blindedAt!: Date | null;
+
   // 알림 크론이 이미 처리한 편지인지 표시한다. 알림을 보냈거나 보내지 않기로 한 시각.
   // 받은 편지 알림: 받는 사람에게 "편지 도착"
   @Column({

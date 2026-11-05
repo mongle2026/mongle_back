@@ -17,7 +17,12 @@ import { R2Service } from '../storage/r2.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
 import { UserService } from '../user/user.service';
-import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
+import {
+  getDisplayNickname,
+  isRestrictedUser,
+  isWithdrawnUser,
+  RESTRICTED_USER_NICKNAME,
+} from '../user/withdrawn-user';
 import { BlockService } from '../block/block.service';
 import { notBlockedBetweenSql } from '../block/block.sql';
 
@@ -185,7 +190,11 @@ export class LetterService {
         await manager.save(LetterEntity, letter);
       }
 
+      // 운영자가 가린 편지는 모양은 같게 두고 글 · 음악 · 사진만 비워서 내려준다 (보낸 사람에게도 같다)
+      const isBlinded = !!letter.blindedAt;
+
       return {
+        isBlinded,
         letter: {
           id: Number(letter.id),
           recordId: Number(letter.recordId),
@@ -201,20 +210,21 @@ export class LetterService {
           id: Number(letter.record.id),
           userId: letter.record.user?.publicId ?? null,
           musicId: Number(letter.record.musicId),
-          text: letter.record.text,
+          text: isBlinded ? null : letter.record.text,
           font: letter.record.font,
           createdAt: letter.record.createdAt,
           updatedAt: letter.record.updatedAt,
           user: letter.record.user
             ? {
               id: letter.record.user.publicId,
-              nickname: getDisplayNickname(letter.record.user),
+              nickname: this.getLetterUserNickname(letter.record.user),
               profileImageUrl: this.r2Service.getProfileImageUrl(letter.record.user),
               isWithdrawn: isWithdrawnUser(letter.record.user),
+              isRestricted: isRestrictedUser(letter.record.user),
             }
             : null,
-          music: letter.record.music,
-          files: letter.record.files?.map((file) => ({
+          music: isBlinded ? null : letter.record.music,
+          files: isBlinded ? [] : letter.record.files?.map((file) => ({
             id: Number(file.id),
             recordId: Number(file.recordId),
             url: this.r2Service.getPublicUrl(file.fileKey),
@@ -262,6 +272,8 @@ export class LetterService {
         qb.where('letter.receiverId = :userId')
           .andWhere('letter.receiverDeletedAt IS NULL')
           .andWhere('letter.isRead = false')
+          // 운영자가 가린 편지는 안 읽은 편지 묶음에 보여주지 않는다
+          .andWhere('letter.blindedAt IS NULL')
           .andWhere(
             '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
           );
@@ -328,7 +340,7 @@ export class LetterService {
   }
 
   // 우표 상세의 편지 목록. 이 우표가 붙은 "수집한 편지"를 도착 시각이 최근인 순으로 준다.
-  // 수집한 편지 = 나에게 도착한 편지(나에게 쓴 편지 포함), 내가 삭제한 편지 · 차단 사이인 사람의 편지는 제외.
+  // 수집한 편지 = 나에게 도착한 편지(나에게 쓴 편지 포함), 내가 삭제한 편지 · 차단 사이인 사람의 편지 · 운영자가 가린 편지는 제외.
   // (StampService.getStampCollection의 count와 같은 조건)
   async getCollectedLettersByStamp(params: { userId: number; stamp: string }) {
     const { userId, stamp } = params;
@@ -337,6 +349,8 @@ export class LetterService {
       .where('letter.receiverId = :userId', { userId })
       .andWhere('letter.stamp = :stamp', { stamp })
       .andWhere('letter.receiverDeletedAt IS NULL')
+      // 운영자가 가린 편지는 우표 수집에서 뺀다
+      .andWhere('letter.blindedAt IS NULL')
       .andWhere('(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)', {
         now: new Date(),
       })
@@ -518,8 +532,12 @@ export class LetterService {
   }
 
   private formatLetterboxItem(letter: LetterEntity, userId: number) {
+    // 운영자가 가린 편지는 음악을 비우고 isBlinded 만 알려준다
+    const isBlinded = !!letter.blindedAt;
+
     return {
       letterId: Number(letter.id),
+      isBlinded,
       // 보낸 시각 = 작성해서 보낸 시각. letter와 record는 같은 트랜잭션에서 생성된다.
       createdAt: letter.record.createdAt,
       deliveryAt: letter.deliveryAt,
@@ -533,7 +551,7 @@ export class LetterService {
       },
       sender: this.formatLetterboxUser(letter.record.user),
       receiver: this.formatLetterboxUser(letter.receiver),
-      music: letter.record.music
+      music: letter.record.music && !isBlinded
         ? {
           musicId: Number(letter.record.music.id),
           musicTitle: letter.record.music.musicTitle,
@@ -551,10 +569,20 @@ export class LetterService {
 
     return {
       userId: user.publicId,
-      nickname: getDisplayNickname(user),
+      nickname: this.getLetterUserNickname(user),
       profileImageUrl: this.r2Service.getProfileImageUrl(user),
       isWithdrawn: isWithdrawnUser(user),
+      isRestricted: isRestrictedUser(user),
     };
+  }
+
+  // 편지에 보여주는 이름. 탈퇴한 회원 → '(탈퇴한 회원)', 이용 제한된 회원 → '(이용 제한된 회원)'
+  private getLetterUserNickname(user: UserEntity) {
+    if (!isWithdrawnUser(user) && isRestrictedUser(user)) {
+      return RESTRICTED_USER_NICKNAME;
+    }
+
+    return getDisplayNickname(user);
   }
 
   private parseMusic(music: string): CreateMusicDto {

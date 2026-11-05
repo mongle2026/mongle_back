@@ -37,6 +37,8 @@ export class StampService {
           'letter.stamp = stamp.code',
           'letter.receiverId = :userId',
           'letter.receiverDeletedAt IS NULL',
+          // 운영자가 가린 편지는 우표 수집에서 뺀다
+          'letter.blindedAt IS NULL',
           '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
           // 차단 사이인 사람에게 받은 편지는 세지 않는다 (편지함과 같은 기준)
           notBlockedBetweenSql(':userId', 'letter.sender_id'),

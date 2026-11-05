@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron } from '@nestjs/schedule';
-import { In, IsNull, LessThan, MoreThan, Repository } from 'typeorm';
+import { In, IsNull, LessThan, MoreThan, Not, Repository } from 'typeorm';
 import { NotificationEntity } from './entities/notification.entity';
 import { PushTokenEntity } from './entities/push-token.entity';
 import { NotificationSettingEntity } from './entities/notification-setting.entity';
 import { UserEntity } from '../user/entities/user.entity';
+import { FeedCommentEntity } from '../feed-comment/entities/feed-comment.entity';
 import {
   NIGHT_END_HOUR,
   NIGHT_START_HOUR,
@@ -65,6 +66,9 @@ export type CreateNotificationInput = {
   content?: string | null;
   eventTitle?: string | null;
 };
+
+// 운영자가 가린 댓글의 알림 목록 내용
+const BLINDED_COMMENT_CONTENT = '운영정책에 따라 삭제된 댓글이에요.';
 
 @Injectable()
 export class NotificationService {
@@ -316,8 +320,10 @@ export class NotificationService {
 
     const rows = await qb.getMany();
     const hasNext = rows.length > safeLimit;
-    const items = (hasNext ? rows.slice(0, safeLimit) : rows).map(
-      (notification) => this.formatNotificationItem(notification),
+    const pageRows = hasNext ? rows.slice(0, safeLimit) : rows;
+    const blindedCommentIds = await this.getBlindedCommentIds(pageRows);
+    const items = pageRows.map((notification) =>
+      this.formatNotificationItem(notification, blindedCommentIds),
     );
     const lastItem = items[items.length - 1];
 
@@ -679,8 +685,45 @@ export class NotificationService {
     );
   }
 
+  /*
+   * 알림이 가리키는 댓글 중 운영자가 가린 댓글 id.
+   * 댓글 알림은 보낼 때 내용을 복사해 두므로, 나중에 가려진 댓글은 목록에서 내용만 바꿔 보여준다.
+   * 삭제된 댓글이어도 가린 상태면 같은 문구를 보여주도록 withDeleted 로 찾는다
+   */
+  private async getBlindedCommentIds(notifications: NotificationEntity[]) {
+    const commentIds = [
+      ...new Set(
+        notifications
+          .map((notification) => notification.commentId)
+          .filter((commentId): commentId is number => commentId !== null)
+          .map(Number),
+      ),
+    ];
+
+    if (commentIds.length === 0) {
+      return new Set<number>();
+    }
+
+    const comments = await this.notificationRepository.manager
+      .getRepository(FeedCommentEntity)
+      .find({
+        select: { id: true },
+        where: { id: In(commentIds), blindedAt: Not(IsNull()) },
+        withDeleted: true,
+      });
+
+    return new Set(comments.map((comment) => Number(comment.id)));
+  }
+
   // NotificationListItem 이 받는 props 형태
-  private formatNotificationItem(notification: NotificationEntity) {
+  private formatNotificationItem(
+    notification: NotificationEntity,
+    blindedCommentIds: Set<number> = new Set(),
+  ) {
+    const isCommentBlinded =
+      notification.commentId !== null &&
+      blindedCommentIds.has(Number(notification.commentId));
+
     const { actor } = notification;
     const showsUserCode =
       notification.status === NotificationStatus.COMMENT ||
@@ -704,7 +747,10 @@ export class NotificationService {
       profileImageUrl: actor
         ? this.r2Service.getProfileImageUrl(actor)
         : null,
-      content: notification.content,
+      // 운영자가 가린 댓글의 알림은 남겨 두고 내용만 바꾼다
+      content: isCommentBlinded
+        ? BLINDED_COMMENT_CONTENT
+        : notification.content,
       eventTitle: notification.eventTitle,
       isToSelf: this.isToSelf(notification),
       letterId: this.toNullableNumber(notification.letterId),

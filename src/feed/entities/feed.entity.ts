@@ -40,6 +40,11 @@ export class FeedEntity {
   @Column({ name: 'profile_hidden', type: 'boolean', default: false })
   profileHidden!: boolean;
 
+  // 운영자가 신고를 확인하고 가린 시각. 관리 화면이 없어서 DB 에서 직접 채운다.
+  // 가린 글은 작성자를 포함해 모두에게 내용 없이 "가려진 피드"로 내려간다
+  @Column({ name: 'blinded_at', type: 'datetime', nullable: true })
+  blindedAt!: Date | null;
+
   @DeleteDateColumn({
     name: 'deleted_at',
     type: 'datetime',

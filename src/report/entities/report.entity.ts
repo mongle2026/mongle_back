@@ -69,7 +69,7 @@ export class ReportEntity {
   reason!: ReportReason;
 
   // 신고하면서 적은 내용. 안 적었으면 null
-  @Column({ type: 'varchar', length: 500, nullable: true })
+  @Column({ type: 'varchar', length: 200, nullable: true })
   detail!: string | null;
 
   @Column({ name: 'content_snapshot', type: 'json' })

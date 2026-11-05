@@ -13,6 +13,6 @@ export class CreateReportDto {
   )
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLength(200)
   detail?: string;
 }

@@ -451,6 +451,16 @@ export class FeedService {
       throw new NotFoundException('피드를 찾을 수 없습니다.');
     }
 
+    // 운영자가 가린 글은 링크 미리보기에도 내용을 보여주지 않는다
+    if (feed.blindedAt) {
+      return {
+        title: 'mongle',
+        description: '운영정책에 따라 가려진 기록입니다.',
+        imageUrl: null,
+        siteName: 'mongle',
+      };
+    }
+
     if (feed.visibility !== Visibility.PUBLIC) {
       return {
         title: 'mongle',
@@ -961,7 +971,8 @@ export class FeedService {
     const { userId, cursor, limit, genre, month, sort = 'latest' } = params;
     const keywordPattern = toKeywordLikePattern(params.keyword);
 
-    const conditions = ['record.user_id = ?', 'feed.deleted_at IS NULL'];
+    // 운영자가 가린 글(blinded_at)은 보관함 가림 카드 디자인이 나오기 전까지 빼 둔다
+    const conditions = ['record.user_id = ?', 'feed.deleted_at IS NULL', 'feed.blinded_at IS NULL'];
     const conditionParams: unknown[] = [userId];
 
     if (genre !== undefined) {
@@ -1003,6 +1014,8 @@ export class FeedService {
       conditions: [
         'record.user_id = (SELECT owner.id FROM `user` owner WHERE owner.public_id = ?)',
         'feed.deleted_at IS NULL',
+        // 운영자가 가린 글은 프로필 가림 카드 디자인이 나오기 전까지 빼 둔다
+        'feed.blinded_at IS NULL',
         'feed.profile_hidden = 0',
         `(
           record.user_id = ?
@@ -1194,6 +1207,7 @@ export class FeedService {
       ) AS jt
       WHERE record.user_id = ?
         AND feed.deleted_at IS NULL
+        AND feed.blinded_at IS NULL
         AND jt.genre IS NOT NULL
         AND jt.genre <> ''
         AND jt.genre NOT IN (?)
@@ -1252,6 +1266,7 @@ export class FeedService {
       JOIN music ON music.id = record.music_id
       WHERE record.user_id = ?
         AND feed.deleted_at IS NULL
+        AND feed.blinded_at IS NULL
         ${keywordPattern !== undefined ? 'AND (music.music_title LIKE ? OR music.music_artist LIKE ?)' : ''}
       GROUP BY month
       ORDER BY month DESC
@@ -1301,6 +1316,8 @@ export class FeedService {
       .addSelect('feed.id', 'feedId')
       .where('bookmark.userId = :userId', { userId })
       .andWhere('feed.deletedAt IS NULL')
+      // 운영자가 가린 글은 보관함 가림 카드 디자인이 나오기 전까지 빼 둔다
+      .andWhere('feed.blindedAt IS NULL')
       .andWhere(notBlockedBetweenSql(':userId', 'record.user_id'))
       .limit(safeLimit + 1);
 
@@ -1489,8 +1506,12 @@ export class FeedService {
       isFollowing?: boolean;
     },
   ) {
+    // 운영자가 가린 글은 모양은 같게 두고 글 · 음악 · 사진만 비워서 내려준다 (작성자 본인에게도 같다)
+    const isBlinded = !!feed.blindedAt;
+
     return {
       feedId: feed.id,
+      isBlinded,
       visibility: feed.visibility,
       font: feed.record.font,
       createdAt: feed.record.createdAt,
@@ -1508,10 +1529,10 @@ export class FeedService {
 
       record: {
         recordId: feed.record.id,
-        text: feed.record.text,
+        text: isBlinded ? null : feed.record.text,
       },
 
-      music: feed.record.music
+      music: feed.record.music && !isBlinded
         ? {
           musicId: feed.record.music.id,
           externalId: feed.record.music.externalId,
@@ -1522,7 +1543,7 @@ export class FeedService {
         }
         : null,
 
-      files:
+      files: isBlinded ? [] :
         feed.record.files?.map(file => ({
           fileId: file.id,
           fileType: file.fileType,
