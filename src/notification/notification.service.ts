@@ -8,6 +8,7 @@ import { NotificationSettingEntity } from './entities/notification-setting.entit
 import { UserEntity } from '../user/entities/user.entity';
 import { FeedCommentEntity } from '../feed-comment/entities/feed-comment.entity';
 import {
+  ALWAYS_DELIVERED_STATUSES,
   NIGHT_END_HOUR,
   NIGHT_START_HOUR,
   NIGHT_SUMMARY_CHANNEL_ID,
@@ -28,6 +29,7 @@ import { R2Service } from '../storage/r2.service';
 import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
 import { BlockService } from '../block/block.service';
 import { notBlockedBetweenSql } from '../block/block.sql';
+import { ReportTargetType } from '../report/enums/report.enum';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_BATCH_SIZE = 1000;
@@ -65,6 +67,8 @@ export type CreateNotificationInput = {
   commentId?: number | null;
   content?: string | null;
   eventTitle?: string | null;
+  // 신고 처리 알림의 대상 종류
+  targetType?: ReportTargetType | null;
 };
 
 // 운영자가 가린 댓글의 알림 목록 내용
@@ -95,7 +99,7 @@ export class NotificationService {
 
   /*
    * 알림 목록에 저장하고 푸시를 보낸다.
-   * 받는 사람이 해당 알림을 꺼두었으면 목록에도 남기지 않는다.
+   * 받는 사람이 해당 알림을 꺼두었으면 목록에도 남기지 않는다. 운영 조치 안내(ALWAYS_DELIVERED_STATUSES)는 끌 수 없다.
    * 야간 알림을 꺼두었으면 밤에는 목록에만 남기고 푸시는 아침에 모아서 보낸다.
    * 받는 사람과 알림을 만든 사람(actor)이 차단 사이(누가 차단했든)면 목록에도 남기지 않는다.
    *
@@ -112,7 +116,9 @@ export class NotificationService {
       }
 
       const settingKey = NOTIFICATION_SETTING_KEY_BY_STATUS[input.status];
-      const enabled = await this.isSettingEnabled(input.userId, settingKey);
+      const enabled =
+        ALWAYS_DELIVERED_STATUSES.has(input.status) ||
+        (await this.isSettingEnabled(input.userId, settingKey));
 
       if (!enabled) {
         return;
@@ -131,6 +137,7 @@ export class NotificationService {
           commentId: input.commentId ?? null,
           content: input.content ?? null,
           eventTitle: input.eventTitle ?? null,
+          targetType: input.targetType ?? null,
           pushPending: pushTiming === 'later',
         }),
       );
@@ -565,7 +572,8 @@ export class NotificationService {
       const blockedUserIdSet = new Set(blockedUserIds);
       const pushRows = rows.filter(
         (row) =>
-          enabledKeys.has(NOTIFICATION_SETTING_KEY_BY_STATUS[row.status]) &&
+          (ALWAYS_DELIVERED_STATUSES.has(row.status) ||
+            enabledKeys.has(NOTIFICATION_SETTING_KEY_BY_STATUS[row.status])) &&
           !(row.actorId && blockedUserIdSet.has(Number(row.actorId))),
       );
 
@@ -641,6 +649,7 @@ export class NotificationService {
       isToSelf: this.isToSelf(notification),
       content: notification.content,
       eventTitle: notification.eventTitle,
+      targetType: notification.targetType,
     });
 
     // 알림을 눌렀을 때 이동할 화면을 프론트가 고를 수 있게 넘긴다
@@ -744,14 +753,14 @@ export class NotificationService {
       // 팔로우 알림을 누르면 그 사람 프로필로 간다
       actorPublicId: actor?.publicId ?? null,
       isActorWithdrawn,
-      profileImageUrl: actor
-        ? this.r2Service.getProfileImageUrl(actor)
-        : null,
+      profileImageUrl: actor ? this.r2Service.getProfileImageUrl(actor) : null,
       // 운영자가 가린 댓글의 알림은 남겨 두고 내용만 바꾼다
       content: isCommentBlinded
         ? BLINDED_COMMENT_CONTENT
         : notification.content,
       eventTitle: notification.eventTitle,
+      // 신고 처리 알림의 대상 종류 (FEED / COMMENT / LETTER / USER)
+      targetType: notification.targetType,
       isToSelf: this.isToSelf(notification),
       letterId: this.toNullableNumber(notification.letterId),
       feedId: this.toNullableNumber(notification.feedId),

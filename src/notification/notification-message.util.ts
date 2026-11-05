@@ -1,4 +1,5 @@
 import { NotificationStatus } from './enums/notification.enum';
+import { ReportTargetType } from '../report/enums/report.enum';
 
 // 푸시 알림에 들어갈 제목/본문.
 // 알림 목록 문구는 프론트(NotificationListItem)가 만들고, 여기 문구는 그것과 같게 맞춰둔다.
@@ -30,6 +31,39 @@ const getFromSuffix = (name: string) => {
 
 const toUserCode = (userCode: string) => `@${userCode.replace(/^@+/, '')}`;
 
+const REPORT_NOTICE_TITLE = '신고 처리 안내';
+const POLICY_NOTICE_TITLE = '운영정책 안내';
+const NO_VIOLATION_SUFFIX = '\n운영정책 위반 사항은 확인되지 않았어요.';
+
+// 신고 처리 알림 본문. 대상 종류마다 다르다
+const REPORT_NOTICE_BODIES: Partial<
+  Record<NotificationStatus, Record<ReportTargetType, string>>
+> = {
+  [NotificationStatus.REPORT_RESOLVED]: {
+    [ReportTargetType.COMMENT]: '신고하신 댓글이 운영정책에 따라 처리되었어요.',
+    [ReportTargetType.FEED]: '신고하신 피드가 운영정책에 따라 가려졌어요.',
+    [ReportTargetType.LETTER]: '신고하신 편지가 운영정책에 따라 처리되었어요.',
+    [ReportTargetType.USER]: '신고하신 사용자에 대한 조치가 완료되었어요.',
+  },
+  [NotificationStatus.REPORT_REJECTED]: {
+    [ReportTargetType.COMMENT]: `신고하신 댓글을 검토했어요.${NO_VIOLATION_SUFFIX}`,
+    [ReportTargetType.FEED]: `신고하신 피드를 검토했어요.${NO_VIOLATION_SUFFIX}`,
+    [ReportTargetType.LETTER]: `신고하신 편지를 검토했어요.${NO_VIOLATION_SUFFIX}`,
+    [ReportTargetType.USER]: `신고하신 계정을 검토했어요.${NO_VIOLATION_SUFFIX}`,
+  },
+  [NotificationStatus.POLICY_NOTICE]: {
+    [ReportTargetType.COMMENT]: '작성하신 댓글이 운영정책에 따라 삭제되었어요.',
+    [ReportTargetType.FEED]: '작성하신 피드가 운영정책에 따라 가려졌어요.',
+    [ReportTargetType.LETTER]: '보내신 편지가 운영정책에 따라 삭제되었어요.',
+    [ReportTargetType.USER]: '운영정책에 따라 계정 이용이 제한되었어요.',
+  },
+};
+
+const getReportNoticeBody = (
+  status: NotificationStatus,
+  targetType?: ReportTargetType | null,
+) => (targetType ? (REPORT_NOTICE_BODIES[status]?.[targetType] ?? '') : '');
+
 export const buildPushContent = (params: {
   status: NotificationStatus;
   actorNickname?: string | null;
@@ -39,6 +73,8 @@ export const buildPushContent = (params: {
   isToSelf?: boolean;
   content?: string | null;
   eventTitle?: string | null;
+  // 신고 처리 알림의 대상 종류
+  targetType?: ReportTargetType | null;
 }): { title: string; body: string } => {
   const nickname = params.actorNickname ?? '';
   // 아이디가 없으면(탈퇴한 회원) 이름으로 보여준다
@@ -82,6 +118,17 @@ export const buildPushContent = (params: {
       return {
         title: `${actorLabel}님의 새로운 팔로우`,
         body: `${actorLabel}님이 ${params.recipientNickname ?? ''}님을 팔로우하기 시작했습니다.`,
+      };
+    case NotificationStatus.REPORT_RESOLVED:
+    case NotificationStatus.REPORT_REJECTED:
+      return {
+        title: REPORT_NOTICE_TITLE,
+        body: getReportNoticeBody(params.status, params.targetType),
+      };
+    case NotificationStatus.POLICY_NOTICE:
+      return {
+        title: POLICY_NOTICE_TITLE,
+        body: getReportNoticeBody(params.status, params.targetType),
       };
   }
 };

@@ -32,9 +32,23 @@ export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
   [ReportReason.ETC]: '기타',
 };
 
-// 처리 상태. 관리 화면이 없어서 지금은 DB 에서 직접 바꾼다.
+// 처리 상태. 신고 처리 스크립트(npm run report:handle)가 바꾼다.
 export enum ReportStatus {
   PENDING = 'PENDING',
   RESOLVED = 'RESOLVED',
   REJECTED = 'REJECTED',
 }
+
+// 처리한 방법. BLIND · RESTRICT 는 RESOLVED, REJECT 는 REJECTED 와 함께 남는다
+export enum ReportAction {
+  // 피드 · 댓글 · 편지 가림
+  BLIND = 'BLIND',
+  // 회원 이용 제한
+  RESTRICT = 'RESTRICT',
+  // 운영정책 위반 없음
+  REJECT = 'REJECT',
+}
+
+// 이용 제한 기간(일). 'permanent' 는 영구 제한
+export const RESTRICTION_DAYS = [3, 7, 30] as const;
+export type RestrictionPeriod = (typeof RESTRICTION_DAYS)[number] | 'permanent';

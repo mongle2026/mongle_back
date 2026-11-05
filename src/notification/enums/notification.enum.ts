@@ -17,7 +17,22 @@ export enum NotificationStatus {
   EVENT = 'event',
   // 피드 탭: 나를 팔로우한 사람
   FOLLOW = 'follow',
+  // 소식: 신고한 사람에게 "신고한 대상이 처리됨"
+  REPORT_RESOLVED = 'report_resolved',
+  // 소식: 신고한 사람에게 "검토했지만 위반 없음"
+  REPORT_REJECTED = 'report_rejected',
+  // 소식: 신고당한 사람에게 "운영정책에 따라 가려짐 / 이용 제한됨"
+  POLICY_NOTICE = 'policy_notice',
 }
+
+// 운영 조치 안내라 알림 설정과 관계없이 항상 보낸다.
+// 푸시 채널과 야간 규칙(야간 알림을 끈 사람은 아침에 푸시)은 시스템 알림(system)을 따른다
+export const ALWAYS_DELIVERED_STATUSES: ReadonlySet<NotificationStatus> =
+  new Set([
+    NotificationStatus.REPORT_RESOLVED,
+    NotificationStatus.REPORT_REJECTED,
+    NotificationStatus.POLICY_NOTICE,
+  ]);
 
 // 사용자가 켜고 끄는 단위. 여러 status 가 하나의 설정으로 묶일 수 있다. (댓글 + 답글)
 // 알림 종류 key 는 안드로이드 알림 채널 id 로도 그대로 쓴다. (NIGHT 은 종류가 아니라 채널이 없다)
@@ -43,6 +58,9 @@ export const NOTIFICATION_TYPE_BY_STATUS: Record<
   [NotificationStatus.SYSTEM]: NotificationType.NEWS,
   [NotificationStatus.EVENT]: NotificationType.NEWS,
   [NotificationStatus.FOLLOW]: NotificationType.FEED,
+  [NotificationStatus.REPORT_RESOLVED]: NotificationType.NEWS,
+  [NotificationStatus.REPORT_REJECTED]: NotificationType.NEWS,
+  [NotificationStatus.POLICY_NOTICE]: NotificationType.NEWS,
 };
 
 export const NOTIFICATION_SETTING_KEY_BY_STATUS: Record<
@@ -56,6 +74,10 @@ export const NOTIFICATION_SETTING_KEY_BY_STATUS: Record<
   [NotificationStatus.SYSTEM]: NotificationSettingKey.SYSTEM,
   [NotificationStatus.EVENT]: NotificationSettingKey.EVENT,
   [NotificationStatus.FOLLOW]: NotificationSettingKey.FOLLOW,
+  // 끌 수 없는 알림(ALWAYS_DELIVERED_STATUSES). 푸시 채널과 야간 규칙만 시스템 알림을 따른다
+  [NotificationStatus.REPORT_RESOLVED]: NotificationSettingKey.SYSTEM,
+  [NotificationStatus.REPORT_REJECTED]: NotificationSettingKey.SYSTEM,
+  [NotificationStatus.POLICY_NOTICE]: NotificationSettingKey.SYSTEM,
 };
 
 // 설정 행이 없을 때의 값. 이벤트(광고성 정보)는 사용자가 직접 동의해야 해서 기본 OFF.

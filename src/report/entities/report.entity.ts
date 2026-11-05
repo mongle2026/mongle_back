@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { UserEntity } from '../../user/entities/user.entity';
 import {
+  ReportAction,
   ReportReason,
   ReportStatus,
   ReportTargetType,
@@ -81,6 +82,14 @@ export class ReportEntity {
     default: ReportStatus.PENDING,
   })
   status!: ReportStatus;
+
+  // 처리한 방법. 처리 전이면 null
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  action!: ReportAction | null;
+
+  // 처리한 시각. 처리 전이면 null
+  @Column({ name: 'handled_at', type: 'datetime', nullable: true })
+  handledAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'datetime' })
   createdAt!: Date;

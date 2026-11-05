@@ -70,10 +70,15 @@ export class UserEntity {
   @Column({ name: 'withdrawn_at', type: 'datetime', nullable: true })
   withdrawnAt!: Date | null;
 
-  // 운영자가 이용을 제한한 시각. 관리 화면이 없어서 DB 에서 직접 채운다.
+  // 운영자가 이용을 제한한 시각. 신고 처리 스크립트(npm run report:handle)가 채운다.
   // 지금은 편지함에서 이름 · 프로필 사진을 '(이용 제한된 회원)'으로 바꿔 보여주는 데만 쓴다
   @Column({ name: 'restricted_at', type: 'datetime', nullable: true })
   restrictedAt!: Date | null;
+
+  // 이용 제한이 끝나는 시각. restricted_at 이 있는데 null 이면 영구 제한이다.
+  // 이 시각이 지나면 따로 풀지 않아도 제한되지 않은 회원으로 본다 (withdrawn-user.ts isRestrictedUser)
+  @Column({ name: 'restricted_until', type: 'datetime', nullable: true })
+  restrictedUntil!: Date | null;
 
   // 마지막으로 발급한 refresh token 의 sha256 해시. 로그아웃하면 null. 기본 조회에서는 빠진다.
   @Column({ name: 'refresh_token_hash', type: 'varchar', length: 64, nullable: true, select: false })

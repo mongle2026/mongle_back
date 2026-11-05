@@ -12,6 +12,7 @@ import {
   NotificationStatus,
   NotificationType,
 } from '../enums/notification.enum';
+import { ReportTargetType } from '../../report/enums/report.enum';
 
 // 알림 목록 한 줄. 원본(편지/댓글)이 지워져도 목록에서는 남겨두기로 해서
 // letter_id / feed_id / comment_id 에는 외래키를 걸지 않는다.
@@ -61,6 +62,10 @@ export class NotificationEntity {
 
   @Column({ name: 'event_title', type: 'varchar', length: 100, nullable: true })
   eventTitle!: string | null;
+
+  // 신고 처리 알림(report_resolved / report_rejected / policy_notice)의 대상 종류. 문구가 대상마다 다르다
+  @Column({ name: 'target_type', type: 'varchar', length: 20, nullable: true })
+  targetType!: ReportTargetType | null;
 
   // 야간 알림을 끈 사람에게 밤에 생긴 알림. 목록에는 바로 보이고 푸시만 아침에 모아서 보낸다.
   @Column({ name: 'push_pending', type: 'boolean', default: false })

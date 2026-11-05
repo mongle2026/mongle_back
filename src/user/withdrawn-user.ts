@@ -13,5 +13,9 @@ export const getDisplayNickname = (
 // 운영자가 이용을 제한한 회원. 지금은 편지함에서만 이 이름과 탈퇴 회원 이미지로 보여준다
 export const RESTRICTED_USER_NICKNAME = '(이용 제한된 회원)';
 
-export const isRestrictedUser = (user: Pick<UserEntity, 'restrictedAt'>) =>
-  !!user.restrictedAt;
+// 지금 이용 제한 중인지. 끝나는 시각(restrictedUntil)이 없으면 영구 제한이다
+export const isRestrictedUser = (
+  user: Pick<UserEntity, 'restrictedAt' | 'restrictedUntil'>,
+  now = new Date(),
+) =>
+  !!user.restrictedAt && (!user.restrictedUntil || user.restrictedUntil > now);
