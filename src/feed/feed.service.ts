@@ -19,9 +19,15 @@ import { FollowEntity } from '../follow/entities/follow.entity';
 import { R2Service } from '../storage/r2.service';
 import { UserEntity } from '../user/entities/user.entity';
 import { blockedBetweenSql, notBlockedBetweenSql } from '../block/block.sql';
+import { isRestrictedUser } from '../user/withdrawn-user';
 
 // 보관함 장르별 기록에서 빼는 장르. 한국/영어 스토어프런트 표기를 모두 둔다
 const EXCLUDED_ARCHIVE_GENRES = ['음악', 'Music'];
+
+// 피드 홈(전체·팔로잉)·북마크 목록에서 글쓴이(record.user 조인 별칭 user)가 지금 이용 제한 중이 아닌 글만 남긴다.
+// withdrawn-user.ts isRestrictedUser 와 같은 기준: restricted_until 이 없으면 영구 제한, 지나면 제한 아님. :now 를 넘겨야 한다
+const NOT_RESTRICTED_AUTHOR_SQL =
+  '(user.restrictedAt IS NULL OR user.restrictedUntil <= :now)';
 
 // 보관함 제목순: 노래 제목 첫 글자로 묶어 한글 → 영문 → 숫자 → 기호·기타 언어 순으로 둔다.
 // 묶음 안에서는 DB collation 순서 (가~하, 대소문자 구분 없이 A~Z)
@@ -271,6 +277,8 @@ export class FeedService {
       )
       // 내가 차단했거나 나를 차단한 사람의 글은 뺀다
       .andWhere(notBlockedBetweenSql(':userId', 'record.user_id'))
+      // 이용 제한 중인 회원의 글은 피드 홈에 띄우지 않는다
+      .andWhere(NOT_RESTRICTED_AUTHOR_SQL, { now: new Date() })
       // 로그인 전이면 NULL 이라 내 글 · 내 좋아요 · 내 북마크 · 차단 조건에 걸리지 않는다
       .setParameter('userId', userId ?? null)
       .orderBy('feed.id', 'DESC')
@@ -393,6 +401,8 @@ export class FeedService {
       .andWhere('feed.visibility IN (:...visibleVisibilities)', {
         visibleVisibilities: [Visibility.PUBLIC, Visibility.FOLLOWER],
       })
+      // 이용 제한 중인 회원의 글은 피드 홈에 띄우지 않는다
+      .andWhere(NOT_RESTRICTED_AUTHOR_SQL, { now: new Date() })
       .andWhere(cursor ? 'feed.id < :cursor' : '1=1', { cursor })
       .setParameter('userId', userId)
       .orderBy('feed.id', 'DESC')
@@ -1320,12 +1330,15 @@ export class FeedService {
       .createQueryBuilder('bookmark')
       .innerJoin('bookmark.feed', 'feed')
       .innerJoin('feed.record', 'record')
+      .innerJoin('record.user', 'user')
       .select('bookmark.id', 'bookmarkId')
       .addSelect('feed.id', 'feedId')
       .where('bookmark.userId = :userId', { userId })
       .andWhere('feed.deletedAt IS NULL')
       // 운영자가 가린 글은 보관함 가림 카드 디자인이 나오기 전까지 빼 둔다
       .andWhere('feed.blindedAt IS NULL')
+      // 이용 제한 중인 회원의 글도 뺀다 (피드 홈과 같은 기준)
+      .andWhere(NOT_RESTRICTED_AUTHOR_SQL, { now: new Date() })
       .andWhere(notBlockedBetweenSql(':userId', 'record.user_id'))
       .limit(safeLimit + 1);
 
@@ -1514,8 +1527,10 @@ export class FeedService {
       isFollowing?: boolean;
     },
   ) {
-    // 운영자가 가린 글은 모양은 같게 두고 글 · 음악 · 사진만 비워서 내려준다 (작성자 본인에게도 같다)
-    const isBlinded = !!feed.blindedAt;
+    // 운영자가 가린 글은 모양은 같게 두고 글 · 음악 · 사진만 비워서 내려준다 (작성자 본인에게도 같다).
+    // 이용 제한 중인 회원의 글도 가린 글과 똑같이 내려줘서 피드 상세가 가림 화면을 띄운다
+    // (피드 홈 · 북마크 목록에서는 아예 빠지므로 실제로는 상세에서만 쓰인다)
+    const isBlinded = !!feed.blindedAt || isRestrictedUser(feed.record.user);
 
     return {
       feedId: feed.id,
