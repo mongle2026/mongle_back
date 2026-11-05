@@ -12,6 +12,7 @@ import { Request } from 'express';
 import { DataSource, IsNull } from 'typeorm';
 import { UserEntity } from '../user/entities/user.entity';
 import { isRestrictedUser } from '../user/withdrawn-user';
+import { RestrictionAppealEntity } from '../report/appeal/entities/restriction-appeal.entity';
 import { getJwtSecret, verifyAuthToken } from './auth-token';
 
 export type AuthenticatedRequest = Request & { userId: number };
@@ -22,15 +23,25 @@ const OPTIONAL_AUTH_KEY = 'optionalAuth';
 // 토큰이 없으면 req.userId 없이 통과하고, 토큰이 있으면 똑같이 확인해서 만료 · 무효면 401 을 준다
 export const OptionalAuth = () => SetMetadata(OPTIONAL_AUTH_KEY, true);
 
+const ALLOW_RESTRICTED_KEY = 'allowRestricted';
+
+// 이용 제한 중인 회원도 부를 수 있는 API (JwtAuthGuard 와 같이 쓴다). 이의 신청처럼 제재 화면에서 부르는 API 용
+export const AllowRestricted = () => SetMetadata(ALLOW_RESTRICTED_KEY, true);
+
 // 이용 제한된 회원이 API 를 부르면 403 과 함께 이 code 를 준다. 앱은 이걸 보고 제재 화면을 띄운다
 export const ACCOUNT_RESTRICTED_ERROR_CODE = 'ACCOUNT_RESTRICTED';
 
 /*
  * 탈퇴한 회원은 access token 이 아직 만료되지 않았어도 401 로 막는다.
- * 이용 제한 중인 회원은 403 으로 막는다. 응답: { code, message, reason, restrictedUntil }
- * (reason: ReportReason, restrictedUntil: 끝나는 시각. 영구 제한이면 null)
+ * 이용 제한 중인 회원은 403 으로 막는다 (allowRestricted 면 통과). 응답: { code, message, reason, restrictedUntil, appealStatus }
+ * (reason: ReportReason, restrictedUntil: 끝나는 시각. 영구 제한이면 null,
+ *  appealStatus: 이 제한에 낸 마지막 이의 신청의 AppealStatus. 안 냈으면 null)
  */
-export async function assertActiveUser(dataSource: DataSource, userId: number) {
+export async function assertActiveUser(
+  dataSource: DataSource,
+  userId: number,
+  { allowRestricted = false }: { allowRestricted?: boolean } = {},
+) {
   const user = await dataSource.getRepository(UserEntity).findOne({
     select: {
       id: true,
@@ -45,13 +56,22 @@ export async function assertActiveUser(dataSource: DataSource, userId: number) {
     throw new UnauthorizedException('탈퇴했거나 존재하지 않는 회원입니다.');
   }
 
-  if (isRestrictedUser(user)) {
+  if (isRestrictedUser(user) && !allowRestricted) {
+    const appeal = await dataSource
+      .getRepository(RestrictionAppealEntity)
+      .findOne({
+        select: { id: true, status: true },
+        where: { userId, restrictedAt: user.restrictedAt! },
+        order: { id: 'DESC' },
+      });
+
     throw new ForbiddenException({
       statusCode: 403,
       code: ACCOUNT_RESTRICTED_ERROR_CODE,
       message: '이용이 제한된 계정입니다.',
       reason: user.restrictedReason,
       restrictedUntil: user.restrictedUntil,
+      appealStatus: appeal?.status ?? null,
     });
   }
 }
@@ -94,7 +114,12 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const userId = Number(payload.sub);
-    await assertActiveUser(this.dataSource, userId);
+    const allowRestricted = this.reflector.getAllAndOverride<boolean>(
+      ALLOW_RESTRICTED_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    await assertActiveUser(this.dataSource, userId, { allowRestricted });
 
     request.userId = userId;
     return true;

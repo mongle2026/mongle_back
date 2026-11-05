@@ -16,10 +16,18 @@ import { UserEntity } from '../../user/entities/user.entity';
 import { isRestrictedUser } from '../../user/withdrawn-user';
 import { DiscordApiService, DiscordMessageBody } from './discord-api.service';
 import { toReportCustomId } from './report-custom-id';
+import {
+  BUTTON_STYLE,
+  COMPONENT_TYPE,
+  EmbedField,
+  escapeMarkdown,
+  toDiscordTime,
+  toQuote,
+  truncate,
+  withDbValue,
+} from './discord-format.util';
 
 const REQUEST_TIMEOUT = 5_000;
-// 디스코드 embed 필드 값은 1024자까지 받는다
-const FIELD_VALUE_MAX_LENGTH = 1024;
 
 // 처리 전 빨강, 처리(가림 · 이용 제한) 초록, 기각 회색
 const STATUS_COLORS: Record<ReportStatus, number> = {
@@ -33,10 +41,6 @@ const ACTION_LABELS: Record<ReportAction, string> = {
   [ReportAction.RESTRICT]: '이용 제한',
   [ReportAction.REJECT]: '기각 (위반 없음)',
 };
-
-// 디스코드 메시지 구성 요소 종류 · 버튼 색
-const COMPONENT_TYPE = { ACTION_ROW: 1, BUTTON: 2 } as const;
-const BUTTON_STYLE = { SECONDARY: 2, DANGER: 4 } as const;
 
 // 괄호 안에는 DB 에 저장된 값을 그대로 붙여서, 알림을 보고 바로 DB 에서 찾을 수 있게 한다
 const TARGET_TYPE_LABELS: Record<ReportTargetType, string> = {
@@ -52,8 +56,6 @@ const VISIBILITY_LABELS: Record<Visibility, string> = {
   [Visibility.PRIVACY]: '나만 보기',
 };
 
-type EmbedField = { name: string; value: string; inline?: boolean };
-
 type ContentEmbed = {
   fields: EmbedField[];
   image?: { url: string };
@@ -63,13 +65,6 @@ type ContentEmbed = {
 // 회원 신고 메시지에 보여줄 신고당한 회원의 지금 이용 제한 상태
 type RestrictionState = { isRestricted: boolean; restrictedUntil: Date | null };
 
-const truncate = (value: string, maxLength = FIELD_VALUE_MAX_LENGTH) =>
-  value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
-
-// '한글 (DB 값)'. 라벨이 없는 값이 오면 DB 값만 보여준다
-const withDbValue = (labels: Record<string, string>, value: string) =>
-  labels[value] ? `${labels[value]} (${value})` : value;
-
 const asString = (value: unknown) => (typeof value === 'string' ? value : '');
 
 const asNumber = (value: unknown) =>
@@ -77,24 +72,6 @@ const asNumber = (value: unknown) =>
 
 const asRecord = (value: unknown) =>
   value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
-
-// 디스코드가 보는 사람의 시간대로 보여주는 시각 표기
-const toDiscordTime = (date: Date) =>
-  `<t:${Math.floor(new Date(date).getTime() / 1000)}:f>`;
-
-// 회원이 쓴 글의 마크다운(굵게, 링크, 제목 등)이 적용되지 않고 쓴 그대로 보이게 한다
-const escapeMarkdown = (text: string) =>
-  text.replace(/[\\`*_~|[\]<]/g, '\\$&').replace(/^(\s*)([#>+-])/gm, '$1\\$2');
-
-// 줄마다 인용(>)을 붙여 다른 필드와 구분하고, 실제 줄바꿈 그대로 보이게 한다
-const toQuote = (text: string) => {
-  const quoted = escapeMarkdown(text.trim())
-    .split('\n')
-    .map((line) => `> ${line || '​'}`)
-    .join('\n');
-
-  return truncate(quoted || '> -');
-};
 
 /*
  * 신고 디스코드 알림.

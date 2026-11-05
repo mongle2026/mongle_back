@@ -9,16 +9,29 @@ import { DiscordApiService } from './discord/discord-api.service';
 import { ReportDiscordService } from './discord/report-discord.service';
 import { DiscordInteractionController } from './discord/discord-interaction.controller';
 import { DiscordInteractionService } from './discord/discord-interaction.service';
+import { RestrictionAppealEntity } from './appeal/entities/restriction-appeal.entity';
+import { AppealController } from './appeal/appeal.controller';
+import { AppealService } from './appeal/appeal.service';
+import { AppealDiscordService } from './appeal/appeal-discord.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ReportEntity]), NotificationModule],
-  controllers: [ReportController, DiscordInteractionController],
+  imports: [
+    TypeOrmModule.forFeature([ReportEntity, RestrictionAppealEntity]),
+    NotificationModule,
+  ],
+  controllers: [
+    ReportController,
+    AppealController,
+    DiscordInteractionController,
+  ],
   providers: [
     ReportService,
     ReportModerationService,
     DiscordApiService,
     ReportDiscordService,
     DiscordInteractionService,
+    AppealService,
+    AppealDiscordService,
   ],
   exports: [ReportModerationService],
 })

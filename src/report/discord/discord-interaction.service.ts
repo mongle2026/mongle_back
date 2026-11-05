@@ -8,6 +8,9 @@ import {
 import { RESTRICTION_DAYS, RestrictionPeriod } from '../enums/report.enum';
 import { DiscordApiService } from './discord-api.service';
 import { parseReportCustomId, toReportCustomId } from './report-custom-id';
+import { parseAppealCustomId } from '../appeal/appeal-custom-id';
+import { AppealService } from '../appeal/appeal.service';
+import { AppealStatus } from '../appeal/entities/restriction-appeal.entity';
 
 // 디스코드가 보내는 요청 종류
 const INTERACTION_TYPE = { PING: 1, MESSAGE_COMPONENT: 3 } as const;
@@ -56,7 +59,7 @@ const PERIOD_LABELS: Record<string, string> = {
 };
 
 /*
- * 디스코드 신고 메시지 버튼 처리 (Interactions Endpoint URL: POST /discord/interactions).
+ * 디스코드 신고 · 이의 신청 메시지 버튼 처리 (Interactions Endpoint URL: POST /discord/interactions).
  * 디스코드는 3초 안에 응답을 받아야 해서, 받았다고 먼저 답하고 처리(DB · 알림 · 메시지 수정)는 뒤에서 한다.
  * DISCORD_MODERATOR_IDS 에 있는 디스코드 사용자만 처리할 수 있다.
  */
@@ -69,6 +72,7 @@ export class DiscordInteractionService {
     private readonly configService: ConfigService,
     private readonly discordApiService: DiscordApiService,
     private readonly reportModerationService: ReportModerationService,
+    private readonly appealService: AppealService,
   ) {}
 
   // 디스코드가 보낸 요청인지 서명으로 확인한다. 디스코드는 일부러 틀린 서명도 보내서 401 로 막는지 확인한다
@@ -110,7 +114,17 @@ export class DiscordInteractionService {
       return toEphemeralMessage('신고를 처리할 권한이 없어요.');
     }
 
-    const button = parseReportCustomId(interaction.data?.custom_id ?? '');
+    const customId = interaction.data?.custom_id ?? '';
+    const appealButton = parseAppealCustomId(customId);
+
+    // 이의 신청 [제한 풀기] [기각]. 결과는 이의 신청 메시지가 고쳐지는 것으로 보인다
+    if (appealButton) {
+      void this.runAppeal(interaction, appealButton, userId);
+
+      return { type: RESPONSE_TYPE.DEFERRED_UPDATE_MESSAGE };
+    }
+
+    const button = parseReportCustomId(customId);
 
     if (!button) {
       return toEphemeralMessage('알 수 없는 버튼이에요.');
@@ -223,6 +237,34 @@ export class DiscordInteractionService {
       );
     } catch (error) {
       this.logError('이용 제한 결과 메시지 수정 실패', error);
+    }
+  }
+
+  // 이의 신청 처리. 이미 처리됐거나, 제한이 먼저 풀려서 닫았을 때만 따로 알린다
+  private async runAppeal(
+    interaction: DiscordInteraction,
+    { action, appealId }: { action: 'accept' | 'reject'; appealId: number },
+    userId: string,
+  ) {
+    try {
+      const { status } =
+        action === 'accept'
+          ? await this.appealService.accept(appealId, userId)
+          : await this.appealService.reject(appealId, userId);
+
+      if (!status) {
+        await this.sendFollowup(
+          interaction,
+          `이의 신청 #${appealId} 는 이미 처리되어 바뀐 게 없어요.`,
+        );
+      } else if (status === AppealStatus.CLOSED) {
+        await this.sendFollowup(
+          interaction,
+          `이의 신청 #${appealId} 의 제한이 이미 풀렸거나 바뀌어서 처리하지 않고 닫았어요. 회원에게는 알리지 않았어요.`,
+        );
+      }
+    } catch (error) {
+      await this.sendFollowup(interaction, this.toErrorMessage(error));
     }
   }
 

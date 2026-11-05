@@ -38,6 +38,7 @@ import { NotificationSettingEntity } from './notification/entities/notification-
 import { SocialUnlinkPendingEntity } from './auth/entities/social-unlink-pending.entity';
 import { UserBlockEntity } from './block/entities/user-block.entity';
 import { ReportEntity } from './report/entities/report.entity';
+import { RestrictionAppealEntity } from './report/appeal/entities/restriction-appeal.entity';
 
 @Module({
   imports: [
@@ -93,6 +94,7 @@ import { ReportEntity } from './report/entities/report.entity';
             SocialUnlinkPendingEntity,
             UserBlockEntity,
             ReportEntity,
+            RestrictionAppealEntity,
           ],
 
           // 초반에만, 얼추되면 false

@@ -138,3 +138,11 @@ export const buildNightSummaryPushContent = (count: number) => ({
   title: `새로운 알림 ${count}개`,
   body: '지난밤 도착한 알림을 확인해 주세요.',
 });
+
+// 이용 제한 이의 신청 결과 푸시. 알림 목록에는 남기지 않는다 (NotificationService.sendPushOnly)
+export const buildAppealResultPushContent = (isAccepted: boolean) => ({
+  title: '이의 신청 결과 안내',
+  body: isAccepted
+    ? '이의 신청이 받아들여져 계정 이용 제한이 풀렸어요.'
+    : '이의 신청을 검토했어요.\n운영정책 위반이 확인되어 이용 제한이 유지돼요.',
+});

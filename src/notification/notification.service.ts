@@ -153,6 +153,31 @@ export class NotificationService {
     }
   }
 
+  /*
+   * 알림 목록에 남기지 않고 푸시만 보낸다. 이용 제한된 회원처럼 알림 목록을 볼 수 없는 사람에게 쓴다.
+   * 목록 행이 없어서 야간에 미뤘다가 아침에 보낼 수 없으므로 바로 보낸다. 실패해도 에러를 던지지 않는다.
+   */
+  async sendPushOnly(
+    userId: number,
+    message: {
+      title: string;
+      body: string;
+      data: Record<string, unknown>;
+      settingKey: NotificationSettingKey;
+    },
+  ) {
+    try {
+      await this.sendToTokens(await this.getPushTokens(userId), {
+        title: message.title,
+        body: message.body,
+        data: message.data,
+        channelId: message.settingKey,
+      });
+    } catch (error) {
+      this.logger.error(`푸시 발송 실패 (userId=${userId})`, error as Error);
+    }
+  }
+
   // userId 가 null 이면 로그인하지 않은 기기로 남긴다
   async registerPushToken(params: {
     userId: number | null;
