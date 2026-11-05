@@ -113,7 +113,7 @@ export class ReportModerationService {
 
   /*
    * 회원 이용을 제한한다. 회원 신고에만 쓸 수 있다.
-   * 이미 제한 중이면 기간을 새로 정한 기간으로 바꾸고, 회원에게 다시 알리지 않는다.
+   * 이미 제한 중이면 기간 · 사유를 이번 신고 기준으로 바꾸고, 회원에게 다시 알리지 않는다.
    */
   async restrict(
     reportId: number,
@@ -157,6 +157,7 @@ export class ReportModerationService {
           // 제한 중에 기간만 바꾸면 처음 제한한 시각은 그대로 둔다
           restrictedAt: wasRestricted ? user.restrictedAt : now,
           restrictedUntil,
+          restrictedReason: report.reason,
         },
       );
 
@@ -247,7 +248,11 @@ export class ReportModerationService {
           await manager.update(
             UserEntity,
             { id: report.targetId },
-            { restrictedAt: null, restrictedUntil: null },
+            {
+              restrictedAt: null,
+              restrictedUntil: null,
+              restrictedReason: null,
+            },
           );
         } else if (this.isBlindable(report.targetType)) {
           await manager.update(

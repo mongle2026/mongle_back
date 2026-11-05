@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   SetMetadata,
   UnauthorizedException,
@@ -10,6 +11,7 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { DataSource, IsNull } from 'typeorm';
 import { UserEntity } from '../user/entities/user.entity';
+import { isRestrictedUser } from '../user/withdrawn-user';
 import { getJwtSecret, verifyAuthToken } from './auth-token';
 
 export type AuthenticatedRequest = Request & { userId: number };
@@ -20,14 +22,37 @@ const OPTIONAL_AUTH_KEY = 'optionalAuth';
 // 토큰이 없으면 req.userId 없이 통과하고, 토큰이 있으면 똑같이 확인해서 만료 · 무효면 401 을 준다
 export const OptionalAuth = () => SetMetadata(OPTIONAL_AUTH_KEY, true);
 
-// 탈퇴한 회원은 access token 이 아직 만료되지 않았어도 막는다
+// 이용 제한된 회원이 API 를 부르면 403 과 함께 이 code 를 준다. 앱은 이걸 보고 제재 화면을 띄운다
+export const ACCOUNT_RESTRICTED_ERROR_CODE = 'ACCOUNT_RESTRICTED';
+
+/*
+ * 탈퇴한 회원은 access token 이 아직 만료되지 않았어도 401 로 막는다.
+ * 이용 제한 중인 회원은 403 으로 막는다. 응답: { code, message, reason, restrictedUntil }
+ * (reason: ReportReason, restrictedUntil: 끝나는 시각. 영구 제한이면 null)
+ */
 export async function assertActiveUser(dataSource: DataSource, userId: number) {
-  const isActive = await dataSource.getRepository(UserEntity).exists({
+  const user = await dataSource.getRepository(UserEntity).findOne({
+    select: {
+      id: true,
+      restrictedAt: true,
+      restrictedUntil: true,
+      restrictedReason: true,
+    },
     where: { id: userId, withdrawnAt: IsNull() },
   });
 
-  if (!isActive) {
+  if (!user) {
     throw new UnauthorizedException('탈퇴했거나 존재하지 않는 회원입니다.');
+  }
+
+  if (isRestrictedUser(user)) {
+    throw new ForbiddenException({
+      statusCode: 403,
+      code: ACCOUNT_RESTRICTED_ERROR_CODE,
+      message: '이용이 제한된 계정입니다.',
+      reason: user.restrictedReason,
+      restrictedUntil: user.restrictedUntil,
+    });
   }
 }
 

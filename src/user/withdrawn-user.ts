@@ -10,7 +10,7 @@ export const getDisplayNickname = (
   user: Pick<UserEntity, 'nickname' | 'withdrawnAt'>,
 ) => (isWithdrawnUser(user) ? WITHDRAWN_USER_NICKNAME : user.nickname);
 
-// 운영자가 이용을 제한한 회원. 지금은 편지함에서만 이 이름과 탈퇴 회원 이미지로 보여준다
+// 운영자가 이용을 제한한 회원. 편지함에서 이 이름과 탈퇴 회원 이미지로 보여준다
 export const RESTRICTED_USER_NICKNAME = '(이용 제한된 회원)';
 
 // 지금 이용 제한 중인지. 끝나는 시각(restrictedUntil)이 없으면 영구 제한이다

@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { RecordEntity } from '../../record/entities/record.entity';
 import { AuthProvider } from '../enums/auth-provider.enum';
+import { ReportReason } from '../../report/enums/report.enum';
 
 @Entity('user')
 // 같은 소셜 계정으로는 한 번만 가입할 수 있다
@@ -71,7 +72,8 @@ export class UserEntity {
   withdrawnAt!: Date | null;
 
   // 운영자가 이용을 제한한 시각. 신고 처리 스크립트(npm run report:handle)가 채운다.
-  // 지금은 편지함에서 이름 · 프로필 사진을 '(이용 제한된 회원)'으로 바꿔 보여주는 데만 쓴다
+  // 제한 중이면 API 를 막고(jwt-auth.guard.ts) 앱은 제재 화면만 띄운다.
+  // 편지함에서는 이름 · 프로필 사진을 '(이용 제한된 회원)'으로 바꿔 보여준다
   @Column({ name: 'restricted_at', type: 'datetime', nullable: true })
   restrictedAt!: Date | null;
 
@@ -79,6 +81,10 @@ export class UserEntity {
   // 이 시각이 지나면 따로 풀지 않아도 제한되지 않은 회원으로 본다 (withdrawn-user.ts isRestrictedUser)
   @Column({ name: 'restricted_until', type: 'datetime', nullable: true })
   restrictedUntil!: Date | null;
+
+  // 이용 제한 사유. 제한할 때 고른 신고(report:handle 에 넘긴 신고 번호)의 사유를 넣는다
+  @Column({ name: 'restricted_reason', type: 'varchar', length: 20, nullable: true })
+  restrictedReason!: ReportReason | null;
 
   // 마지막으로 발급한 refresh token 의 sha256 해시. 로그아웃하면 null. 기본 조회에서는 빠진다.
   @Column({ name: 'refresh_token_hash', type: 'varchar', length: 64, nullable: true, select: false })
