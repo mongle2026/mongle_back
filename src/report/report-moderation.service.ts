@@ -18,6 +18,7 @@ import { UserEntity } from '../user/entities/user.entity';
 import { isRestrictedUser, isWithdrawnUser } from '../user/withdrawn-user';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
+import { ReportDiscordService } from './discord/report-discord.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -50,17 +51,24 @@ type TargetState = { exists: boolean; isSanctioned: boolean };
  * 처리가 끝나면 신고한 사람들과 신고당한 사람에게 알림을 보낸다. (알림 설정으로 끌 수 없다)
  *
  * 대상 행을 잠그고 처리해서, 같은 대상을 동시에 처리해도 알림이 두 번 가지 않는다.
- * 지금은 터미널 스크립트(npm run report:handle)에서 부른다.
+ * 디스코드 신고 메시지 버튼과 터미널 스크립트(npm run report:handle)에서 부른다.
+ * 처리한 뒤에는 같은 대상의 디스코드 신고 메시지를 모두 지금 상태로 고친다.
+ *
+ * handledBy: 처리한 운영자의 디스코드 사용자 id. 터미널로 처리하면 null
  */
 @Injectable()
 export class ReportModerationService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly notificationService: NotificationService,
+    private readonly reportDiscordService: ReportDiscordService,
   ) {}
 
   // 피드 · 댓글 · 편지를 가린다. 이미 가려진 대상이면 남은 신고만 처리하고 작성자에게 다시 알리지 않는다
-  async blind(reportId: number): Promise<ReportHandleResult> {
+  async blind(
+    reportId: number,
+    handledBy: string | null = null,
+  ): Promise<ReportHandleResult> {
     const { report, target, pendingReports } =
       await this.dataSource.transaction(async (manager) => {
         const report = await this.findReport(manager, reportId);
@@ -87,12 +95,15 @@ export class ReportModerationService {
           report,
           ReportAction.BLIND,
           now,
+          handledBy,
         );
 
         return { report, target, pendingReports };
       });
 
     const isTargetChanged = target.exists && !target.isSanctioned;
+
+    await this.syncDiscordMessages(report);
 
     await this.notifyReporters(
       pendingReports,
@@ -118,6 +129,7 @@ export class ReportModerationService {
   async restrict(
     reportId: number,
     period: RestrictionPeriod,
+    handledBy: string | null = null,
   ): Promise<ReportHandleResult> {
     const result = await this.dataSource.transaction(async (manager) => {
       const report = await this.findReport(manager, reportId);
@@ -166,6 +178,7 @@ export class ReportModerationService {
         report,
         ReportAction.RESTRICT,
         now,
+        handledBy,
       );
 
       return {
@@ -175,6 +188,8 @@ export class ReportModerationService {
         isTargetChanged: !wasRestricted,
       };
     });
+
+    await this.syncDiscordMessages(result.report);
 
     await this.notifyReporters(
       result.pendingReports,
@@ -198,7 +213,10 @@ export class ReportModerationService {
    * 운영정책 위반이 없다고 보고 처리 전 신고를 기각한다. 신고한 사람에게만 알린다.
    * 이미 가려졌거나 제한 중인 대상은 기각하면 안내가 서로 맞지 않아서 막는다.
    */
-  async reject(reportId: number): Promise<ReportHandleResult> {
+  async reject(
+    reportId: number,
+    handledBy: string | null = null,
+  ): Promise<ReportHandleResult> {
     const { report, pendingReports } = await this.dataSource.transaction(
       async (manager) => {
         const report = await this.findReport(manager, reportId);
@@ -215,11 +233,14 @@ export class ReportModerationService {
           report,
           ReportAction.REJECT,
           new Date(),
+          handledBy,
         );
 
         return { report, pendingReports };
       },
     );
+
+    await this.syncDiscordMessages(report);
 
     await this.notifyReporters(
       pendingReports,
@@ -239,7 +260,7 @@ export class ReportModerationService {
    * 이미 보낸 알림은 지우지 않고, 되돌렸다는 알림도 보내지 않는다.
    */
   async undo(reportId: number): Promise<ReportHandleResult> {
-    return await this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const report = await this.findReport(manager, reportId);
       const target = await this.lockTarget(manager, report);
 
@@ -270,7 +291,12 @@ export class ReportModerationService {
           targetId: report.targetId,
           status: Not(ReportStatus.PENDING),
         },
-        { status: ReportStatus.PENDING, action: null, handledAt: null },
+        {
+          status: ReportStatus.PENDING,
+          action: null,
+          handledAt: null,
+          handledBy: null,
+        },
       );
 
       return {
@@ -280,6 +306,20 @@ export class ReportModerationService {
         reportCount: result.affected ?? 0,
       };
     });
+
+    await this.reportDiscordService.syncTargetMessages(
+      result.targetType,
+      result.targetId,
+    );
+
+    return result;
+  }
+
+  private async syncDiscordMessages(report: ReportEntity) {
+    await this.reportDiscordService.syncTargetMessages(
+      report.targetType,
+      Number(report.targetId),
+    );
   }
 
   private isBlindable(
@@ -339,6 +379,7 @@ export class ReportModerationService {
     report: ReportEntity,
     action: ReportAction,
     now: Date,
+    handledBy: string | null,
   ) {
     const pendingReports = await manager.find(ReportEntity, {
       select: {
@@ -365,6 +406,7 @@ export class ReportModerationService {
               : ReportStatus.RESOLVED,
           action,
           handledAt: now,
+          handledBy,
         },
       );
     }

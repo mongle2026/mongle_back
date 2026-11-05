@@ -91,6 +91,19 @@ export class ReportEntity {
   @Column({ name: 'handled_at', type: 'datetime', nullable: true })
   handledAt!: Date | null;
 
+  // 처리한 운영자의 디스코드 사용자 id. 터미널(npm run report:handle)로 처리했거나 처리 전이면 null
+  @Column({ name: 'handled_by', type: 'varchar', length: 32, nullable: true })
+  handledBy!: string | null;
+
+  // 디스코드 신고 알림 메시지 id. 처리하면 이 메시지를 고친다. 웹훅으로 보낸 신고는 null
+  @Column({
+    name: 'discord_message_id',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
+  discordMessageId!: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'datetime' })
   createdAt!: Date;
 }

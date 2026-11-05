@@ -8,7 +8,7 @@ import { DataSource, IsNull, Repository } from 'typeorm';
 import { ReportContentSnapshot, ReportEntity } from './entities/report.entity';
 import { ReportTargetType } from './enums/report.enum';
 import { CreateReportDto } from './dto/create-report.dto';
-import { ReportDiscordService } from './report-discord.service';
+import { ReportDiscordService } from './discord/report-discord.service';
 import { FeedEntity } from '../feed/entities/feed.entity';
 import { FeedCommentEntity } from '../feed-comment/entities/feed-comment.entity';
 import { LetterEntity } from '../letter/entities/letter.entity';
