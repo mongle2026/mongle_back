@@ -27,7 +27,7 @@ type CreateReportParams = {
 
 /*
  * 신고. 저장하면 디스코드 채널로 알림을 보낸다. 받은 신고를 보는 화면은 없다.
- * 이미 신고한 대상을 다시 신고해도 에러 없이 신고된 것으로 응답한다.
+ * 이미 신고한 대상을 다시 신고해도 에러 없이 응답하고, isAlreadyReported 로 알려준다.
  * 지워진 대상, 탈퇴한 회원, 나 자신이나 내가 쓴 글은 신고할 수 없다.
  */
 @Injectable()
@@ -195,7 +195,7 @@ export class ReportService {
     } catch (error) {
       // 이미 신고한 대상이면 처음 신고만 남기고, 디스코드 알림도 다시 보내지 않는다
       if (isDuplicateEntryError(error)) {
-        return { isReported: true };
+        return { isReported: true, isAlreadyReported: true };
       }
 
       throw error;
@@ -204,7 +204,7 @@ export class ReportService {
     // 알림이 실패해도 신고는 저장됐으니 기다리지 않는다
     void this.reportDiscordService.notifyReport(report);
 
-    return { isReported: true };
+    return { isReported: true, isAlreadyReported: false };
   }
 
   // 피드 · 편지가 담고 있는 기록. 첨부 파일은 R2 키만 남긴다 (파일 자체는 정리 크론이 지울 수 있다)
