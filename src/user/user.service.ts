@@ -14,6 +14,7 @@ import { ProfileImageService } from './profile-image.service';
 import { notBlockedBetweenSql } from '../block/block.sql';
 import { DEFAULT_PROFILE_IMAGE_COUNT } from './default-profile-image';
 import { FollowEntity } from '../follow/entities/follow.entity';
+import { isRestrictedUser } from './withdrawn-user';
 
 @Injectable()
 export class UserService {
@@ -155,6 +156,8 @@ export class UserService {
         nickname: true,
         profileImageKey: true,
         defaultProfileImageNo: true,
+        restrictedAt: true,
+        restrictedUntil: true,
       },
       where: { ...where, withdrawnAt: IsNull() },
     });
@@ -171,6 +174,9 @@ export class UserService {
       hasProfileImage: !!user.profileImageKey,
 
       profileImageUrl: this.r2Service.getProfileImageUrl(user),
+
+      // 이용 제한 중인 회원. 앱은 프로필을 제한 계정 모양으로 보여주고 게시물을 숨긴다
+      isRestricted: isRestrictedUser(user),
 
       // email 은 못 받은 회원(카카오, 이메일 저장 전 애플 가입자)이면 null.
       // defaultProfileImageUrl 은 프로필 정보 편집에서 '기본 이미지로 변경'하면 보여줄 사진

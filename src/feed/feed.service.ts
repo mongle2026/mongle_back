@@ -1000,7 +1000,7 @@ export class FeedService {
    * 프로필 게시글 편집에서 뺀 글(profile_hidden)은 누구에게도 보이지 않습니다.
    * 주인은 공개 범위와 상관없이 모두 보고, 다른 사람은 GET /feed 와 같은 규칙으로 봅니다
    * (전체 공개 + 팔로우 중이면 팔로워 공개, 비공개는 안 보임, 차단 사이면 모두 안 보임). 최신순, feedId 커서.
-   * 사용자 찾기·팔로우 확인을 따로 하지 않고 쿼리 하나로 불러옵니다. 없는 사용자면 빈 목록입니다.
+   * 사용자 찾기·팔로우 확인을 따로 하지 않고 쿼리 하나로 불러옵니다. 없는 사용자·이용 제한 중인 사용자면 빈 목록입니다.
    */
   async getProfileFeeds(params: {
     viewerId: number;
@@ -1013,6 +1013,13 @@ export class FeedService {
     return this.findFeedCardPage({
       conditions: [
         'record.user_id = (SELECT owner.id FROM `user` owner WHERE owner.public_id = ?)',
+        // 이용 제한 중인 회원의 프로필은 게시물을 모두 숨긴다 (withdrawn-user.ts isRestrictedUser 와 같은 기준)
+        `NOT EXISTS (
+          SELECT 1 FROM \`user\` owner
+          WHERE owner.id = record.user_id
+            AND owner.restricted_at IS NOT NULL
+            AND (owner.restricted_until IS NULL OR owner.restricted_until > ?)
+        )`,
         'feed.deleted_at IS NULL',
         // 운영자가 가린 글은 프로필 가림 카드 디자인이 나오기 전까지 빼 둔다
         'feed.blinded_at IS NULL',
@@ -1032,6 +1039,7 @@ export class FeedService {
       ],
       conditionParams: [
         ownerPublicId,
+        new Date(),
         viewerId,
         Visibility.PUBLIC,
         Visibility.FOLLOWER,
