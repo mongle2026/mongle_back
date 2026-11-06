@@ -28,6 +28,10 @@ import { notBlockedBetweenSql } from '../block/block.sql';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// 편지가 도착한 시각. 예약 없이 보낸 편지(delivery_at NULL)는 보낸 즉시 도착한다.
+// 편지함 쿼리는 record 를 조인해 두어서 그대로 쓴다
+const LETTER_ARRIVED_AT_SQL = 'COALESCE(letter.delivery_at, record.created_at)';
+
 @Injectable()
 export class LetterService {
   constructor(
@@ -176,11 +180,15 @@ export class LetterService {
         throw new ForbiddenException('아직 열람할 수 없는 편지입니다.');
       }
 
-      // 차단 사이인 사람에게 받은 편지는 없는 편지로 본다 (내가 보낸 편지는 그대로 보인다)
+      // 차단한 뒤에 도착한 편지는 없는 편지로 본다. 차단 전에 받은 편지 · 내가 보낸 편지는 그대로 보인다
       if (
         isReceiver &&
         !isSender &&
-        (await this.blockService.isBlockedBetween(userId, senderId))
+        (await this.blockService.isBlockedBetween(
+          userId,
+          senderId,
+          letter.deliveryAt ?? letter.record.createdAt,
+        ))
       ) {
         throw new NotFoundException('편지를 찾을 수 없습니다.');
       }
@@ -316,9 +324,9 @@ export class LetterService {
         throw new BadRequestException('tab 값이 올바르지 않습니다.');
     }
 
-    // 차단 사이인 사람에게 받은 편지는 뺀다. 내가 보낸 편지는 그대로 둔다
+    // 차단한 뒤에 도착한 편지는 뺀다. 차단 전에 받은 편지 · 내가 보낸 편지는 그대로 둔다
     qb.andWhere(
-      `(letter.receiverId != :userId OR ${notBlockedBetweenSql(':userId', 'letter.sender_id')})`,
+      `(letter.receiverId != :userId OR ${notBlockedBetweenSql(':userId', 'letter.sender_id', LETTER_ARRIVED_AT_SQL)})`,
     );
 
     if (cursor !== undefined) {
@@ -340,7 +348,7 @@ export class LetterService {
   }
 
   // 우표 상세의 편지 목록. 이 우표가 붙은 "수집한 편지"를 도착 시각이 최근인 순으로 준다.
-  // 수집한 편지 = 나에게 도착한 편지(나에게 쓴 편지 포함), 내가 삭제한 편지 · 차단 사이인 사람의 편지 · 운영자가 가린 편지는 제외.
+  // 수집한 편지 = 나에게 도착한 편지(나에게 쓴 편지 포함), 내가 삭제한 편지 · 차단한 뒤에 도착한 편지 · 운영자가 가린 편지는 제외.
   // (StampService.getStampCollection의 count와 같은 조건)
   async getCollectedLettersByStamp(params: { userId: number; stamp: string }) {
     const { userId, stamp } = params;
@@ -354,7 +362,13 @@ export class LetterService {
       .andWhere('(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)', {
         now: new Date(),
       })
-      .andWhere(notBlockedBetweenSql(':userId', 'letter.sender_id'))
+      .andWhere(
+        notBlockedBetweenSql(
+          ':userId',
+          'letter.sender_id',
+          LETTER_ARRIVED_AT_SQL,
+        ),
+      )
       .getMany();
 
     return rows

@@ -140,16 +140,20 @@ export class BlockService {
   }
 
   // 두 사람 사이에 차단이 있는지 (누가 차단했든)
-  async isBlockedBetween(userA: number, userB: number) {
-    const count = await this.blockRepository
+  // since: 이 시각 이전에 차단한 경우만 본다 (차단한 뒤에 온 편지만 숨길 때)
+  async isBlockedBetween(userA: number, userB: number, since?: Date) {
+    const query = this.blockRepository
       .createQueryBuilder('block')
       .where(
-        '(block.blockerId = :userA AND block.blockedId = :userB) OR (block.blockerId = :userB AND block.blockedId = :userA)',
+        '((block.blockerId = :userA AND block.blockedId = :userB) OR (block.blockerId = :userB AND block.blockedId = :userA))',
         { userA, userB },
-      )
-      .getCount();
+      );
 
-    return count > 0;
+    if (since) {
+      query.andWhere('block.createdAt <= :since', { since });
+    }
+
+    return (await query.getCount()) > 0;
   }
 
   // 내가 차단했거나 나를 차단한 사람의 id

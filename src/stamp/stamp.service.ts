@@ -40,8 +40,13 @@ export class StampService {
           // 운영자가 가린 편지는 우표 수집에서 뺀다
           'letter.blindedAt IS NULL',
           '(letter.deliveryAt IS NULL OR letter.deliveryAt <= :now)',
-          // 차단 사이인 사람에게 받은 편지는 세지 않는다 (편지함과 같은 기준)
-          notBlockedBetweenSql(':userId', 'letter.sender_id'),
+          // 차단한 뒤에 도착한 편지는 세지 않는다 (편지함과 같은 기준).
+          // 예약 없이 보낸 편지는 보낸 즉시 도착해서 record.created_at 을 쓴다
+          notBlockedBetweenSql(
+            ':userId',
+            'letter.sender_id',
+            'COALESCE(letter.delivery_at, (SELECT sentRecord.created_at FROM record sentRecord WHERE sentRecord.id = letter.record_id))',
+          ),
         ].join(' AND '),
         { userId, now: new Date() },
       )

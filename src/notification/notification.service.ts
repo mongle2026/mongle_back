@@ -28,7 +28,6 @@ import {
 import { R2Service } from '../storage/r2.service';
 import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
 import { BlockService } from '../block/block.service';
-import { notBlockedBetweenSql } from '../block/block.sql';
 import { ReportTargetType } from '../report/enums/report.enum';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -102,6 +101,7 @@ export class NotificationService {
    * 받는 사람이 해당 알림을 꺼두었으면 목록에도 남기지 않는다. 운영 조치 안내(ALWAYS_DELIVERED_STATUSES)는 끌 수 없다.
    * 야간 알림을 꺼두었으면 밤에는 목록에만 남기고 푸시는 아침에 모아서 보낸다.
    * 받는 사람과 알림을 만든 사람(actor)이 차단 사이(누가 차단했든)면 목록에도 남기지 않는다.
+   * 차단하기 전에 이미 남은 알림은 목록에 그대로 둔다.
    *
    * 편지/댓글 저장이 끝난 뒤 부르는 부가 작업이라, 실패해도 에러를 던지지 않고 로그만 남긴다.
    */
@@ -537,10 +537,6 @@ export class NotificationService {
         .andWhere('notification.createdAt >= :since', {
           since: new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * DAY_MS),
         })
-        // 차단하기 전에 남은 알림도 차단 사이인 사람이 만든 것은 보이지 않게 한다
-        .andWhere(
-          `(notification.actorId IS NULL OR ${notBlockedBetweenSql(':userId', 'notification.actor_id')})`,
-        )
     );
   }
 
