@@ -81,9 +81,10 @@ export class UserController {
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   async getUser(
+    @CurrentUserId() userId: number,
     @Param('id', ParseUUIDPipe) publicId: string,
   ) {
-    return this.userService.getUserByPublicId(publicId);
+    return this.userService.getUserByPublicId(publicId, userId);
   }
 
 }

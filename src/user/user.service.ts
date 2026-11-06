@@ -137,8 +137,32 @@ export class UserService {
   }
 
   // 다른 사람 프로필 조회. 앱은 publicId 로만 회원을 가리킨다.
-  async getUserByPublicId(publicId: string) {
-    return this.getUserProfile({ publicId }, false);
+  // 프로필 주인이 나(viewerId)를 차단했으면 누구인지 알 수 없게 닉네임 · 아이디 · 사진을 비우고
+  // hasBlockedMe 만 true 로 준다. 앱은 '알 수 없는 사용자' 모양으로 보여주고 게시물을 숨긴다.
+  async getUserByPublicId(publicId: string, viewerId: number) {
+    const profile = await this.getUserProfile({ publicId }, false);
+
+    const [{ blockCount }]: Array<{ blockCount: string }> =
+      await this.dataSource.query(
+        `SELECT COUNT(*) AS blockCount FROM \`user_block\`
+          INNER JOIN \`user\` ON \`user\`.\`id\` = \`user_block\`.\`blocker_id\`
+          WHERE \`user\`.\`public_id\` = ? AND \`user_block\`.\`blocked_id\` = ?`,
+        [publicId, viewerId],
+      );
+
+    if (Number(blockCount) === 0) {
+      return { ...profile, hasBlockedMe: false };
+    }
+
+    return {
+      userId: profile.userId,
+      userCode: null,
+      nickname: null,
+      hasProfileImage: false,
+      profileImageUrl: null,
+      isRestricted: false,
+      hasBlockedMe: true,
+    };
   }
 
   // 탈퇴한 회원의 프로필은 없다
