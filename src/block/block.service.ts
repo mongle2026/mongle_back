@@ -156,6 +156,19 @@ export class BlockService {
     return (await query.getCount()) > 0;
   }
 
+  // blockerId 가 blockedId 를 차단했는지 (한 방향만 본다)
+  async hasBlocked(blockerId: number, blockedId: number) {
+    const count = await this.blockRepository
+      .createQueryBuilder('block')
+      .where('block.blockerId = :blockerId AND block.blockedId = :blockedId', {
+        blockerId,
+        blockedId,
+      })
+      .getCount();
+
+    return count > 0;
+  }
+
   // 내가 차단했거나 나를 차단한 사람의 id
   async getBlockedPairUserIds(userId: number): Promise<number[]> {
     const rows: Array<{ otherId: string }> = await this.blockRepository.query(

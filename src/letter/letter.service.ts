@@ -201,8 +201,16 @@ export class LetterService {
       // 운영자가 가린 편지는 모양은 같게 두고 글 · 음악 · 사진만 비워서 내려준다 (보낸 사람에게도 같다)
       const isBlinded = !!letter.blindedAt;
 
+      // 받은 편지에서 내가 보낸 사람을 차단했는지. 앱이 답장 대신 차단 해제 안내를 띄운다
+      // (상대가 나를 차단한 사실은 알려주지 않는다)
+      const isSenderBlocked =
+        isReceiver && !isSender
+          ? await this.blockService.hasBlocked(userId, senderId)
+          : false;
+
       return {
         isBlinded,
+        isSenderBlocked,
         letter: {
           id: Number(letter.id),
           recordId: Number(letter.recordId),
