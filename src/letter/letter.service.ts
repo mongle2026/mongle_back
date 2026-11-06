@@ -233,6 +233,8 @@ export class LetterService {
           user: letter.record.user
             ? {
               id: letter.record.user.publicId,
+              // 앱이 신고 · 차단 · 차단 해제 토스트에 '@아이디'로 쓴다 (탈퇴한 회원은 null)
+              userCode: letter.record.user.userCode ?? null,
               nickname: this.getLetterUserNickname(letter.record.user),
               profileImageUrl: this.r2Service.getProfileImageUrl(letter.record.user),
               isWithdrawn: isWithdrawnUser(letter.record.user),
