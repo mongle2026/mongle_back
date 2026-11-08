@@ -13,11 +13,20 @@ import { RestrictionAppealEntity } from './appeal/entities/restriction-appeal.en
 import { AppealController } from './appeal/appeal.controller';
 import { AppealService } from './appeal/appeal.service';
 import { AppealDiscordService } from './appeal/appeal-discord.service';
+import { UserSanctionEntity } from './sanction/entities/user-sanction.entity';
+import { SanctionService } from './sanction/sanction.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ReportEntity, RestrictionAppealEntity]),
+    TypeOrmModule.forFeature([
+      ReportEntity,
+      RestrictionAppealEntity,
+      UserSanctionEntity,
+    ]),
     NotificationModule,
+    // 영구 정지된 회원 탈퇴 (WithdrawalService)
+    AuthModule,
   ],
   controllers: [
     ReportController,
@@ -27,6 +36,7 @@ import { AppealDiscordService } from './appeal/appeal-discord.service';
   providers: [
     ReportService,
     ReportModerationService,
+    SanctionService,
     DiscordApiService,
     ReportDiscordService,
     DiscordInteractionService,

@@ -197,9 +197,10 @@ export class AppealService {
     }
 
     if (result.status === AppealStatus.ACCEPTED) {
-      // 신고 채널의 회원 신고 메시지도 '이용 제한 (끝남)' 으로 고친다
-      await this.reportDiscordService.syncTargetMessages(
+      // 신고 채널의 회원 신고 · 처리 전 신고 메시지의 제재 상태도 고친다
+      await this.reportDiscordService.syncMessages(
         ReportTargetType.USER,
+        result.userId,
         result.userId,
       );
     }

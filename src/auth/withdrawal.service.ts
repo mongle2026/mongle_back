@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, In, IsNull, MoreThan } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, MoreThan } from 'typeorm';
 import { UserEntity } from '../user/entities/user.entity';
 import { AuthProvider } from '../user/enums/auth-provider.enum';
 import { ProfileImageService } from '../user/profile-image.service';
@@ -17,6 +17,20 @@ import { PushTokenEntity } from '../notification/entities/push-token.entity';
 import { NotificationSettingEntity } from '../notification/entities/notification-setting.entity';
 import { AppleApiService } from './apple-api.service';
 import { SocialUnlinkService } from './social-unlink.service';
+import { BannedAccountEntity } from './entities/banned-account.entity';
+import { isPermanentlyRestrictedUser } from '../user/withdrawn-user';
+
+type WithdrawingUser = Pick<
+  UserEntity,
+  | 'id'
+  | 'provider'
+  | 'providerUserId'
+  | 'profileImageKey'
+  | 'withdrawnAt'
+  | 'restrictedAt'
+  | 'restrictedUntil'
+  | 'restrictedReason'
+>;
 
 /**
  * 회원 탈퇴.
@@ -27,6 +41,8 @@ import { SocialUnlinkService } from './social-unlink.service';
  * user 행은 지우지 않고 개인정보만 비운다. 남은 편지/댓글에서 보낸 사람을 사람마다 구분해야 하기 때문이다.
  * 피드와 편지는 직접 삭제할 때와 같은 표시만 하고, 실제 삭제는 기존 정리 크론이 보관 기간 뒤에 한다.
  * 소셜 계정 연결 끊기는 탈퇴가 커밋된 뒤에 하고, 실패하면 SocialUnlinkService 가 다시 시도한다.
+ *
+ * 운영자가 영구 정지된 회원을 탈퇴시킬 때(forceWithdraw)도 같은 처리를 하고, 다시 가입하지 못하게 banned_account 에 남긴다.
  */
 @Injectable()
 export class WithdrawalService {
@@ -45,83 +61,158 @@ export class WithdrawalService {
     );
 
     const pendingId = await this.dataSource.transaction(async (manager) => {
-      const user = await manager.findOne(UserEntity, {
-        select: {
-          id: true,
-          provider: true,
-          providerUserId: true,
-          profileImageKey: true,
-          withdrawnAt: true,
-        },
-        where: { id: userId },
-        lock: { mode: 'pessimistic_write' },
-      });
+      const user = await this.lockUser(manager, userId);
 
       if (!user || user.withdrawnAt) {
         throw new NotFoundException('사용자를 찾을 수 없습니다.');
       }
 
-      const now = new Date();
+      return await this.withdrawInTransaction(manager, user, appleRefreshToken);
+    });
 
-      // 내 피드: 직접 삭제(FeedService.deleteFeed)와 같게 좋아요/북마크를 지우고 soft delete
-      const feeds = await manager
-        .getRepository(FeedEntity)
-        .createQueryBuilder('feed')
-        .innerJoin('feed.record', 'record')
-        .select('feed.id', 'id')
-        .where('record.userId = :userId', { userId })
-        .getRawMany<{ id: string }>();
+    this.unlinkAfterCommit(pendingId);
 
-      if (feeds.length > 0) {
-        const feedIds = feeds.map((feed) => Number(feed.id));
+    return { message: '탈퇴되었습니다.' };
+  }
 
-        await manager.delete(FeedLikeEntity, { feedId: In(feedIds) });
-        await manager.delete(BookmarkEntity, { feedId: In(feedIds) });
-        await manager.softDelete(FeedEntity, { id: In(feedIds) });
+  /**
+   * 운영자가 영구 정지된 회원을 탈퇴시킨다 (신고 처리). 되돌릴 수 없다.
+   * 같은 소셜 계정으로 다시 가입하지 못하게 banned_account 에 소셜 계정을 남긴다.
+   * 애플은 연결 끊기에 회원 본인의 애플 인증(authorizationCode)이 필요해서 끊지 않는다. 카카오는 끊는다.
+   */
+  async forceWithdraw(userId: number, bannedBy: string | null) {
+    const pendingId = await this.dataSource.transaction(async (manager) => {
+      const user = await this.lockUser(manager, userId);
+
+      if (!user || user.withdrawnAt) {
+        throw new BadRequestException('이미 탈퇴했거나 없는 회원이에요.');
       }
 
-      // 아직 도착하지 않은 보낸 편지: 발송 취소와 같게 받는 사람 쪽도 함께 삭제해서 도착하지 않게 한다
-      await manager.update(
-        LetterEntity,
-        {
-          senderId: userId,
-          senderDeletedAt: IsNull(),
-          deliveryAt: MoreThan(now),
-        },
-        { senderDeletedAt: now, receiverDeletedAt: now },
-      );
-
-      // 이미 도착한 보낸 편지: 내 편지함에서만 빠지고 받는 사람 편지함에는 남는다
-      await manager.update(
-        LetterEntity,
-        { senderId: userId, senderDeletedAt: IsNull() },
-        { senderDeletedAt: now },
-      );
-
-      // 받은 편지(도착 전 포함): 보낸 사람 편지함에는 남는다
-      await manager.update(
-        LetterEntity,
-        { receiverId: userId, receiverDeletedAt: IsNull() },
-        { receiverDeletedAt: now },
-      );
-
-      await manager.delete(FeedLikeEntity, { userId });
-      await manager.delete(BookmarkEntity, { userId });
-      await manager.delete(FollowEntity, { followerId: userId });
-      await manager.delete(FollowEntity, { followingId: userId });
-
-      // 내가 받은 알림만 지운다. 내가 상대(actor)인 다른 사람의 알림은 "(탈퇴한 회원)"으로 남는다.
-      await manager.delete(NotificationEntity, { userId });
-      // 기기 토큰은 계정에서만 뗀다. 로그인하지 않은 기기로 남아서 공지 푸시는 계속 받는다
-      await manager.update(PushTokenEntity, { userId }, { userId: null });
-      await manager.delete(NotificationSettingEntity, { userId });
-
-      if (user.profileImageKey) {
-        await this.profileImageService.discard(manager, user.profileImageKey);
+      if (!isPermanentlyRestrictedUser(user)) {
+        throw new BadRequestException('영구 정지된 회원만 탈퇴시킬 수 있어요.');
       }
 
-      // 아래에서 user 의 providerUserId 를 비우기 전에 연결 끊기 작업으로 옮겨 둔다
-      const unlinkPendingId = user.providerUserId
+      if (user.providerUserId) {
+        await manager
+          .createQueryBuilder()
+          .insert()
+          .into(BannedAccountEntity)
+          .values({
+            provider: user.provider,
+            providerUserId: user.providerUserId,
+            userId: Number(user.id),
+            reason: user.restrictedReason,
+            bannedBy,
+          })
+          .orIgnore()
+          .execute();
+      }
+
+      return await this.withdrawInTransaction(manager, user, null, {
+        unlink: user.provider === AuthProvider.KAKAO,
+      });
+    });
+
+    this.unlinkAfterCommit(pendingId);
+
+    return { message: '탈퇴시켰습니다.' };
+  }
+
+  private async lockUser(manager: EntityManager, userId: number) {
+    return await manager.findOne(UserEntity, {
+      select: {
+        id: true,
+        provider: true,
+        providerUserId: true,
+        profileImageKey: true,
+        withdrawnAt: true,
+        restrictedAt: true,
+        restrictedUntil: true,
+        restrictedReason: true,
+      },
+      where: { id: userId },
+      lock: { mode: 'pessimistic_write' },
+    });
+  }
+
+  // 탈퇴가 커밋된 뒤에 끊는다. 실패해도 탈퇴는 그대로 두고 나중에 다시 시도한다.
+  // 카카오 · 애플 응답을 기다리지 않고 바로 응답한다 (unlinkNow 는 예외를 던지지 않는다)
+  private unlinkAfterCommit(pendingId: number | null) {
+    if (pendingId) {
+      void this.socialUnlinkService.unlinkNow(pendingId);
+    }
+  }
+
+  // 회원 행을 잠근 트랜잭션 안에서 부른다. 연결 끊기 작업 id 를 돌려준다 (끊지 않으면 null)
+  private async withdrawInTransaction(
+    manager: EntityManager,
+    user: WithdrawingUser,
+    appleRefreshToken: string | null,
+    { unlink = true }: { unlink?: boolean } = {},
+  ) {
+    const userId = Number(user.id);
+    const now = new Date();
+
+    // 내 피드: 직접 삭제(FeedService.deleteFeed)와 같게 좋아요/북마크를 지우고 soft delete
+    const feeds = await manager
+      .getRepository(FeedEntity)
+      .createQueryBuilder('feed')
+      .innerJoin('feed.record', 'record')
+      .select('feed.id', 'id')
+      .where('record.userId = :userId', { userId })
+      .getRawMany<{ id: string }>();
+
+    if (feeds.length > 0) {
+      const feedIds = feeds.map((feed) => Number(feed.id));
+
+      await manager.delete(FeedLikeEntity, { feedId: In(feedIds) });
+      await manager.delete(BookmarkEntity, { feedId: In(feedIds) });
+      await manager.softDelete(FeedEntity, { id: In(feedIds) });
+    }
+
+    // 아직 도착하지 않은 보낸 편지: 발송 취소와 같게 받는 사람 쪽도 함께 삭제해서 도착하지 않게 한다
+    await manager.update(
+      LetterEntity,
+      {
+        senderId: userId,
+        senderDeletedAt: IsNull(),
+        deliveryAt: MoreThan(now),
+      },
+      { senderDeletedAt: now, receiverDeletedAt: now },
+    );
+
+    // 이미 도착한 보낸 편지: 내 편지함에서만 빠지고 받는 사람 편지함에는 남는다
+    await manager.update(
+      LetterEntity,
+      { senderId: userId, senderDeletedAt: IsNull() },
+      { senderDeletedAt: now },
+    );
+
+    // 받은 편지(도착 전 포함): 보낸 사람 편지함에는 남는다
+    await manager.update(
+      LetterEntity,
+      { receiverId: userId, receiverDeletedAt: IsNull() },
+      { receiverDeletedAt: now },
+    );
+
+    await manager.delete(FeedLikeEntity, { userId });
+    await manager.delete(BookmarkEntity, { userId });
+    await manager.delete(FollowEntity, { followerId: userId });
+    await manager.delete(FollowEntity, { followingId: userId });
+
+    // 내가 받은 알림만 지운다. 내가 상대(actor)인 다른 사람의 알림은 "(탈퇴한 회원)"으로 남는다.
+    await manager.delete(NotificationEntity, { userId });
+    // 기기 토큰은 계정에서만 뗀다. 로그인하지 않은 기기로 남아서 공지 푸시는 계속 받는다
+    await manager.update(PushTokenEntity, { userId }, { userId: null });
+    await manager.delete(NotificationSettingEntity, { userId });
+
+    if (user.profileImageKey) {
+      await this.profileImageService.discard(manager, user.profileImageKey);
+    }
+
+    // 아래에서 user 의 providerUserId 를 비우기 전에 연결 끊기 작업으로 옮겨 둔다
+    const unlinkPendingId =
+      unlink && user.providerUserId
         ? await this.socialUnlinkService.enqueue(manager, {
             provider: user.provider,
             providerUserId: user.providerUserId,
@@ -129,31 +220,22 @@ export class WithdrawalService {
           })
         : null;
 
-      await manager.update(
-        UserEntity,
-        { id: userId },
-        {
-          withdrawnAt: now,
-          providerUserId: null,
-          email: null,
-          userCode: null,
-          nickname: null,
-          profileImageKey: null,
-          defaultProfileImageNo: null,
-          refreshTokenHash: null,
-        },
-      );
+    await manager.update(
+      UserEntity,
+      { id: userId },
+      {
+        withdrawnAt: now,
+        providerUserId: null,
+        email: null,
+        userCode: null,
+        nickname: null,
+        profileImageKey: null,
+        defaultProfileImageNo: null,
+        refreshTokenHash: null,
+      },
+    );
 
-      return unlinkPendingId;
-    });
-
-    // 탈퇴가 커밋된 뒤에 끊는다. 실패해도 탈퇴는 그대로 두고 나중에 다시 시도한다.
-    // 카카오 · 애플 응답을 기다리지 않고 바로 응답한다 (unlinkNow 는 예외를 던지지 않는다)
-    if (pendingId) {
-      void this.socialUnlinkService.unlinkNow(pendingId);
-    }
-
-    return { message: '탈퇴되었습니다.' };
+    return unlinkPendingId;
   }
 
   /**

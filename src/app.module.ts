@@ -39,6 +39,8 @@ import { SocialUnlinkPendingEntity } from './auth/entities/social-unlink-pending
 import { UserBlockEntity } from './block/entities/user-block.entity';
 import { ReportEntity } from './report/entities/report.entity';
 import { RestrictionAppealEntity } from './report/appeal/entities/restriction-appeal.entity';
+import { UserSanctionEntity } from './report/sanction/entities/user-sanction.entity';
+import { BannedAccountEntity } from './auth/entities/banned-account.entity';
 
 @Module({
   imports: [
@@ -95,6 +97,8 @@ import { RestrictionAppealEntity } from './report/appeal/entities/restriction-ap
             UserBlockEntity,
             ReportEntity,
             RestrictionAppealEntity,
+            UserSanctionEntity,
+            BannedAccountEntity,
           ],
 
           // 초반에만, 얼추되면 false

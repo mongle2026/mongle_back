@@ -29,6 +29,7 @@ import { R2Service } from '../storage/r2.service';
 import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
 import { BlockService } from '../block/block.service';
 import { ReportTargetType } from '../report/enums/report.enum';
+import { SanctionNotice } from '../report/sanction/sanction.constants';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_BATCH_SIZE = 1000;
@@ -68,6 +69,9 @@ export type CreateNotificationInput = {
   eventTitle?: string | null;
   // 신고 처리 알림의 대상 종류
   targetType?: ReportTargetType | null;
+  // 운영정책 안내(policy_notice)에 붙는 제재 내용과 그때의 유효한 경고 수
+  sanction?: SanctionNotice | null;
+  warningCount?: number | null;
 };
 
 // 운영자가 가린 댓글의 알림 목록 내용
@@ -138,6 +142,8 @@ export class NotificationService {
           content: input.content ?? null,
           eventTitle: input.eventTitle ?? null,
           targetType: input.targetType ?? null,
+          sanction: input.sanction ?? null,
+          warningCount: input.warningCount ?? null,
           pushPending: pushTiming === 'later',
         }),
       );
@@ -671,6 +677,8 @@ export class NotificationService {
       content: notification.content,
       eventTitle: notification.eventTitle,
       targetType: notification.targetType,
+      sanction: notification.sanction,
+      warningCount: notification.warningCount,
     });
 
     // 알림을 눌렀을 때 이동할 화면을 프론트가 고를 수 있게 넘긴다
@@ -782,6 +790,9 @@ export class NotificationService {
       eventTitle: notification.eventTitle,
       // 신고 처리 알림의 대상 종류 (FEED / COMMENT / LETTER / USER)
       targetType: notification.targetType,
+      // 운영정책 안내의 제재 내용(SanctionNotice: WARNING / SUSPENSION / PERMANENT)과 그때의 유효한 경고 수
+      sanction: notification.sanction,
+      warningCount: notification.warningCount,
       isToSelf: this.isToSelf(notification),
       letterId: this.toNullableNumber(notification.letterId),
       feedId: this.toNullableNumber(notification.feedId),

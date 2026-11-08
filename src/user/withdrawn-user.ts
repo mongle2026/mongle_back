@@ -19,3 +19,8 @@ export const isRestrictedUser = (
   now = new Date(),
 ) =>
   !!user.restrictedAt && (!user.restrictedUntil || user.restrictedUntil > now);
+
+// 영구 정지 중인지. 영구 정지는 경고가 소멸돼도 풀리지 않는다
+export const isPermanentlyRestrictedUser = (
+  user: Pick<UserEntity, 'restrictedAt' | 'restrictedUntil'>,
+) => !!user.restrictedAt && !user.restrictedUntil;

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Not, Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import axios from 'axios';
 import { ReportContentSnapshot, ReportEntity } from '../entities/report.entity';
 import {
@@ -12,8 +12,10 @@ import {
 } from '../enums/report.enum';
 import { Visibility } from '../../feed/enums/visibility.enum';
 import { R2Service } from '../../storage/r2.service';
-import { UserEntity } from '../../user/entities/user.entity';
-import { isRestrictedUser } from '../../user/withdrawn-user';
+import {
+  SanctionService,
+  UserSanctionState,
+} from '../sanction/sanction.service';
 import { DiscordApiService, DiscordMessageBody } from './discord-api.service';
 import { toReportCustomId } from './report-custom-id';
 import {
@@ -29,7 +31,7 @@ import {
 
 const REQUEST_TIMEOUT = 5_000;
 
-// 처리 전 빨강, 처리(가림 · 이용 제한) 초록, 기각 회색
+// 처리 전 빨강, 처리(가림 · 경고 · 영구 정지) 초록, 기각 회색
 const STATUS_COLORS: Record<ReportStatus, number> = {
   [ReportStatus.PENDING]: 0xe5484d,
   [ReportStatus.RESOLVED]: 0x30a46c,
@@ -38,8 +40,10 @@ const STATUS_COLORS: Record<ReportStatus, number> = {
 
 const ACTION_LABELS: Record<ReportAction, string> = {
   [ReportAction.BLIND]: '가림',
-  [ReportAction.RESTRICT]: '이용 제한',
+  [ReportAction.WARN]: '경고',
+  [ReportAction.BAN]: '영구 정지',
   [ReportAction.REJECT]: '기각 (위반 없음)',
+  [ReportAction.RESTRICT]: '이용 제한 (예전 방식)',
 };
 
 // 괄호 안에는 DB 에 저장된 값을 그대로 붙여서, 알림을 보고 바로 DB 에서 찾을 수 있게 한다
@@ -62,9 +66,6 @@ type ContentEmbed = {
   thumbnail?: { url: string };
 };
 
-// 회원 신고 메시지에 보여줄 신고당한 회원의 지금 이용 제한 상태
-type RestrictionState = { isRestricted: boolean; restrictedUntil: Date | null };
-
 const asString = (value: unknown) => (typeof value === 'string' ? value : '');
 
 const asNumber = (value: unknown) =>
@@ -76,7 +77,8 @@ const asRecord = (value: unknown) =>
 /*
  * 신고 디스코드 알림.
  * 봇 설정(DISCORD_BOT_TOKEN · DISCORD_REPORT_CHANNEL_ID)이 있으면 봇이 처리 버튼을 단 메시지를 보내고,
- * 처리할 때마다 같은 대상의 신고 메시지를 모두 지금 상태로 고친다. (터미널로 처리해도 고친다)
+ * 처리할 때마다 같은 대상의 신고 메시지와 같은 회원의 처리 전 신고 메시지를 지금 상태로 고친다. (터미널로 처리해도 고친다)
+ * 메시지에는 신고당한 회원의 지금 제재 상태(유효 경고 수 · 정지)를 같이 보여준다. 메시지를 고친 시점 기준이다.
  * 봇 설정이 없으면 예전처럼 웹훅(DISCORD_REPORT_WEBHOOK_URL)으로 버튼 없이 보낸다.
  * 실패해도 신고 저장 · 처리에는 영향이 없도록 에러를 밖으로 던지지 않는다.
  */
@@ -88,7 +90,7 @@ export class ReportDiscordService {
     private readonly configService: ConfigService,
     private readonly r2Service: R2Service,
     private readonly discordApiService: DiscordApiService,
-    private readonly dataSource: DataSource,
+    private readonly sanctionService: SanctionService,
 
     @InjectRepository(ReportEntity)
     private readonly reportRepository: Repository<ReportEntity>,
@@ -103,15 +105,29 @@ export class ReportDiscordService {
     await this.sendWebhookMessage(report);
   }
 
-  // 같은 대상의 신고 메시지를 모두 지금 상태(처리 결과 · 버튼)로 고친다
-  async syncTargetMessages(targetType: ReportTargetType, targetId: number) {
+  /*
+   * 같은 대상의 신고 메시지와, 같은 회원의 처리 전 신고 메시지를 지금 상태(처리 결과 · 제재 상태 · 버튼)로 고친다.
+   * 처리 전 메시지는 운영자가 경고 수를 보고 판단하므로 함께 고친다. 이미 처리된 다른 대상의 메시지는 그대로 둔다
+   */
+  async syncMessages(
+    targetType: ReportTargetType,
+    targetId: number,
+    reportedUserId: number,
+  ) {
     if (!this.discordApiService.isBotConfigured()) {
       return;
     }
 
     try {
       const reports = await this.reportRepository.find({
-        where: { targetType, targetId, discordMessageId: Not(IsNull()) },
+        where: [
+          { targetType, targetId, discordMessageId: Not(IsNull()) },
+          {
+            reportedUserId,
+            status: ReportStatus.PENDING,
+            discordMessageId: Not(IsNull()),
+          },
+        ],
         order: { id: 'ASC' },
       });
 
@@ -119,13 +135,13 @@ export class ReportDiscordService {
         return;
       }
 
-      const restriction = await this.getRestrictionState(targetType, targetId);
+      const state = await this.sanctionService.getUserState(reportedUserId);
 
       for (const report of reports) {
         try {
           await this.discordApiService.editReportMessage(
             report.discordMessageId!,
-            this.buildMessage(report, restriction),
+            this.buildMessage(report, state),
           );
         } catch (error) {
           this.logError(`신고 #${report.id} 디스코드 메시지 수정 실패`, error);
@@ -136,10 +152,40 @@ export class ReportDiscordService {
     }
   }
 
+  // 신고 번호로 그 대상의 메시지를 고친다 (예전 버튼을 눌렀을 때)
+  async syncByReportId(reportId: number) {
+    try {
+      const report = await this.reportRepository.findOne({
+        select: {
+          id: true,
+          targetType: true,
+          targetId: true,
+          reportedUserId: true,
+        },
+        where: { id: reportId },
+      });
+
+      if (report) {
+        await this.syncMessages(
+          report.targetType,
+          Number(report.targetId),
+          Number(report.reportedUserId),
+        );
+      }
+    } catch (error) {
+      this.logError(`신고 #${reportId} 디스코드 메시지 수정 실패`, error);
+    }
+  }
+
   private async sendBotMessage(report: ReportEntity) {
     try {
       const messageId = await this.discordApiService.createReportMessage(
-        this.buildMessage(report, null),
+        this.buildMessage(
+          report,
+          await this.sanctionService.getUserState(
+            Number(report.reportedUserId),
+          ),
+        ),
       );
 
       await this.reportRepository.update(
@@ -165,7 +211,10 @@ export class ReportDiscordService {
 
     try {
       // 웹훅으로 보낸 메시지에는 누를 수 있는 버튼을 달 수 없다
-      const { embeds, allowed_mentions } = this.buildMessage(report, null);
+      const { embeds, allowed_mentions } = this.buildMessage(
+        report,
+        await this.sanctionService.getUserState(Number(report.reportedUserId)),
+      );
 
       await axios.post(
         webhookUrl,
@@ -178,10 +227,7 @@ export class ReportDiscordService {
     }
   }
 
-  private buildMessage(
-    report: ReportEntity,
-    restriction: RestrictionState | null,
-  ) {
+  private buildMessage(report: ReportEntity, state: UserSanctionState | null) {
     // 막 저장한 신고는 기본값(status)이 엔티티에 채워지지 않았을 수 있다
     const status = report.status ?? ReportStatus.PENDING;
     const content = this.toContentEmbed(
@@ -199,7 +245,7 @@ export class ReportDiscordService {
           fields: [
             {
               name: '처리',
-              value: this.toHandlingText(report, status, restriction),
+              value: this.toHandlingText(report, status),
             },
             {
               name: '대상',
@@ -216,6 +262,10 @@ export class ReportDiscordService {
               value: `${report.reporterId} → ${report.reportedUserId}`,
             },
             {
+              name: '신고당한 회원의 지금 제재',
+              value: this.toSanctionStateText(state),
+            },
+            {
               name: '상세',
               value: report.detail ? toQuote(report.detail) : '-',
             },
@@ -226,28 +276,14 @@ export class ReportDiscordService {
           timestamp: new Date(report.createdAt ?? Date.now()).toISOString(),
         },
       ],
-      components: this.buildButtons(report, status),
+      components: this.buildButtons(report, status, state),
     } satisfies DiscordMessageBody;
   }
 
   // '처리 전' 또는 '가림 · @운영자 · 시각'
-  private toHandlingText(
-    report: ReportEntity,
-    status: ReportStatus,
-    restriction: RestrictionState | null,
-  ) {
+  private toHandlingText(report: ReportEntity, status: ReportStatus) {
     if (status === ReportStatus.PENDING || !report.action) {
       return '처리 전';
-    }
-
-    let actionLabel = ACTION_LABELS[report.action];
-
-    if (report.action === ReportAction.RESTRICT && restriction) {
-      actionLabel += !restriction.isRestricted
-        ? ' (끝남)'
-        : restriction.restrictedUntil
-          ? ` (${toDiscordTime(restriction.restrictedUntil)} 까지)`
-          : ' (영구)';
     }
 
     // 임베드 안의 멘션은 알림이 가지 않는다
@@ -256,26 +292,57 @@ export class ReportDiscordService {
       ? ` · ${toDiscordTime(report.handledAt)}`
       : '';
 
-    return `${actionLabel} · ${handler}${handledAt}`;
+    return `${ACTION_LABELS[report.action]} · ${handler}${handledAt}`;
   }
 
-  // 처리 전: 가리기(회원은 이용 제한) · 기각. 처리 후: 되돌리기
-  private buildButtons(report: ReportEntity, status: ReportStatus) {
+  // '유효 경고 2회 · <시각> 까지 정지'. 경고는 6개월이 지나면 빠진다
+  private toSanctionStateText(state: UserSanctionState | null) {
+    if (!state) {
+      return '-';
+    }
+
+    if (state.isWithdrawn) {
+      return '탈퇴함';
+    }
+
+    const restriction = state.isPermanent
+      ? '영구 정지 중'
+      : state.isRestricted && state.restrictedUntil
+        ? `${toDiscordTime(state.restrictedUntil)} 까지 정지`
+        : '이용 제한 없음';
+
+    return `유효 경고 ${state.warningCount}회 · ${restriction}`;
+  }
+
+  /*
+   * 처리 전: [가리기 · 경고] (회원 신고는 [경고]) [영구 정지] [기각]. 처리 후: [되돌리기]
+   * 신고당한 회원이 영구 정지 중이면 [탈퇴시키기] 를 더 단다
+   */
+  private buildButtons(
+    report: ReportEntity,
+    status: ReportStatus,
+    state: UserSanctionState | null,
+  ) {
     const reportId = Number(report.id);
-    const buttons =
+    const buttons: { label: string; style: number; custom_id: string }[] =
       status === ReportStatus.PENDING
         ? [
             report.targetType === ReportTargetType.USER
               ? {
-                  label: '이용 제한',
+                  label: '경고',
                   style: BUTTON_STYLE.DANGER,
-                  custom_id: toReportCustomId('restrict', reportId),
+                  custom_id: toReportCustomId('warn', reportId),
                 }
               : {
-                  label: '가리기',
+                  label: '가리기 · 경고',
                   style: BUTTON_STYLE.DANGER,
                   custom_id: toReportCustomId('blind', reportId),
                 },
+            {
+              label: '영구 정지',
+              style: BUTTON_STYLE.DANGER,
+              custom_id: toReportCustomId('ban', reportId),
+            },
             {
               label: '기각',
               style: BUTTON_STYLE.SECONDARY,
@@ -290,6 +357,14 @@ export class ReportDiscordService {
             },
           ];
 
+    if (state?.isPermanent && !state.isWithdrawn) {
+      buttons.push({
+        label: '탈퇴시키기',
+        style: BUTTON_STYLE.DANGER,
+        custom_id: toReportCustomId('withdraw', reportId),
+      });
+    }
+
     return [
       {
         type: COMPONENT_TYPE.ACTION_ROW,
@@ -299,27 +374,6 @@ export class ReportDiscordService {
         })),
       },
     ];
-  }
-
-  private async getRestrictionState(
-    targetType: ReportTargetType,
-    targetId: number,
-  ): Promise<RestrictionState | null> {
-    if (targetType !== ReportTargetType.USER) {
-      return null;
-    }
-
-    const user = await this.dataSource.getRepository(UserEntity).findOne({
-      select: { id: true, restrictedAt: true, restrictedUntil: true },
-      where: { id: targetId },
-    });
-
-    return user
-      ? {
-          isRestricted: isRestrictedUser(user),
-          restrictedUntil: user.restrictedUntil,
-        }
-      : null;
   }
 
   // 에러 객체에는 토큰 · 웹훅 주소가 들어 있어서 메시지만 남긴다

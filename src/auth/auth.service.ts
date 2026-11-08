@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -31,6 +32,10 @@ import {
   verifySignupToken,
 } from './auth-token';
 import { SignupDto } from './dto/signup.dto';
+import { BannedAccountEntity } from './entities/banned-account.entity';
+
+// 운영정책 위반으로 영구 정지되어 탈퇴된 소셜 계정이 로그인 · 가입하면 403 과 함께 주는 code
+export const ACCOUNT_BANNED_ERROR_CODE = 'ACCOUNT_BANNED';
 
 const ACCESS_TOKEN_TTL = '1h';
 const REFRESH_TOKEN_TTL = '30d';
@@ -60,6 +65,7 @@ export class AuthService {
 
     return (
       (await this.loginIfRegistered(AuthProvider.KAKAO, kakaoUserId)) ??
+      (await this.assertNotBanned(AuthProvider.KAKAO, kakaoUserId)) ??
       this.toNewUserResponse(
         AuthProvider.KAKAO,
         kakaoUserId,
@@ -77,6 +83,7 @@ export class AuthService {
 
     return (
       (await this.loginIfRegistered(AuthProvider.APPLE, appleUserId)) ??
+      (await this.assertNotBanned(AuthProvider.APPLE, appleUserId)) ??
       this.toNewUserResponse(AuthProvider.APPLE, appleUserId, null, email)
     );
   }
@@ -96,6 +103,9 @@ export class AuthService {
     }
 
     const { provider, providerUserId, email } = account;
+
+    // 로그인 때 막지만, 그 뒤에 탈퇴된 계정이 가입 화면에 머물러 있을 수 있다
+    await this.assertNotBanned(provider, providerUserId);
 
     if (await this.userRepository.existsBy({ provider, providerUserId })) {
       throw new ConflictException(
@@ -237,6 +247,30 @@ export class AuthService {
       ...(await this.issueTokens(Number(user.id))),
       user: await this.userService.getUserById(Number(user.id)),
     };
+  }
+
+  /*
+   * 영구 정지로 탈퇴된 소셜 계정이면 403 으로 막는다. 앱은 message 를 그대로 토스트로 보여준다.
+   * 로그인에서 ?? 로 이어 쓰려고 막히지 않으면 null 을 돌려준다
+   */
+  private async assertNotBanned(
+    provider: AuthProvider,
+    providerUserId: string,
+  ): Promise<null> {
+    const isBanned = await this.dataSource
+      .getRepository(BannedAccountEntity)
+      .existsBy({ provider, providerUserId });
+
+    if (isBanned) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: ACCOUNT_BANNED_ERROR_CODE,
+        message:
+          '운영정책 위반으로 이용이 영구 정지된 계정이라 다시 가입할 수 없어요.',
+      });
+    }
+
+    return null;
   }
 
   private toNewUserResponse(

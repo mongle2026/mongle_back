@@ -5,9 +5,15 @@ import {
   ReportHandleResult,
   ReportModerationService,
 } from '../report-moderation.service';
-import { RESTRICTION_DAYS, RestrictionPeriod } from '../enums/report.enum';
 import { DiscordApiService } from './discord-api.service';
-import { parseReportCustomId, toReportCustomId } from './report-custom-id';
+import {
+  ConfirmRequiredAction,
+  isConfirmRequired,
+  parseReportCustomId,
+  toReportCustomId,
+} from './report-custom-id';
+import { ReportDiscordService } from './report-discord.service';
+import { BUTTON_STYLE, COMPONENT_TYPE } from './discord-format.util';
 import { parseAppealCustomId } from '../appeal/appeal-custom-id';
 import { AppealService } from '../appeal/appeal.service';
 import { AppealStatus } from '../appeal/entities/restriction-appeal.entity';
@@ -29,9 +35,6 @@ const RESPONSE_TYPE = {
 // 누른 사람에게만 보이는 메시지
 const EPHEMERAL_FLAG = 1 << 6;
 
-const COMPONENT_TYPE = { ACTION_ROW: 1, BUTTON: 2 } as const;
-const BUTTON_STYLE = { SECONDARY: 2, DANGER: 4 } as const;
-
 // Ed25519 공개키(32바이트)를 Node crypto 가 읽는 SPKI(DER) 형식으로 감싸는 앞부분
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 
@@ -50,12 +53,21 @@ const toEphemeralMessage = (content: string) => ({
   data: { content, flags: EPHEMERAL_FLAG, allowed_mentions: { parse: [] } },
 });
 
-const toDiscordTime = (date: Date) =>
-  `<t:${Math.floor(new Date(date).getTime() / 1000)}:f>`;
-
-const PERIOD_LABELS: Record<string, string> = {
-  ...Object.fromEntries(RESTRICTION_DAYS.map((days) => [days, `${days}일`])),
-  permanent: '영구',
+// 확인 버튼 문구
+const CONFIRM_PROMPTS: Record<
+  ConfirmRequiredAction,
+  { content: (reportId: number) => string; label: string }
+> = {
+  ban: {
+    content: (reportId) =>
+      `신고 #${reportId} 의 신고당한 회원을 경고 횟수와 관계없이 **영구 정지**할까요? 글 신고면 글도 가려져요.`,
+    label: '영구 정지',
+  },
+  withdraw: {
+    content: (reportId) =>
+      `신고 #${reportId} 의 신고당한 회원을 **탈퇴**시킬까요? 되돌릴 수 없고, 같은 소셜 계정으로 다시 가입할 수 없어요.`,
+    label: '탈퇴시키기',
+  },
 };
 
 /*
@@ -72,6 +84,7 @@ export class DiscordInteractionService {
     private readonly configService: ConfigService,
     private readonly discordApiService: DiscordApiService,
     private readonly reportModerationService: ReportModerationService,
+    private readonly reportDiscordService: ReportDiscordService,
     private readonly appealService: AppealService,
   ) {}
 
@@ -130,61 +143,74 @@ export class DiscordInteractionService {
       return toEphemeralMessage('알 수 없는 버튼이에요.');
     }
 
-    const { action, reportId, period } = button;
+    const { action, reportId, isConfirmed } = button;
 
-    // 기간 없이 누르면 나만 보이는 기간 선택 버튼을 띄운다. 이게 확인 단계도 겸한다
-    if (action === 'restrict' && !period) {
-      return this.toPeriodPicker(reportId);
+    // 예전 메시지의 이용 제한(기간 선택) 버튼. 신고 메시지를 지금 버튼으로 고친다
+    if (action === 'restrict') {
+      void this.reportDiscordService.syncByReportId(reportId);
+
+      return toEphemeralMessage(
+        '이용 제한은 이제 경고 누적 · 영구 정지로 처리해요. 신고 메시지를 새 버튼으로 고쳤어요.',
+      );
     }
 
-    if (action === 'restrict' && period) {
-      void this.runRestrict(interaction, reportId, period, userId);
+    // 영구 정지 · 탈퇴는 나만 보이는 확인 버튼을 한 번 더 누르게 한다
+    if (isConfirmRequired(action) && !isConfirmed) {
+      return this.toConfirmPrompt(action, reportId);
+    }
 
-      // 기간 선택 메시지를 '처리 중'으로 바꿔서 두 번 누르지 못하게 한다
+    if (isConfirmRequired(action)) {
+      void this.runConfirmed(interaction, action, reportId, userId);
+
+      // 확인 메시지를 '처리 중'으로 바꿔서 두 번 누르지 못하게 한다
       return {
         type: RESPONSE_TYPE.UPDATE_MESSAGE,
         data: { content: `신고 #${reportId} 처리 중이에요…`, components: [] },
       };
     }
 
-    void this.runOnReportMessage(interaction, reportId, () =>
-      action === 'blind'
-        ? this.reportModerationService.blind(reportId, userId)
-        : action === 'reject'
-          ? this.reportModerationService.reject(reportId, userId)
-          : this.reportModerationService.undo(reportId),
-    );
+    void this.runOnReportMessage(interaction, reportId, () => {
+      switch (action) {
+        case 'blind':
+          return this.reportModerationService.blind(reportId, userId);
+        case 'warn':
+          return this.reportModerationService.warn(reportId, userId);
+        case 'reject':
+          return this.reportModerationService.reject(reportId, userId);
+        case 'undo':
+          return this.reportModerationService.undo(reportId);
+      }
+    });
 
     return { type: RESPONSE_TYPE.DEFERRED_UPDATE_MESSAGE };
   }
 
-  private toPeriodPicker(reportId: number) {
-    const periods: RestrictionPeriod[] = [...RESTRICTION_DAYS, 'permanent'];
+  private toConfirmPrompt(action: ConfirmRequiredAction, reportId: number) {
+    const prompt = CONFIRM_PROMPTS[action];
 
     return {
       type: RESPONSE_TYPE.CHANNEL_MESSAGE,
       data: {
-        content: `신고 #${reportId} 회원의 이용 제한 기간을 골라 주세요.`,
+        content: prompt.content(reportId),
         flags: EPHEMERAL_FLAG,
         components: [
           {
             type: COMPONENT_TYPE.ACTION_ROW,
-            components: periods.map((period) => ({
-              type: COMPONENT_TYPE.BUTTON,
-              style:
-                period === 'permanent'
-                  ? BUTTON_STYLE.DANGER
-                  : BUTTON_STYLE.SECONDARY,
-              label: PERIOD_LABELS[String(period)],
-              custom_id: toReportCustomId('restrict', reportId, period),
-            })),
+            components: [
+              {
+                type: COMPONENT_TYPE.BUTTON,
+                style: BUTTON_STYLE.DANGER,
+                label: prompt.label,
+                custom_id: toReportCustomId(action, reportId, true),
+              },
+            ],
           },
         ],
       },
     };
   }
 
-  // 가리기 · 기각 · 되돌리기. 결과는 신고 메시지가 고쳐지는 것으로 보이고, 실패하거나 바뀐 게 없을 때만 따로 알린다
+  // 가리기 · 경고 · 기각 · 되돌리기. 결과(경고 수 · 정지)는 신고 메시지가 고쳐지는 것으로 보이고, 실패하거나 바뀐 게 없을 때만 따로 알린다
   private async runOnReportMessage(
     interaction: DiscordInteraction,
     reportId: number,
@@ -204,27 +230,27 @@ export class DiscordInteractionService {
     }
   }
 
-  private async runRestrict(
+  // 영구 정지 · 탈퇴. 결과는 확인 메시지를 고쳐서 누른 사람에게 보여준다
+  private async runConfirmed(
     interaction: DiscordInteraction,
+    action: ConfirmRequiredAction,
     reportId: number,
-    period: RestrictionPeriod,
     userId: string,
   ) {
     let content: string;
 
     try {
-      const result = await this.reportModerationService.restrict(
-        reportId,
-        period,
-        userId,
-      );
-      const until = result.restrictedUntil
-        ? `${toDiscordTime(result.restrictedUntil)} 까지`
-        : '영구';
+      if (action === 'ban') {
+        const result = await this.reportModerationService.ban(reportId, userId);
 
-      content = result.isTargetChanged
-        ? `✅ 신고 #${reportId} 회원을 이용 제한했어요. (${until})`
-        : `✅ 이미 제한 중인 회원이라 기간만 바꿨어요. (${until})`;
+        content = result.sanction
+          ? `✅ 신고 #${reportId} 회원을 영구 정지했어요.`
+          : `✅ 이미 영구 정지된 회원이라 남은 신고만 처리했어요.`;
+      } else {
+        await this.reportModerationService.withdraw(reportId, userId);
+
+        content = `✅ 신고 #${reportId} 회원을 탈퇴시켰어요. 같은 소셜 계정으로 다시 가입할 수 없어요.`;
+      }
     } catch (error) {
       content = this.toErrorMessage(error);
     }
@@ -236,7 +262,7 @@ export class DiscordInteractionService {
         { content, components: [], allowed_mentions: { parse: [] } },
       );
     } catch (error) {
-      this.logError('이용 제한 결과 메시지 수정 실패', error);
+      this.logError('처리 결과 메시지 수정 실패', error);
     }
   }
 

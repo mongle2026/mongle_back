@@ -1,5 +1,9 @@
 import { NotificationStatus } from './enums/notification.enum';
 import { ReportTargetType } from '../report/enums/report.enum';
+import {
+  SanctionNotice,
+  SUSPENSION_DAYS,
+} from '../report/sanction/sanction.constants';
 
 // 푸시 알림에 들어갈 제목/본문.
 // 알림 목록 문구는 프론트(NotificationListItem)가 만들고, 여기 문구는 그것과 같게 맞춰둔다.
@@ -64,6 +68,43 @@ const getReportNoticeBody = (
   targetType?: ReportTargetType | null,
 ) => (targetType ? (REPORT_NOTICE_BODIES[status]?.[targetType] ?? '') : '');
 
+// 회원 신고로 경고 · 영구 정지를 받았을 때의 운영정책 안내 첫 줄. (제재 내용이 없는 예전 안내는 위 문구)
+const USER_SANCTION_NOTICE_BODY = '운영정책 위반이 확인되었어요.';
+
+// 운영정책 안내 끝에 붙는 제재 내용. 프론트 NotificationListItem 과 같다
+const getSanctionNoticeSuffix = (
+  sanction?: SanctionNotice | null,
+  warningCount?: number | null,
+) => {
+  switch (sanction) {
+    case SanctionNotice.WARNING:
+      return `\n경고 ${warningCount ?? 1}회가 부여되었어요.`;
+    case SanctionNotice.SUSPENSION:
+      return `\n경고 ${warningCount}회 누적으로 ${SUSPENSION_DAYS}일간 이용이 정지돼요.`;
+    case SanctionNotice.PERMANENT:
+      return warningCount
+        ? `\n경고 ${warningCount}회 누적으로 계정 이용이 영구 정지돼요.`
+        : '\n계정 이용이 영구 정지돼요.';
+    default:
+      return '';
+  }
+};
+
+const getPolicyNoticeBody = (
+  targetType?: ReportTargetType | null,
+  sanction?: SanctionNotice | null,
+  warningCount?: number | null,
+) => {
+  const body =
+    sanction && targetType === ReportTargetType.USER
+      ? USER_SANCTION_NOTICE_BODY
+      : getReportNoticeBody(NotificationStatus.POLICY_NOTICE, targetType);
+
+  return body
+    ? `${body}${getSanctionNoticeSuffix(sanction, warningCount)}`
+    : '';
+};
+
 export const buildPushContent = (params: {
   status: NotificationStatus;
   actorNickname?: string | null;
@@ -75,6 +116,9 @@ export const buildPushContent = (params: {
   eventTitle?: string | null;
   // 신고 처리 알림의 대상 종류
   targetType?: ReportTargetType | null;
+  // 운영정책 안내의 제재 내용과 그때의 유효한 경고 수
+  sanction?: SanctionNotice | null;
+  warningCount?: number | null;
 }): { title: string; body: string } => {
   const nickname = params.actorNickname ?? '';
   // 아이디가 없으면(탈퇴한 회원) 이름으로 보여준다
@@ -128,7 +172,11 @@ export const buildPushContent = (params: {
     case NotificationStatus.POLICY_NOTICE:
       return {
         title: POLICY_NOTICE_TITLE,
-        body: getReportNoticeBody(params.status, params.targetType),
+        body: getPolicyNoticeBody(
+          params.targetType,
+          params.sanction,
+          params.warningCount,
+        ),
       };
   }
 };

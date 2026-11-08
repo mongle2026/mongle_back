@@ -39,16 +39,16 @@ export enum ReportStatus {
   REJECTED = 'REJECTED',
 }
 
-// 처리한 방법. BLIND · RESTRICT 는 RESOLVED, REJECT 는 REJECTED 와 함께 남는다
+// 처리한 방법. REJECT 는 REJECTED, 나머지는 RESOLVED 와 함께 남는다
 export enum ReportAction {
-  // 피드 · 댓글 · 편지 가림
+  // 피드 · 댓글 · 편지 가림. 작성자에게 경고 1회
   BLIND = 'BLIND',
-  // 회원 이용 제한
-  RESTRICT = 'RESTRICT',
+  // 회원 신고: 경고 1회 (가릴 글이 없다)
+  WARN = 'WARN',
+  // 경고 횟수와 관계없이 바로 영구 정지. 글 신고면 글도 가린다
+  BAN = 'BAN',
   // 운영정책 위반 없음
   REJECT = 'REJECT',
+  // 예전 방식: 운영자가 기간(3 · 7 · 30일 · 영구)을 골라 회원 이용 제한. 지금은 쓰지 않고 예전 기록만 남아 있다
+  RESTRICT = 'RESTRICT',
 }
-
-// 이용 제한 기간(일). 'permanent' 는 영구 제한
-export const RESTRICTION_DAYS = [3, 7, 30] as const;
-export type RestrictionPeriod = (typeof RESTRICTION_DAYS)[number] | 'permanent';

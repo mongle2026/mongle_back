@@ -71,7 +71,7 @@ export class UserEntity {
   @Column({ name: 'withdrawn_at', type: 'datetime', nullable: true })
   withdrawnAt!: Date | null;
 
-  // 운영자가 이용을 제한한 시각. 신고 처리 스크립트(npm run report:handle)가 채운다.
+  // 이용을 제한한 시각. 신고 처리에서 경고가 쌓이거나(2회 7일, 3회 영구) 운영자가 영구 정지하면 채운다 (report/sanction).
   // 제한 중이면 API 를 막고(jwt-auth.guard.ts) 앱은 제재 화면만 띄운다.
   // 편지함에서는 이름 · 프로필 사진을 '(이용 제한된 회원)'으로 바꿔 보여준다
   @Column({ name: 'restricted_at', type: 'datetime', nullable: true })
@@ -82,7 +82,7 @@ export class UserEntity {
   @Column({ name: 'restricted_until', type: 'datetime', nullable: true })
   restrictedUntil!: Date | null;
 
-  // 이용 제한 사유. 제한할 때 고른 신고(report:handle 에 넘긴 신고 번호)의 사유를 넣는다
+  // 이용 제한 사유. 제한을 내린 신고의 사유를 넣는다
   @Column({ name: 'restricted_reason', type: 'varchar', length: 20, nullable: true })
   restrictedReason!: ReportReason | null;
 

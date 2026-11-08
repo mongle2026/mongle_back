@@ -1,13 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import axios from 'axios';
 import {
   AppealStatus,
   RestrictionAppealEntity,
 } from './entities/restriction-appeal.entity';
 import { toAppealCustomId } from './appeal-custom-id';
+import { UserSanctionEntity } from '../sanction/entities/user-sanction.entity';
 import { ReportEntity } from '../entities/report.entity';
 import {
   REPORT_REASON_LABELS,
@@ -245,8 +246,20 @@ export class AppealDiscordService {
     ];
   }
 
-  // 운영자가 바로 찾아볼 수 있게 이 회원을 제한한 신고 번호를 같이 보여준다
+  // 운영자가 바로 찾아볼 수 있게 이 회원을 제한한 신고 번호를 같이 보여준다 (경고 누적 · 영구 정지 → 예전 방식 순)
   private async findRestrictReportId(userId: number) {
+    const sanction = await this.dataSource
+      .getRepository(UserSanctionEntity)
+      .findOne({
+        select: { id: true, reportId: true },
+        where: { userId, restriction: Not(IsNull()), revokedAt: IsNull() },
+        order: { id: 'DESC' },
+      });
+
+    if (sanction) {
+      return Number(sanction.reportId);
+    }
+
     const report = await this.dataSource.getRepository(ReportEntity).findOne({
       select: { id: true },
       where: {
