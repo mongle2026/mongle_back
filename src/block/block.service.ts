@@ -24,7 +24,8 @@ type BlockUserRow = Pick<
 };
 
 /*
- * 회원 차단. 한쪽이 차단하면 두 사람 모두에게 서로의 글 · 댓글 · 편지 · 알림이 보이지 않는다.
+ * 회원 차단. 한쪽이 차단하면 두 사람 모두에게 서로의 글이 (차단 전에 쓴 글 · 북마크한 글까지) 보이지 않는다.
+ * 댓글 · 편지 · 알림은 차단 전에 받은 것은 그대로 보이고, 차단한 뒤로는 주고받지 못한다.
  * 차단하면 서로 걸린 팔로우를 모두 끊고, 차단된 동안은 다시 팔로우할 수 없다.
  * 각 목록에서 거르는 조건은 block.sql.ts 의 blockedBetweenSql 을 쓴다.
  */
@@ -179,5 +180,23 @@ export class BlockService {
     );
 
     return rows.map((row) => Number(row.otherId));
+  }
+
+  // 내가 차단했거나 나를 차단한 사람의 id → 차단한 시각. 서로 차단했으면 먼저 차단한 시각
+  async getBlockedPairSince(userId: number): Promise<Map<number, Date>> {
+    const rows: Array<{ otherId: string; blockedAt: Date }> =
+      await this.blockRepository.query(
+        `SELECT otherId, MIN(blockedAt) AS blockedAt FROM (
+            SELECT \`blocked_id\` AS otherId, \`created_at\` AS blockedAt FROM \`user_block\` WHERE \`blocker_id\` = ?
+            UNION ALL
+            SELECT \`blocker_id\` AS otherId, \`created_at\` AS blockedAt FROM \`user_block\` WHERE \`blocked_id\` = ?
+          ) pair
+          GROUP BY otherId`,
+        [userId, userId],
+      );
+
+    return new Map(
+      rows.map((row) => [Number(row.otherId), new Date(row.blockedAt)]),
+    );
   }
 }

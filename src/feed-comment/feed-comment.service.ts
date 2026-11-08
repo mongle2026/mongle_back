@@ -38,7 +38,7 @@ export class FeedCommentService {
     this.validateId(feedId, 'feedId');
     this.validateId(userId, 'userId');
 
-    const { feed, blockedUserIds } = await this.findVisibleFeedOrFail(
+    const { feed, blockedSince } = await this.findVisibleFeedOrFail(
       feedId,
       userId,
     );
@@ -96,8 +96,8 @@ export class FeedCommentService {
         throw new NotFoundException('답글을 달 댓글을 찾을 수 없습니다.');
       }
 
-      // 글 작성자는 차단 사이가 된 사람의 댓글 묶음을 볼 수 없으니 답글도 달 수 없다
-      if (blockedUserIds.has(Number(rootComment.userId))) {
+      // 차단 사이가 된 사람의 댓글 묶음은 차단 전 댓글만 볼 수 있고, 답글은 더 달 수 없다
+      if (blockedSince.has(Number(rootComment.userId))) {
         throw new NotFoundException('답글을 달 댓글을 찾을 수 없습니다.');
       }
 
@@ -172,7 +172,7 @@ export class FeedCommentService {
     this.validateId(feedId, 'feedId');
     this.validateId(userId, 'userId');
 
-    const { feed, blockedUserIds } = await this.findVisibleFeedOrFail(
+    const { feed, blockedSince } = await this.findVisibleFeedOrFail(
       feedId,
       userId,
     );
@@ -193,11 +193,13 @@ export class FeedCommentService {
       },
     });
 
-    // 차단 사이인 사람의 댓글은 뺀다. 원댓글이 빠지면 그 묶음의 답글도 함께 빠진다 (toCommentGroups)
+    // 차단 사이인 사람의 댓글은 차단 전에 단 것만 남긴다 (차단 뒤에는 댓글을 달 수 없지만 한 번 더 거른다).
+    // 원댓글이 빠지면 그 묶음의 답글도 함께 빠진다 (toCommentGroups)
     const visibleComments = isFeedAuthor
-      ? comments.filter(
-          (comment) => !blockedUserIds.has(Number(comment.userId)),
-        )
+      ? comments.filter((comment) => {
+          const since = blockedSince.get(Number(comment.userId));
+          return !since || comment.createdAt < since;
+        })
       : this.filterVisibleCommentsForUser(comments, userId, feedAuthorId);
 
     return this.toCommentGroups(visibleComments);
@@ -379,21 +381,20 @@ export class FeedCommentService {
   }
 
   /*
-   * 댓글을 보거나 달 글. 글 작성자와 차단 사이(누가 차단했든)면 없는 글로 본다.
-   * 차단 사이인 사람 목록도 같이 돌려줘서 댓글을 거를 때 쓴다. 두 조회는 동시에 한다.
+   * 댓글을 보거나 달 글. 글 작성자와 차단 사이(누가 차단했든)면 차단 전 글이라도 없는 글로 본다.
+   * 차단 사이인 사람 → 차단 시각도 같이 돌려줘서 댓글을 거를 때 쓴다. 두 조회는 동시에 한다.
    */
   private async findVisibleFeedOrFail(feedId: number, userId: number) {
-    const [feed, blockedUserIds] = await Promise.all([
+    const [feed, blockedSince] = await Promise.all([
       this.findFeedOrFail(feedId),
-      this.blockService.getBlockedPairUserIds(userId),
+      this.blockService.getBlockedPairSince(userId),
     ]);
-    const blockedUserIdSet = new Set(blockedUserIds);
 
-    if (blockedUserIdSet.has(Number(feed.record.userId))) {
+    if (blockedSince.has(Number(feed.record.userId))) {
       throw new NotFoundException('피드를 찾을 수 없습니다.');
     }
 
-    return { feed, blockedUserIds: blockedUserIdSet };
+    return { feed, blockedSince };
   }
 
   private async findFeedOrFail(feedId: number) {
