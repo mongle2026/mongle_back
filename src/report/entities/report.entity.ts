@@ -20,12 +20,18 @@ import {
 export type ReportContentSnapshot = Record<string, unknown>;
 
 /**
- * 신고. 같은 사람이 같은 대상을 두 번 신고할 수 없다.
+ * 신고. 같은 사람이 같은 대상에 처리 전 신고를 두 개 가질 수 없다.
+ * 처리(가림 · 경고 · 영구 정지 · 기각)가 끝난 뒤에는 같은 대상을 다시 신고할 수 있다.
  * 대상(target_type + target_id)은 글이 지워진 뒤에도 신고가 남아야 해서 FK 를 걸지 않는다.
  * 피드 · 댓글은 삭제 30일 뒤 정리 크론이 완전히 지우므로, 신고 당시 내용을 content_snapshot 에 복사해 둔다.
  */
 @Entity('report')
-@Unique('UQ_report_reporter_target', ['reporterId', 'targetType', 'targetId'])
+@Unique('UQ_report_pending_reporter_target', [
+  'reporterId',
+  'targetType',
+  'targetId',
+  'pendingKey',
+])
 @Index('IDX_report_target', ['targetType', 'targetId'])
 @Index('IDX_report_reported_user_id', ['reportedUserId'])
 @Index('IDX_report_status_created_at', ['status', 'createdAt'])
@@ -82,6 +88,22 @@ export class ReportEntity {
     default: ReportStatus.PENDING,
   })
   status!: ReportStatus;
+
+  /**
+   * 처리 전이면 1, 처리했으면 null. DB 가 status 로 계산한다.
+   * MySQL 유니크 인덱스는 null 끼리 겹쳐도 되므로, 처리 전 신고만 중복을 막는다 (UQ_report_pending_reporter_target)
+   */
+  @Column({
+    name: 'pending_key',
+    type: 'tinyint',
+    nullable: true,
+    generatedType: 'STORED',
+    asExpression: "IF(`status` = 'PENDING', 1, NULL)",
+    insert: false,
+    update: false,
+    select: false,
+  })
+  pendingKey!: number | null;
 
   // 처리한 방법. 처리 전이면 null
   @Column({ type: 'varchar', length: 20, nullable: true })

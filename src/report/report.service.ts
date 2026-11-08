@@ -27,7 +27,8 @@ type CreateReportParams = {
 
 /*
  * 신고. 저장하면 디스코드 채널로 알림을 보낸다. 받은 신고를 보는 화면은 없다.
- * 이미 신고한 대상을 다시 신고해도 에러 없이 응답하고, isAlreadyReported 로 알려준다.
+ * 처리 전인 신고가 있는 대상을 다시 신고해도 에러 없이 응답하고, isAlreadyReported 로 알려준다.
+ * 처리(가림 · 경고 · 영구 정지 · 기각)가 끝난 대상은 다시 신고할 수 있다.
  * 지워진 대상, 탈퇴한 회원, 나 자신이나 내가 쓴 글은 신고할 수 없다.
  */
 @Injectable()
@@ -193,7 +194,7 @@ export class ReportService {
         }),
       );
     } catch (error) {
-      // 이미 신고한 대상이면 처음 신고만 남기고, 디스코드 알림도 다시 보내지 않는다
+      // 처리 전인 신고가 이미 있으면 그 신고만 남기고, 디스코드 알림도 다시 보내지 않는다
       if (isDuplicateEntryError(error)) {
         return { isReported: true, isAlreadyReported: true };
       }

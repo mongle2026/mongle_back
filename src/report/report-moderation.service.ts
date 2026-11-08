@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, EntityManager, In, Not } from 'typeorm';
+import { DataSource, EntityManager, In } from 'typeorm';
 import { ReportEntity } from './entities/report.entity';
 import {
   ReportAction,
@@ -264,7 +264,7 @@ export class ReportModerationService {
 
   /*
    * 잘못 처리했을 때 되돌린다. 가림을 풀고, 이 대상으로 준 경고 · 영구 정지를 없애고(이용 제한도 이전으로),
-   * 처리했던 신고를 다시 처리 전으로 돌린다.
+   * 처리했던 신고를 다시 처리 전으로 돌린다. (신고한 사람마다 하나씩. findReportsToReopen 참고)
    * 이미 보낸 알림은 지우지 않고, 되돌렸다는 알림도 보내지 않는다. 탈퇴시킨 회원은 되돌릴 수 없다.
    */
   async undo(reportId: number): Promise<ReportHandleResult> {
@@ -309,20 +309,20 @@ export class ReportModerationService {
         isTargetChanged = true;
       }
 
-      const updated = await manager.update(
-        ReportEntity,
-        {
-          targetType: report.targetType,
-          targetId: report.targetId,
-          status: Not(ReportStatus.PENDING),
-        },
-        {
-          status: ReportStatus.PENDING,
-          action: null,
-          handledAt: null,
-          handledBy: null,
-        },
-      );
+      const reopenIds = await this.findReportsToReopen(manager, report);
+
+      if (reopenIds.length > 0) {
+        await manager.update(
+          ReportEntity,
+          { id: In(reopenIds) },
+          {
+            status: ReportStatus.PENDING,
+            action: null,
+            handledAt: null,
+            handledBy: null,
+          },
+        );
+      }
 
       return {
         report,
@@ -330,7 +330,7 @@ export class ReportModerationService {
           targetType: report.targetType,
           targetId: Number(report.targetId),
           isTargetChanged,
-          reportCount: updated.affected ?? 0,
+          reportCount: reopenIds.length,
           sanction: null,
         },
       };
@@ -506,6 +506,45 @@ export class ReportModerationService {
     return true;
   }
 
+  /*
+   * 되돌릴 때 다시 처리 전으로 돌릴 신고. 같은 사람은 같은 대상에 처리 전 신고를 하나만 가질 수 있어서
+   * (처리가 끝난 뒤 다시 신고할 수 있다) 사람마다 가장 최근에 처리된 신고 하나만 돌리고,
+   * 이미 처리 전 신고가 있는 사람의 신고는 그대로 둔다.
+   * 대상의 신고 행을 잠가서, 되돌리는 동안 같은 대상에 새 신고가 끼어들지 않게 한다.
+   */
+  private async findReportsToReopen(
+    manager: EntityManager,
+    report: ReportEntity,
+  ) {
+    const reports = await manager.find(ReportEntity, {
+      select: { id: true, reporterId: true, status: true },
+      where: { targetType: report.targetType, targetId: report.targetId },
+      order: { id: 'DESC' },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    const pendingReporterIds = new Set(
+      reports
+        .filter(({ status }) => status === ReportStatus.PENDING)
+        .map(({ reporterId }) => Number(reporterId)),
+    );
+    const reopenIds: number[] = [];
+
+    for (const { id, reporterId, status } of reports) {
+      if (
+        status === ReportStatus.PENDING ||
+        pendingReporterIds.has(Number(reporterId))
+      ) {
+        continue;
+      }
+
+      pendingReporterIds.add(Number(reporterId));
+      reopenIds.push(Number(id));
+    }
+
+    return reopenIds;
+  }
+
   // 같은 대상의 처리 전 신고를 모두 처리한다. 알림을 보낼 신고한 사람을 알기 위해 처리한 신고를 돌려준다
   private async resolvePendingReports(
     manager: EntityManager,
@@ -551,7 +590,7 @@ export class ReportModerationService {
     }));
   }
 
-  // 신고한 사람마다 한 번씩. 같은 사람은 같은 대상을 한 번만 신고할 수 있다. 탈퇴한 회원에게는 보내지 않는다
+  // 신고한 사람마다 한 번씩. 같은 사람은 같은 대상에 처리 전 신고를 하나만 가질 수 있다. 탈퇴한 회원에게는 보내지 않는다
   private async notifyReporters(
     reports: HandledReports['pendingReports'],
     status:
