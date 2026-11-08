@@ -317,6 +317,7 @@ export class ReportModerationService {
           { id: In(reopenIds) },
           {
             status: ReportStatus.PENDING,
+            pendingKey: 1,
             action: null,
             handledAt: null,
             handledBy: null,
@@ -576,6 +577,7 @@ export class ReportModerationService {
             action === ReportAction.REJECT
               ? ReportStatus.REJECTED
               : ReportStatus.RESOLVED,
+          pendingKey: null,
           action,
           handledAt: now,
           handledBy,

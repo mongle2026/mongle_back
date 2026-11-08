@@ -90,20 +90,19 @@ export class ReportEntity {
   status!: ReportStatus;
 
   /**
-   * 처리 전이면 1, 처리했으면 null. DB 가 status 로 계산한다.
+   * 처리 전이면 1, 처리했으면 null. status 를 바꿀 때 함께 바꾼다 (report-moderation.service.ts).
    * MySQL 유니크 인덱스는 null 끼리 겹쳐도 되므로, 처리 전 신고만 중복을 막는다 (UQ_report_pending_reporter_target)
+   * DB 생성 컬럼으로 만들면 TypeORM 이 PK 없는 typeorm_metadata 테이블을 만들려 하는데,
+   * Aiven 은 sql_require_primary_key 가 켜져 있어 실패하므로 일반 컬럼으로 둔다.
    */
   @Column({
     name: 'pending_key',
     type: 'tinyint',
     nullable: true,
-    generatedType: 'STORED',
-    asExpression: "IF(`status` = 'PENDING', 1, NULL)",
-    insert: false,
-    update: false,
+    default: 1,
     select: false,
   })
-  pendingKey!: number | null;
+  pendingKey!: 1 | null;
 
   // 처리한 방법. 처리 전이면 null
   @Column({ type: 'varchar', length: 20, nullable: true })
