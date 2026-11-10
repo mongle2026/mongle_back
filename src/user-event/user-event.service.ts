@@ -50,38 +50,47 @@ export class UserEventService {
   }
 
   /**
-   * 앱이 모아서 보낸 이벤트 (POST /events). 없는 글에 대한 이벤트는 버린다.
-   * 지워진 글이라도 기록은 남긴다 (상세를 보던 중에 글이 지워질 수 있다)
+   * 앱이 모아서 보낸 이벤트 (POST /events). 없는 글 · 음악에 대한 이벤트는 버린다.
+   * - FEED_DETAIL_VIEW: feed_id 와 그 글의 music_id. 지워진 글이라도 남긴다 (상세를 보던 중에 글이 지워질 수 있다)
+   * - MUSIC_LISTEN: music_id 만. 어디서(피드 · 보관함 · 편지) 틀었는지는 남기지 않는다
    */
   async recordClientEvents(userId: number, events: ClientUserEventDto[]) {
-    const feedIds = [...new Set(events.map(event => event.feedId))];
-    const rows = (await this.dataSource.query(
-      `SELECT f.id AS feedId, r.music_id AS musicId
-         FROM feed f
-         INNER JOIN record r ON r.id = f.record_id
-        WHERE f.id IN (?)`,
-      [feedIds],
-    )) as { feedId: string; musicId: string }[];
+    const detailEvents = events.filter(event => event.type === UserEventType.FEED_DETAIL_VIEW);
+    const listenEvents = events.filter(event => event.type === UserEventType.MUSIC_LISTEN);
 
-    const musicIdByFeedId = new Map(rows.map(row => [Number(row.feedId), Number(row.musicId)]));
+    const [musicIdByFeedId, existingMusicIds] = await Promise.all([
+      this.findMusicIdByFeedId(detailEvents.map(event => Number(event.feedId))),
+      this.findExistingMusicIds(listenEvents.map(event => Number(event.musicId))),
+    ]);
     const now = Date.now();
 
-    const values = events
-      .filter(event => musicIdByFeedId.has(event.feedId))
-      .map(event => {
-        const isListen = event.type === UserEventType.MUSIC_LISTEN;
+    const detailValues = detailEvents
+      .filter(event => musicIdByFeedId.has(Number(event.feedId)))
+      .map(event => ({
+        userId,
+        eventType: event.type,
+        feedId: Number(event.feedId),
+        musicId: musicIdByFeedId.get(Number(event.feedId)) ?? null,
+        durationMs: event.durationMs,
+        positionMs: null,
+        detail: null,
+        occurredAt: this.clampOccurredAt(event.occurredAt, now),
+      }));
 
-        return {
-          userId,
-          eventType: event.type,
-          feedId: event.feedId,
-          musicId: musicIdByFeedId.get(event.feedId) ?? null,
-          durationMs: event.durationMs,
-          positionMs: isListen ? event.positionMs ?? null : null,
-          detail: isListen ? event.endReason ?? null : null,
-          occurredAt: this.clampOccurredAt(event.occurredAt, now),
-        };
-      });
+    const listenValues = listenEvents
+      .filter(event => existingMusicIds.has(Number(event.musicId)))
+      .map(event => ({
+        userId,
+        eventType: event.type,
+        feedId: null,
+        musicId: Number(event.musicId),
+        durationMs: event.durationMs,
+        positionMs: event.positionMs ?? null,
+        detail: event.endReason ?? null,
+        occurredAt: this.clampOccurredAt(event.occurredAt, now),
+      }));
+
+    const values = [...detailValues, ...listenValues];
 
     if (values.length > 0) {
       await this.dataSource
@@ -109,6 +118,31 @@ export class UserEventService {
 
       if ((result.affectedRows ?? 0) < PURGE_BATCH) break;
     }
+  }
+
+  private async findMusicIdByFeedId(feedIds: number[]) {
+    if (feedIds.length === 0) return new Map<number, number>();
+
+    const rows = (await this.dataSource.query(
+      `SELECT f.id AS feedId, r.music_id AS musicId
+         FROM feed f
+         INNER JOIN record r ON r.id = f.record_id
+        WHERE f.id IN (?)`,
+      [[...new Set(feedIds)]],
+    )) as { feedId: string; musicId: string }[];
+
+    return new Map(rows.map(row => [Number(row.feedId), Number(row.musicId)]));
+  }
+
+  private async findExistingMusicIds(musicIds: number[]) {
+    if (musicIds.length === 0) return new Set<number>();
+
+    const rows = (await this.dataSource.query(
+      'SELECT id FROM music WHERE id IN (?)',
+      [[...new Set(musicIds)]],
+    )) as { id: string }[];
+
+    return new Set(rows.map(row => Number(row.id)));
   }
 
   // 앱 시각은 믿지 않고 [지금 - 7일, 지금] 안으로 맞춘다

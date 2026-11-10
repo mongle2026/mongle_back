@@ -1,10 +1,12 @@
-// 사용자 행동 기록 종류. 추천 피드 개선 · 분석용으로 쌓는다 (아직 추천 점수에는 쓰지 않는다)
+// 사용자 행동 기록 종류. 추천 피드 개선 · 분석용으로 쌓는다.
+// 추천 점수에 쓰는 것: FEED_DETAIL_VIEW · MUSIC_LISTEN (src/recommendation/README.md "행동 기록을 추천에 쓰는 방식")
 export enum UserEventType {
   // ── 앱이 보내는 이벤트 (POST /events) ──
   // 피드 상세에 머문 시간. duration_ms = 화면을 보고 있던 시간 (앱이 백그라운드에 있던 시간은 빼고)
   FEED_DETAIL_VIEW = 'FEED_DETAIL_VIEW',
-  // 미리듣기를 한 번 틀었다가 멈출 때까지. duration_ms = 실제로 소리가 나온 시간,
-  // position_ms = 멈춘 지점(곡 안에서 몇 초), detail = 멈춘 이유(MusicListenEndReason)
+  // 미리듣기를 한 번 틀었다가 멈출 때까지 (피드 · 보관함 · 편지. 글쓰기 화면은 빼고).
+  // music_id = 들은 음악 (feed_id 는 비운다. 어디서 틀었는지는 남기지 않는다),
+  // duration_ms = 실제로 소리가 나온 시간, position_ms = 멈춘 지점(곡 안에서 몇 초), detail = 멈춘 이유(MusicListenEndReason)
   MUSIC_LISTEN = 'MUSIC_LISTEN',
 
   // ── 서버가 남기는 이벤트 (실제로 상태가 바뀌었을 때만) ──

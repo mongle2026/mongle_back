@@ -9,7 +9,7 @@
 | 앱 "추천" 탭 | **추천 알고리즘** `GET /feed/recommended` |
 | 앱 "최신" 탭 (새로 추가) | 최신순 `GET /feed` (예전 추천 탭과 같은 목록) |
 | 앱 "팔로잉" 탭 | 그대로 `GET /feed/following` |
-| 재생 기록 (`music_play`) | 앱이 새 곡을 틀 때 `POST /feed/:feedId/play` |
+| 재생 기록 (`music_play`) | 피드 · 보관함 · 편지에서 새 곡을 틀 때 `POST /music/:musicId/play` (글쓰기 화면 제외) |
 | 노출 기록 (`feed_impression`) | 추천 API 가 내려준 글을 서버가 기록 |
 | 행동 기록 (`user_event`) | 피드 상세 체류 · 음악 들은 시간(앱 → `POST /events`), 좋아요 · 북마크와 취소(서버) |
 | 추천 점수에 쓰는 데이터 | 기록 · 좋아요 · 북마크 · 댓글 · 재생 · 노출 · 편지 · 애플뮤직 차트 + **상세 체류 시간 · 음악 들은 시간** ([행동 기록을 쓰는 방식](#행동-기록을-추천에-쓰는-방식)) |
@@ -44,7 +44,8 @@ src/user-event/
   user-event.service.ts      ← 기록 저장 · 정리 크론(05:10, 90일)
   user-event.controller.ts   ← POST /events
 src/feed/feed.service.ts      getRecommendedFeeds(), 좋아요/북마크에서 서버 이벤트 기록
-src/feed/feed.controller.ts   GET /feed/recommended, POST /feed/:feedId/play
+src/feed/feed.controller.ts   GET /feed/recommended
+src/music/music.controller.ts POST /music/:musicId/play
 
 앱 (C:/mongle_front_v2)
 features/feed/constants.js              ← 탭 3개와 탭별 API 경로 (FEED_PATH_BY_TAB)
@@ -96,7 +97,7 @@ shared/hooks/useFeedMusicPlayback.js    ← 재생 훅. 위 두 기록을 여기
 | 선호 1. 직접 기록한 음악 | `signalWeights.ownRecord`. 피드 · 편지 모두 (record 테이블) |
 | 선호 2. 재생 + 반응 남긴 글의 음악 | `signalWeights.playedAndInteracted` |
 | 선호 3. 반응 남긴 글의 음악 | `signalWeights.interacted`. 반응 = 좋아요 · 북마크 · 댓글 · **상세를 15초 이상 읽음**. 글 하나당 한 번 |
-| 선호 4. 재생해 본 음악 | `signalWeights.played`. 틀어 본 곡(`music_play`) 중 **들은 시간 합이 5초 미만인 곡은 뺀다** |
+| 선호 4. 재생해 본 음악 | `signalWeights.played`. 피드 · 보관함(내 글) · 편지에서 틀어 본 곡(`music_play`, 글쓰기 화면 제외) 중 **들은 시간 합이 10초 미만인 곡은 뺀다** |
 | 음악 자체 · 장르 · 아티스트 | `matchWeights.sameMusic / sameArtist / sameGenre` |
 | 팔로우 30 / 선호 60 / 인기 10 | `mix` |
 | 같은 작성자 · 같은 음악 사이 최소 2개 | `spacing` (페이지가 바뀌어도 이어서 지킨다) |
@@ -122,9 +123,9 @@ shared/hooks/useFeedMusicPlayback.js    ← 재생 훅. 위 두 기록을 여기
 | 무엇 | 어디에 | 언제 쌓이나 | 보관 |
 | --- | --- | --- | --- |
 | 노출된 글 | `feed_impression` (user_id, feed_id, served_at) | 추천 API 가 글을 내려줄 때 (서버) | 30일 |
-| 재생해 본 음악 | `music_play` (user_id, music_id, play_count, last_played_at) | 앱에서 새 곡을 틀 때 | 계속 |
+| 재생해 본 음악 | `music_play` (user_id, music_id, play_count, last_played_at) | 피드 · 보관함 · 편지에서 새 곡을 틀 때 (앱) | 계속 |
 | 피드 상세 체류 시간 | `user_event` `FEED_DETAIL_VIEW` · `duration_ms` | 상세를 떠날 때 · 앱이 백그라운드로 갈 때 (앱) | 90일 |
-| 음악 들은 시간 · 멈춘 지점 · 이유 | `user_event` `MUSIC_LISTEN` · `duration_ms` · `position_ms` · `detail`(PAUSE/END/SWITCH/STOP) | 소리가 멈출 때 (앱) | 90일 |
+| 음악 들은 시간 · 멈춘 지점 · 이유 | `user_event` `MUSIC_LISTEN` · `music_id` · `duration_ms` · `position_ms` · `detail`(PAUSE/END/SWITCH/STOP) | 피드 · 보관함 · 편지에서 소리가 멈출 때 (앱) | 90일 |
 | 좋아요 / 취소 시각 | `user_event` `LIKE` / `UNLIKE` | 실제로 바뀌었을 때 (서버) | 90일 |
 | 북마크 / 취소 시각 | `user_event` `BOOKMARK` / `UNBOOKMARK` | 실제로 바뀌었을 때 (서버) | 90일 |
 | 댓글 작성 / 삭제 시각 | `feed_comment.created_at` / `deleted_at` (원래 있던 칸) | 댓글 작성 · 삭제 | 삭제 후 30일 뒤 행이 지워진다 |
@@ -132,6 +133,9 @@ shared/hooks/useFeedMusicPlayback.js    ← 재생 훅. 위 두 기록을 여기
 
 - 앱 이벤트는 로그인했을 때만 모은다. 20개가 모이거나, 30초가 지나거나, 앱이 백그라운드로 가면 한 번에 보낸다 (최대 50개씩).
 - `user_event.feed_id` 에는 FK 가 없다. 글이 지워져도 기록은 남고, `music_id` 도 같이 적어 둔다.
+- **재생 기록은 음악 id 로만 남긴다.** 어디서(피드 · 보관함 내 글 · 편지) 틀었는지는 추천에 필요 없어서 남기지 않는다
+  (`MUSIC_LISTEN` 의 `feed_id` 는 비어 있다). 앱은 재생 버튼을 누를 때 `handlePressPlayback({ feedId, previewUrl, musicId })` 로
+  서버 음악 id(응답의 `music.musicId`, 편지는 `record.music.id`)를 넘기고, 넘기지 않은 화면(글쓰기)은 기록하지 않는다.
 - 앱이 보낸 시각(`occurred_at`)은 서버 시각 기준 [7일 전, 지금] 안으로 맞춘다. 서버가 받은 시각은 `created_at`.
 - 보관 기간은 `user-event.service.ts` 의 `USER_EVENT_RETENTION_DAYS`, `recommendation.config.ts` 의 `seen.retentionDays`.
 
@@ -171,7 +175,7 @@ shared/hooks/useFeedMusicPlayback.js    ← 재생 훅. 위 두 기록을 여기
 | 기록 | 쓰는 곳 | 규칙 |
 | --- | --- | --- |
 | 상세 체류 (`FEED_DETAIL_VIEW`) | 선호 3 "반응" | 한 글에 머문 시간 합이 `engagement.detailViewMinMs`(15초) 이상이면 좋아요와 같은 반응으로 친다. 재생도 했으면 선호 2 |
-| 들은 시간 (`MUSIC_LISTEN`) | 선호 4 "재생" | 틀어 본 곡 중 들은 시간 합이 `engagement.listenMinMs`(5초) 미만이면 뺀다. 들은 시간 기록이 없으면(앱이 보내기 전에 종료 등) 틀어 본 것만으로 센다 |
+| 들은 시간 (`MUSIC_LISTEN`) | 선호 4 "재생" | 틀어 본 곡 중 들은 시간 합이 `engagement.listenMinMs`(10초) 미만이면 뺀다. 들은 시간 기록이 없으면(앱이 보내기 전에 종료 등) 틀어 본 것만으로 센다 |
 | 좋아요 · 북마크 취소 (`UNLIKE` / `UNBOOKMARK`) | **안 쓴다** | 취소하면 `feed_like` · `bookmark` 행이 지워져서 이미 신호에서 빠진다. 취소를 감점으로 쓰면 "마음이 바뀜"을 "싫어함"으로 보게 돼 근거가 약하다. 분석용으로만 둔다 |
 | 좋아요 · 북마크 (`LIKE` / `BOOKMARK`) | 안 쓴다 | 같은 내용이 `feed_like` · `bookmark` 테이블에 있다 |
 
@@ -202,10 +206,10 @@ curl "$API/feed/recommended?limit=10"
 curl -H "Authorization: Bearer $TOKEN" "$API/feed/recommended?limit=10"
 curl -H "Authorization: Bearer $TOKEN" "$API/feed/recommended?limit=10&cursor=<nextCursor>"
 # 재생 기록
-curl -X POST -H "Authorization: Bearer $TOKEN" "$API/feed/123/play"
+curl -X POST -H "Authorization: Bearer $TOKEN" "$API/music/45/play"
 # 행동 기록
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" "$API/events" \
-  -d '{"events":[{"type":"MUSIC_LISTEN","feedId":123,"durationMs":4100,"positionMs":4100,"endReason":"PAUSE","occurredAt":"2026-11-11T00:00:00Z"}]}'
+  -d '{"events":[{"type":"MUSIC_LISTEN","musicId":45,"durationMs":4100,"positionMs":4100,"endReason":"PAUSE","occurredAt":"2026-11-11T00:00:00Z"}]}'
 ```
 
 어느 버킷에서 뽑혔는지 보고 싶으면 `mixFeed` 결과의 `source` ('following' | 'preference' | 'popular' | 'fallback')를 로그로 찍는다.
@@ -219,6 +223,6 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 - **편지 · 차트 점수는 음악 단위.** 같은 곡을 기록한 글은 모두 같은 점수를 더 받는다.
 - **글이 적으면 간격 규칙을 푼다.** 같은 작성자 글만 남았을 때 빈 페이지 대신 붙여서 보여 준다.
 - **2026-11-10 전 가입자의 가입일시는 정확하지 않다.** 모두 2026-11-10 00:00(KST)로 넣어서 11-24 까지는 신규 회원으로 본다 (취향 신호가 충분하면 영향 없음).
-- **음악 기록은 피드에서 튼 것만.** 편지 상세 · 글쓰기 화면의 미리듣기는 기록하지 않는다.
+- **글쓰기 화면의 미리듣기는 기록하지 않는다.** 검색 결과라 서버 음악 id 가 없다. 그 밖의 화면(피드 · 보관함 · 편지)은 모두 기록한다.
 - **앱 이벤트는 놓칠 수 있다.** 듣는 도중에 앱이 종료되면 그 `MUSIC_LISTEN` 은 남지 않는다. 보내기 전에 앱이 종료되면 모아 둔 기록도 사라진다.
 - **상세 체류는 여러 줄로 나뉠 수 있다.** 앱이 백그라운드로 갈 때마다 그때까지 잰 시간을 따로 보낸다.

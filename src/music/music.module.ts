@@ -5,6 +5,7 @@ import { MusicController } from './music.controller';
 import { AppleMusicTokenService } from './apple-music-token.service';
 import { MusicEntity } from './entities/music.entity';
 import { PopularMusicEntity } from './entities/popular-music.entity';
+import { RecommendationModule } from '../recommendation/recommendation.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { PopularMusicEntity } from './entities/popular-music.entity';
       MusicEntity,
       PopularMusicEntity,
     ]),
+    RecommendationModule,
   ],
   controllers: [MusicController],
   providers: [MusicService, AppleMusicTokenService],

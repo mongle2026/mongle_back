@@ -564,23 +564,23 @@ export class RecommendationService {
   }
 
   /**
-   * 미리듣기 재생 기록 (POST /feed/:feedId/play). 그 글의 음악을 "재생해 본 음악"으로 남긴다.
+   * 미리듣기 재생 기록 (POST /music/:musicId/play). 그 음악을 "재생해 본 음악"으로 남긴다.
+   * 피드 · 보관함 · 편지 어디서 틀었든 같다 (어디서 틀었는지는 남기지 않는다). 글쓰기 화면의 미리듣기는 앱이 부르지 않는다.
    * 회원 · 음악마다 한 줄이라, 다시 재생하면 횟수와 마지막 재생 시각만 바뀐다.
    */
-  async recordPlay(userId: number, feedId: number) {
+  async recordMusicPlay(userId: number, musicId: number) {
     const now = new Date();
     const result = (await this.dataSource.query(
       `INSERT INTO music_play (user_id, music_id, play_count, last_played_at, created_at)
-       SELECT ?, r.music_id, 1, ?, ?
-         FROM feed f
-         INNER JOIN record r ON r.id = f.record_id
-        WHERE f.id = ? AND f.deleted_at IS NULL
+       SELECT ?, m.id, 1, ?, ?
+         FROM music m
+        WHERE m.id = ?
        ON DUPLICATE KEY UPDATE play_count = music_play.play_count + 1, last_played_at = ?`,
-      [userId, now, now, feedId, now],
+      [userId, now, now, musicId, now],
     )) as { affectedRows?: number };
 
     if (!result.affectedRows) {
-      throw new NotFoundException('게시글을 찾을 수 없습니다.');
+      throw new NotFoundException('음악을 찾을 수 없습니다.');
     }
 
     return { message: '재생 기록이 저장되었습니다.' };

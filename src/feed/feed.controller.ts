@@ -6,7 +6,6 @@ import {
   Delete,
   Patch,
   Param,
-  ParseIntPipe,
   ParseUUIDPipe,
   Query,
   UseGuards,
@@ -22,7 +21,6 @@ import {
 import { GetBookmarkFeedQueryDto } from './dto/get-bookmark-feed-query.dto';
 import { UpdateProfileFeedsDto } from './dto/update-profile-feeds.dto';
 import { GetRecommendedFeedQueryDto } from './dto/get-recommended-feed-query.dto';
-import { RecommendationService } from '../recommendation/recommendation.service';
 import { FeedCommentService } from '../feed-comment/feed-comment.service';
 import { CreateFeedCommentDto } from '../feed-comment/dto/create-feed-comment.dto';
 import { JwtAuthGuard, OptionalAuth } from '../auth/jwt-auth.guard';
@@ -35,7 +33,6 @@ export class FeedController {
   constructor(
     private readonly feedService: FeedService,
     private readonly feedCommentService: FeedCommentService,
-    private readonly recommendationService: RecommendationService,
   ) { }
 
   @Post()
@@ -203,15 +200,6 @@ export class FeedController {
     @CurrentUserId() userId: number,
   ) {
     return this.feedService.unlikeFeed(Number(feedId), userId);
-  }
-
-  // 미리듣기를 재생할 때 앱이 부른다. 추천 피드의 취향 신호("재생해 본 음악")로 쌓인다
-  @Post(':feedId/play')
-  async recordPlay(
-    @Param('feedId', ParseIntPipe) feedId: number,
-    @CurrentUserId() userId: number,
-  ) {
-    return this.recommendationService.recordPlay(userId, feedId);
   }
 
   @Post(':feedId/bookmark')

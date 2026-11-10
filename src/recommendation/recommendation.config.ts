@@ -56,7 +56,7 @@ export const RECOMMENDATION_CONFIG = {
       // 쓰지 않으려면 아주 큰 값(예: Number.MAX_SAFE_INTEGER)으로 둔다
       detailViewMinMs: 15_000,
       // 틀어 본 곡이라도 들은 시간 합이 이보다 짧으면 "재생해 본 음악"에서 뺀다 (틀자마자 끈 곡)
-      listenMinMs: 5_000,
+      listenMinMs: 10_000,
     },
     // 후보 글이 취향과 어떻게 겹치는지에 대한 점수 (각 항목은 0~1 로 맞춘 뒤 곱한다)
     matchWeights: {

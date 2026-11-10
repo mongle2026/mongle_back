@@ -9,12 +9,14 @@ import {
   IsOptional,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import {
   CLIENT_USER_EVENT_TYPES,
   type ClientUserEventType,
   MusicListenEndReason,
+  UserEventType,
 } from '../enums/user-event.enum';
 
 // 한 번에 받는 최대 개수. 앱은 모아 두었다가 이보다 적게 나눠 보낸다
@@ -28,10 +30,19 @@ export class ClientUserEventDto {
   @IsIn(CLIENT_USER_EVENT_TYPES)
   type!: ClientUserEventType;
 
+  // FEED_DETAIL_VIEW: 본 글. 필수
+  @ValidateIf((event: ClientUserEventDto) => event.type === UserEventType.FEED_DETAIL_VIEW)
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  feedId!: number;
+  feedId?: number;
+
+  // MUSIC_LISTEN: 들은 음악(서버 음악 id). 필수. 어디서 틀었는지(글 · 편지)는 받지 않는다
+  @ValidateIf((event: ClientUserEventDto) => event.type === UserEventType.MUSIC_LISTEN)
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  musicId?: number;
 
   @Type(() => Number)
   @IsInt()
