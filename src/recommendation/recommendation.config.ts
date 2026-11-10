@@ -15,7 +15,7 @@ export const RECOMMENDATION_CONFIG = {
 
   // 추천 후보로 볼 글. 최근 windowDays 일 안에 쓴 글 중 최신 poolSize 개까지만 본다
   candidate: {
-    windowDays: 60,
+    windowDays: 30,
     poolSize: 1000,
   },
 
@@ -54,7 +54,7 @@ export const RECOMMENDATION_CONFIG = {
     engagement: {
       // 상세에 머문 시간 합이 이 이상인 글은 "반응을 남긴 글"(signalWeights.interacted)로 친다.
       // 쓰지 않으려면 아주 큰 값(예: Number.MAX_SAFE_INTEGER)으로 둔다
-      detailViewMinMs: 15_000,
+      detailViewMinMs: 10_000,
       // 틀어 본 곡이라도 들은 시간 합이 이보다 짧으면 "재생해 본 음악"에서 뺀다 (틀자마자 끈 곡)
       listenMinMs: 10_000,
     },
