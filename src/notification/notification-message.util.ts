@@ -35,6 +35,10 @@ const getFromSuffix = (name: string) => {
 
 const toUserCode = (userCode: string) => `@${userCode.replace(/^@+/, '')}`;
 
+// 댓글/답글 내용은 따옴표로 감싼다. (예: '안녕하세요') 프론트 NotificationListItem 과 같다
+const toQuotedContent = (content?: string | null) =>
+  content ? `'${content}'` : '';
+
 const REPORT_NOTICE_TITLE = '신고 처리 안내';
 const POLICY_NOTICE_TITLE = '운영정책 안내';
 const NO_VIOLATION_SUFFIX = '\n운영정책 위반 사항은 확인되지 않았어요.';
@@ -140,12 +144,12 @@ export const buildPushContent = (params: {
     case NotificationStatus.COMMENT:
       return {
         title: `${actorLabel}의 댓글`,
-        body: params.content ?? '',
+        body: toQuotedContent(params.content),
       };
     case NotificationStatus.REPLY:
       return {
         title: `${actorLabel}의 답글`,
-        body: params.content ?? '',
+        body: toQuotedContent(params.content),
       };
     case NotificationStatus.SYSTEM:
       return {
