@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -13,6 +14,8 @@ import { RecordFileEntity } from './record-file.entity';
 import { MusicEntity } from '../../music/entities/music.entity';
 import { RecordFont } from '../enums/record-font.enum';
 
+// 추천 피드 후보를 최근 N일 글로 거를 때 쓴다 (recommendation.service.ts loadCandidatePool)
+@Index('IDX_record_created_at', ['createdAt'])
 @Entity('record')
 export class RecordEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })

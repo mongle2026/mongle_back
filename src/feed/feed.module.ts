@@ -11,6 +11,8 @@ import { FeedCleanupService } from './feed-cleanup.service';
 import { FeedCommentModule } from '../feed-comment/feed-comment.module';
 import { FollowModule } from '../follow/follow.module';
 import { BlockModule } from '../block/block.module';
+import { RecommendationModule } from '../recommendation/recommendation.module';
+import { UserEventModule } from '../user-event/user-event.module';
 
 @Module({
   imports: [
@@ -23,6 +25,8 @@ import { BlockModule } from '../block/block.module';
     FollowModule,
     BlockModule,
     FeedCommentModule,
+    RecommendationModule,
+    UserEventModule,
   ],
   controllers: [FeedController, FeedShareController],
   providers: [

@@ -25,6 +25,9 @@ import { ReportEntity } from '../report/entities/report.entity';
 import { RestrictionAppealEntity } from '../report/appeal/entities/restriction-appeal.entity';
 import { UserSanctionEntity } from '../report/sanction/entities/user-sanction.entity';
 import { BannedAccountEntity } from '../auth/entities/banned-account.entity';
+import { MusicPlayEntity } from '../recommendation/entities/music-play.entity';
+import { FeedImpressionEntity } from '../recommendation/entities/feed-impression.entity';
+import { UserEventEntity } from '../user-event/entities/user-event.entity';
 
 export const AppDataSource = new DataSource({
     type: 'mysql',
@@ -65,6 +68,9 @@ export const AppDataSource = new DataSource({
         RestrictionAppealEntity,
         UserSanctionEntity,
         BannedAccountEntity,
+        MusicPlayEntity,
+        FeedImpressionEntity,
+        UserEventEntity,
     ],
 
     migrations: [__dirname + '/migrations/*.ts'],

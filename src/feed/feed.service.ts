@@ -20,6 +20,9 @@ import { R2Service } from '../storage/r2.service';
 import { UserEntity } from '../user/entities/user.entity';
 import { blockedBetweenSql, notBlockedBetweenSql } from '../block/block.sql';
 import { isRestrictedUser } from '../user/withdrawn-user';
+import { RecommendationService } from '../recommendation/recommendation.service';
+import { UserEventService } from '../user-event/user-event.service';
+import { UserEventType } from '../user-event/enums/user-event.enum';
 
 // 보관함 장르별 기록에서 빼는 장르. 한국/영어 스토어프런트 표기를 모두 둔다
 const EXCLUDED_ARCHIVE_GENRES = ['음악', 'Music'];
@@ -87,6 +90,8 @@ export class FeedService {
     private readonly recordService: RecordService,
     private readonly followService: FollowService,
     private readonly r2Service: R2Service,
+    private readonly recommendationService: RecommendationService,
+    private readonly userEventService: UserEventService,
   ) { }
 
   async createFeed(userId: number, dto: CreateFeedDto) {
@@ -321,6 +326,98 @@ export class FeedService {
       nextCursor: hasNext && lastItem ? lastItem.feedId : null,
       hasNext,
     };
+  }
+
+  /*
+   * 추천 알고리즘 피드 (GET /feed/recommended). 순서는 RecommendationService 가 정하고 여기서는 카드만 만든다.
+   * 응답 모양은 getFeeds 와 같지만 nextCursor 가 feedId 가 아닌 문자열이다.
+   * 앱의 "추천" 탭이 쓰고, "최신" 탭은 getFeeds 를 쓴다. 동작 · 가중치는 src/recommendation/README.md
+   */
+  async getRecommendedFeeds(params: {
+    userId?: number;
+    cursor?: string;
+    limit?: number;
+  }) {
+    const { userId, cursor } = params;
+    const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
+    const followingIds = userId
+      ? await this.followService.getFollowingIds(userId)
+      : [];
+
+    const page = await this.recommendationService.getRecommendedPage({
+      userId,
+      followingIds,
+      cursor,
+      limit: safeLimit,
+    });
+
+    const items = await this.findFeedCardsByIds(page.feedIds, userId, followingIds);
+
+    return {
+      items,
+      nextCursor: page.nextCursor,
+      hasNext: page.hasNext,
+    };
+  }
+
+  // 정해진 순서의 feedId 들을 피드 홈 카드 모양으로. 볼 수 있는지는 부르는 쪽에서 이미 걸렀다
+  private async findFeedCardsByIds(
+    feedIds: number[],
+    userId: number | undefined,
+    followingIds: number[],
+  ) {
+    if (feedIds.length === 0) return [];
+
+    const result = await this.dataSource
+      .getRepository(FeedEntity)
+      .createQueryBuilder('feed')
+      .leftJoinAndSelect('feed.record', 'record')
+      .leftJoinAndSelect('record.user', 'user')
+      .leftJoinAndSelect('record.music', 'music')
+      .leftJoinAndSelect('record.files', 'files')
+      .addSelect(subQuery => subQuery
+        .select('COUNT(feedLike.id)')
+        .from(FeedLikeEntity, 'feedLike')
+        .where('feedLike.feedId = feed.id'), 'likeCount')
+      .addSelect(subQuery => subQuery
+        .select('COUNT(myLike.id)')
+        .from(FeedLikeEntity, 'myLike')
+        .where('myLike.feedId = feed.id')
+        .andWhere('myLike.userId = :userId'), 'isLikedCount')
+      .addSelect(subQuery => subQuery
+        .select('COUNT(myBookmark.id)')
+        .from(BookmarkEntity, 'myBookmark')
+        .where('myBookmark.feedId = feed.id')
+        .andWhere('myBookmark.userId = :userId'), 'isBookmarkedCount')
+      .addSelect(subQuery => subQuery
+        .select('COUNT(bookmark.id)')
+        .from(BookmarkEntity, 'bookmark')
+        .where('bookmark.feedId = feed.id'), 'bookmarkCount')
+      .where('feed.id IN (:...feedIds)', { feedIds })
+      .setParameter('userId', userId ?? null)
+      .getRawAndEntities();
+
+    const rawByFeedId = new Map<number, any>();
+    result.raw.forEach(raw => {
+      const feedId = Number(raw.feed_id);
+      if (!rawByFeedId.has(feedId)) rawByFeedId.set(feedId, raw);
+    });
+
+    const feedById = new Map(result.entities.map(feed => [Number(feed.id), feed]));
+
+    return feedIds.flatMap(feedId => {
+      const feed = feedById.get(feedId);
+      if (!feed) return [];
+
+      const raw = rawByFeedId.get(feedId);
+      return [this.formatFeedResponse(feed, {
+        likeCount: Number(raw?.likeCount ?? 0),
+        bookmarkCount: Number(raw?.bookmarkCount ?? 0),
+        isLiked: Number(raw?.isLikedCount ?? 0) > 0,
+        isBookmarked: Number(raw?.isBookmarkedCount ?? 0) > 0,
+        isFollowing: followingIds.includes(Number(feed.record.user.id)),
+      })];
+    });
   }
 
   async getFollowingFeeds(params: {
@@ -816,7 +913,9 @@ export class FeedService {
   }
 
   async likeFeed(feedId: number, userId: number) {
-    return this.dataSource.transaction(async manager => {
+    let changed = false;
+
+    const result = await this.dataSource.transaction(async manager => {
       const feed = await manager.findOne(FeedEntity, {
         where: { id: feedId },
       });
@@ -845,16 +944,25 @@ export class FeedService {
       });
 
       await manager.save(FeedLikeEntity, like);
+      changed = true;
 
       return {
         message: '좋아요가 추가되었습니다.',
         isLiked: true,
       };
     });
+
+    if (changed) {
+      this.userEventService.recordServerEvent({ userId, type: UserEventType.LIKE, feedId });
+    }
+
+    return result;
   }
 
   async unlikeFeed(feedId: number, userId: number) {
-    return this.dataSource.transaction(async manager => {
+    let changed = false;
+
+    const result = await this.dataSource.transaction(async manager => {
       const feed = await manager.findOne(FeedEntity, {
         where: { id: feedId },
       });
@@ -878,16 +986,25 @@ export class FeedService {
       }
 
       await manager.remove(FeedLikeEntity, existingLike);
+      changed = true;
 
       return {
         message: '좋아요가 취소되었습니다.',
         isLiked: false,
       };
     });
+
+    if (changed) {
+      this.userEventService.recordServerEvent({ userId, type: UserEventType.UNLIKE, feedId });
+    }
+
+    return result;
   }
 
   async bookmarkFeed(feedId: number, userId: number) {
-    return this.dataSource.transaction(async manager => {
+    let changed = false;
+
+    const result = await this.dataSource.transaction(async manager => {
       const feed = await manager.findOne(FeedEntity, {
         where: { id: feedId },
       });
@@ -916,16 +1033,25 @@ export class FeedService {
       });
 
       await manager.save(BookmarkEntity, bookmark);
+      changed = true;
 
       return {
         message: '북마크가 추가되었습니다.',
         isBookmarked: true,
       };
     });
+
+    if (changed) {
+      this.userEventService.recordServerEvent({ userId, type: UserEventType.BOOKMARK, feedId });
+    }
+
+    return result;
   }
 
   async unbookmarkFeed(feedId: number, userId: number) {
-    return this.dataSource.transaction(async manager => {
+    let changed = false;
+
+    const result = await this.dataSource.transaction(async manager => {
       const feed = await manager.findOne(FeedEntity, {
         where: { id: feedId },
       });
@@ -949,12 +1075,19 @@ export class FeedService {
       }
 
       await manager.remove(BookmarkEntity, existingBookmark);
+      changed = true;
 
       return {
         message: '북마크가 취소되었습니다.',
         isBookmarked: false,
       };
     });
+
+    if (changed) {
+      this.userEventService.recordServerEvent({ userId, type: UserEventType.UNBOOKMARK, feedId });
+    }
+
+    return result;
   }
 
   /*

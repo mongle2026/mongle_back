@@ -6,6 +6,7 @@ import {
   Delete,
   Patch,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Query,
   UseGuards,
@@ -20,6 +21,8 @@ import {
 } from './dto/get-my-feed-query.dto';
 import { GetBookmarkFeedQueryDto } from './dto/get-bookmark-feed-query.dto';
 import { UpdateProfileFeedsDto } from './dto/update-profile-feeds.dto';
+import { GetRecommendedFeedQueryDto } from './dto/get-recommended-feed-query.dto';
+import { RecommendationService } from '../recommendation/recommendation.service';
 import { FeedCommentService } from '../feed-comment/feed-comment.service';
 import { CreateFeedCommentDto } from '../feed-comment/dto/create-feed-comment.dto';
 import { JwtAuthGuard, OptionalAuth } from '../auth/jwt-auth.guard';
@@ -32,6 +35,7 @@ export class FeedController {
   constructor(
     private readonly feedService: FeedService,
     private readonly feedCommentService: FeedCommentService,
+    private readonly recommendationService: RecommendationService,
   ) { }
 
   @Post()
@@ -42,7 +46,7 @@ export class FeedController {
     return this.feedService.createFeed(userId, dto);
   }
 
-  // 추천 피드는 로그인하지 않아도 볼 수 있다 (전체 공개 글만)
+  // 최신순 피드 (앱 "최신" 탭). 로그인하지 않아도 볼 수 있다 (전체 공개 글만)
   @Get()
   @OptionalAuth()
   async getFeeds(
@@ -50,6 +54,21 @@ export class FeedController {
     @Query() query: GetFeedQueryDto,
   ) {
     return this.feedService.getFeeds({
+      userId,
+      cursor: query.cursor,
+      limit: query.limit,
+    });
+  }
+
+  // 추천 알고리즘 피드 (앱 "추천" 탭). "최신" 탭은 위 GET /feed.
+  // 동작 · 가중치 조정은 src/recommendation/README.md. ':feedId' 보다 위에 있어야 한다
+  @Get('recommended')
+  @OptionalAuth()
+  async getRecommendedFeeds(
+    @CurrentUserId() userId: number | undefined,
+    @Query() query: GetRecommendedFeedQueryDto,
+  ) {
+    return this.feedService.getRecommendedFeeds({
       userId,
       cursor: query.cursor,
       limit: query.limit,
@@ -184,6 +203,15 @@ export class FeedController {
     @CurrentUserId() userId: number,
   ) {
     return this.feedService.unlikeFeed(Number(feedId), userId);
+  }
+
+  // 미리듣기를 재생할 때 앱이 부른다. 추천 피드의 취향 신호("재생해 본 음악")로 쌓인다
+  @Post(':feedId/play')
+  async recordPlay(
+    @Param('feedId', ParseIntPipe) feedId: number,
+    @CurrentUserId() userId: number,
+  ) {
+    return this.recommendationService.recordPlay(userId, feedId);
   }
 
   @Post(':feedId/bookmark')

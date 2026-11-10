@@ -1,5 +1,6 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   Index,
   OneToMany,
@@ -38,6 +39,12 @@ export class UserEntity {
   // 소셜 계정에서 받은 이메일. 지금은 애플 가입 때만 받는다. 못 받았거나 탈퇴하면 null
   @Column({ type: 'varchar', length: 255, nullable: true })
   email!: string | null;
+
+  // 가입한 시각. 회원 행은 가입을 마칠 때(AuthService.signup) 처음 만들어진다.
+  // 이 칸을 추가하기 전에 가입한 회원은 정확한 시각이 없어서 2026-11-10 00:00(KST)로 넣었다
+  // (마이그레이션 1792900000000-AddUserCreatedAt). 추천 피드의 신규 회원 판단에 쓴다
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt!: Date;
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
