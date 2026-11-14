@@ -35,6 +35,16 @@ export enum SanctionNotice {
   PERMANENT = 'PERMANENT',
 }
 
+// 이용 제한이 풀린 이유. 풀린 뒤 앱에 처음 들어올 때 해제 안내 화면에서 문구를 고른다
+export enum RestrictionLiftReason {
+  // 이의 신청을 받아들여 풀었다
+  APPEAL_ACCEPTED = 'APPEAL_ACCEPTED',
+  // 신고 처리를 되돌려 풀었다
+  REVOKED = 'REVOKED',
+  // 제한 기간이 끝났다
+  EXPIRED = 'EXPIRED',
+}
+
 export const addMonths = (date: Date, months: number) => {
   const result = new Date(date);
   result.setMonth(result.getMonth() + months);

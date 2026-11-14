@@ -14,11 +14,29 @@ export class SanctionController {
   constructor(private readonly sanctionService: SanctionService) {}
 
   // 제재 화면에서 부르는 API 라서 제한 중에도 막지 않는다.
-  // 응답: { isRestricted: false } 또는 { isRestricted: true, reason, restrictedAt, restrictedUntil, appealStatus }
+  // 응답: { isRestricted: false, restrictionLift: { reason } | null }
+  //   또는 { isRestricted: true, reason, restrictedAt, restrictedUntil, appealStatus }
   @Get('restriction')
   @AllowRestricted()
   async getRestriction(@CurrentUserId() currentUserId: number) {
     return await this.sanctionService.getRestriction(currentUserId);
+  }
+
+  // 풀린 뒤 앱에 처음 들어올 때 보여줄 이용 제한 해제 안내 (제한 중에는 403 ACCOUNT_RESTRICTED).
+  // 응답: { restrictionLift: { reason: 'APPEAL_ACCEPTED' | 'REVOKED' | 'EXPIRED' } | null }
+  @Get('restriction-lift')
+  async getRestrictionLift(@CurrentUserId() currentUserId: number) {
+    return {
+      restrictionLift:
+        await this.sanctionService.getRestrictionLift(currentUserId),
+    };
+  }
+
+  // 해제 안내 화면에서 몽글 시작하기를 눌렀다
+  @Post('restriction-lift/acknowledge')
+  @HttpCode(204)
+  async acknowledgeRestrictionLift(@CurrentUserId() currentUserId: number) {
+    await this.sanctionService.acknowledgeRestrictionLift(currentUserId);
   }
 
   // 이용 제한 중이면 제재 화면만 보여서 경고 안내는 필요 없다 (제한 중에는 403 ACCOUNT_RESTRICTED)

@@ -14,7 +14,12 @@ import { FeedEntity } from '../feed/entities/feed.entity';
 import { FeedCommentEntity } from '../feed-comment/entities/feed-comment.entity';
 import { LetterEntity } from '../letter/entities/letter.entity';
 import { UserEntity } from '../user/entities/user.entity';
-import { isRestrictedUser, isWithdrawnUser } from '../user/withdrawn-user';
+import {
+  buildLiftedRestriction,
+  isRestrictedUser,
+  isWithdrawnUser,
+} from '../user/withdrawn-user';
+import { RestrictionLiftReason } from './sanction/sanction.constants';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
 import { ReportDiscordService } from './discord/report-discord.service';
@@ -501,7 +506,7 @@ export class ReportModerationService {
     await manager.update(
       UserEntity,
       { id: user.id },
-      { restrictedAt: null, restrictedUntil: null, restrictedReason: null },
+      buildLiftedRestriction(RestrictionLiftReason.REVOKED),
     );
 
     return true;

@@ -10,6 +10,7 @@ import {
 import { RecordEntity } from '../../record/entities/record.entity';
 import { AuthProvider } from '../enums/auth-provider.enum';
 import { ReportReason } from '../../report/enums/report.enum';
+import { RestrictionLiftReason } from '../../report/sanction/sanction.constants';
 
 @Entity('user')
 // 같은 소셜 계정으로는 한 번만 가입할 수 있다
@@ -92,6 +93,16 @@ export class UserEntity {
   // 이용 제한 사유. 제한을 내린 신고의 사유를 넣는다
   @Column({ name: 'restricted_reason', type: 'varchar', length: 20, nullable: true })
   restrictedReason!: ReportReason | null;
+
+  // 기간이 끝나기 전에 이용 제한을 푼 이유 (이의 신청 받아들임 · 신고 처리 되돌림).
+  // 앱의 해제 안내 화면에서 확인을 누르거나 새 제한을 내리면 null 로 비운다.
+  // 기간이 끝나서 풀린 건 restricted_until 과 restriction_lift_acknowledged_at 으로 판단한다 (withdrawn-user.ts getPendingRestrictionLift)
+  @Column({ name: 'restriction_lift_reason', type: 'varchar', length: 20, nullable: true })
+  restrictionLiftReason!: RestrictionLiftReason | null;
+
+  // 회원이 앱의 이용 제한 해제 안내 화면에서 확인(몽글 시작하기)을 누른 마지막 시각
+  @Column({ name: 'restriction_lift_acknowledged_at', type: 'datetime', nullable: true })
+  restrictionLiftAcknowledgedAt!: Date | null;
 
   // 마지막으로 발급한 refresh token 의 sha256 해시. 로그아웃하면 null. 기본 조회에서는 빠진다.
   @Column({ name: 'refresh_token_hash', type: 'varchar', length: 64, nullable: true, select: false })

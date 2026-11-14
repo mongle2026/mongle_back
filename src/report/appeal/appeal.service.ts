@@ -14,7 +14,11 @@ import { AppealDiscordService } from './appeal-discord.service';
 import { ReportTargetType } from '../enums/report.enum';
 import { ReportDiscordService } from '../discord/report-discord.service';
 import { UserEntity } from '../../user/entities/user.entity';
-import { isRestrictedUser } from '../../user/withdrawn-user';
+import {
+  buildLiftedRestriction,
+  isRestrictedUser,
+} from '../../user/withdrawn-user';
+import { RestrictionLiftReason } from '../sanction/sanction.constants';
 import { NotificationService } from '../../notification/notification.service';
 import {
   NotificationSettingKey,
@@ -141,11 +145,12 @@ export class AppealService {
         ? nextStatus
         : AppealStatus.CLOSED;
 
+      // 앱이 풀린 뒤 처음 들어올 때 '이의 신청이 받아들여졌어요' 안내를 띄운다
       if (status === AppealStatus.ACCEPTED) {
         await manager.update(
           UserEntity,
           { id: appeal.userId },
-          { restrictedAt: null, restrictedUntil: null, restrictedReason: null },
+          buildLiftedRestriction(RestrictionLiftReason.APPEAL_ACCEPTED),
         );
       }
 

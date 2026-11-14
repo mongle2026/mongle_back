@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager, IsNull, MoreThan } from 'typeorm';
 import { UserEntity } from '../../user/entities/user.entity';
 import {
+  getPendingRestrictionLift,
   isPermanentlyRestrictedUser,
   isRestrictedUser,
   isWithdrawnUser,
@@ -14,6 +15,7 @@ import {
   addDays,
   addMonths,
   PERMANENT_WARNING_COUNT,
+  RestrictionLiftReason,
   SanctionNotice,
   SanctionRestriction,
   SanctionType,
@@ -25,7 +27,13 @@ import {
 // 제재에 필요한 회원 값. 같은 트랜잭션 안에서 제한을 바꾸면 이 객체도 같이 고친다
 export type SanctionUser = Pick<
   UserEntity,
-  'id' | 'withdrawnAt' | 'restrictedAt' | 'restrictedUntil' | 'restrictedReason'
+  | 'id'
+  | 'withdrawnAt'
+  | 'restrictedAt'
+  | 'restrictedUntil'
+  | 'restrictedReason'
+  | 'restrictionLiftReason'
+  | 'restrictionLiftAcknowledgedAt'
 >;
 
 export type SanctionResult = {
@@ -93,6 +101,8 @@ export class SanctionService {
         restrictedAt: true,
         restrictedUntil: true,
         restrictedReason: true,
+        restrictionLiftReason: true,
+        restrictionLiftAcknowledgedAt: true,
       },
       where: { id: userId },
       lock: { mode: 'pessimistic_write' },
@@ -197,6 +207,7 @@ export class SanctionService {
    * 신고 처리를 되돌릴 때 그 대상으로 내린 제재를 모두 없앤다. 최근 제재부터 하나씩 되돌린다.
    * 제재가 바꾼 이용 제한이 아직 그대로면 제재 전 상태로 돌린다.
    * (그 사이 이의 신청 · 다른 제재로 제한이 바뀌었으면 그대로 둔다)
+   * 되돌려서 제한이 없어지면, 앱이 풀린 뒤 처음 들어올 때 해제 안내(REVOKED)를 띄운다
    * 없앤 제재 수를 돌려준다.
    */
   async revokeForTarget(
@@ -227,10 +238,19 @@ export class SanctionService {
         isSameTime(user.restrictedAt, sanction.restrictedAt) &&
         isSameTime(user.restrictedUntil, sanction.restrictedUntil)
       ) {
+        // 제한 중이었거나, 기간이 끝났는데 아직 해제 안내를 확인하지 않았으면 다시 안내한다
+        const hasLiftToNotice =
+          isRestrictedUser(user, now) ||
+          getPendingRestrictionLift(user, now) !== null;
+
         const previous = {
           restrictedAt: sanction.prevRestrictedAt,
           restrictedUntil: sanction.prevRestrictedUntil,
           restrictedReason: sanction.prevRestrictedReason,
+          restrictionLiftReason:
+            !sanction.prevRestrictedAt && hasLiftToNotice
+              ? RestrictionLiftReason.REVOKED
+              : null,
         };
 
         await manager.update(UserEntity, { id: userId }, previous);
@@ -264,7 +284,8 @@ export class SanctionService {
 
   /*
    * 지금 이용 제한 상태. 앱의 제재 화면이 앱으로 돌아올 때 · 푸시를 받을 때 다시 확인하려고 부른다.
-   * 제한 중이 아니면 { isRestricted: false } 만 준다.
+   * 제한 중이 아니면 { isRestricted: false, restrictionLift } 를 준다.
+   * restrictionLift: 아직 확인하지 않은 해제 안내({ reason }). 없으면 null
    * appealStatus: 이 제한에 낸 마지막 이의 신청의 상태. 안 냈으면 null
    */
   async getRestriction(userId: number) {
@@ -274,12 +295,19 @@ export class SanctionService {
         restrictedAt: true,
         restrictedUntil: true,
         restrictedReason: true,
+        restrictionLiftReason: true,
+        restrictionLiftAcknowledgedAt: true,
       },
       where: { id: userId },
     });
 
     if (!user || !isRestrictedUser(user)) {
-      return { isRestricted: false };
+      const reason = user ? getPendingRestrictionLift(user) : null;
+
+      return {
+        isRestricted: false,
+        restrictionLift: reason ? { reason } : null,
+      };
     }
 
     const appeal = await this.dataSource
@@ -297,6 +325,39 @@ export class SanctionService {
       restrictedUntil: user.restrictedUntil,
       appealStatus: appeal?.status ?? null,
     };
+  }
+
+  /*
+   * 앱의 이용 제한 해제 안내 화면에 보여줄 아직 확인하지 않은 해제 안내. 없으면 null.
+   * 풀린 뒤 앱에 처음 들어올 때 한 번 보여준다 (제한 중이면 가드가 403 ACCOUNT_RESTRICTED 로 먼저 막는다)
+   */
+  async getRestrictionLift(
+    userId: number,
+  ): Promise<{ reason: RestrictionLiftReason } | null> {
+    const user = await this.dataSource.getRepository(UserEntity).findOne({
+      select: {
+        id: true,
+        restrictedAt: true,
+        restrictedUntil: true,
+        restrictionLiftReason: true,
+        restrictionLiftAcknowledgedAt: true,
+      },
+      where: { id: userId },
+    });
+
+    const reason = user ? getPendingRestrictionLift(user) : null;
+
+    return reason ? { reason } : null;
+  }
+
+  // 해제 안내 화면에서 확인을 눌렀다. 지금까지 풀린 제한의 안내를 모두 확인한 것으로 남긴다
+  async acknowledgeRestrictionLift(userId: number, now = new Date()) {
+    await this.dataSource
+      .getRepository(UserEntity)
+      .update(
+        { id: userId },
+        { restrictionLiftReason: null, restrictionLiftAcknowledgedAt: now },
+      );
   }
 
   /*
@@ -403,10 +464,12 @@ export class SanctionService {
       prevRestrictedReason: wasRestricted ? user.restrictedReason : null,
     };
 
+    // 새 제한을 내리면 이전에 풀린 제한의 안내는 더 보여주지 않는다
     const next = {
       restrictedAt: now,
       restrictedUntil,
       restrictedReason: report.reason,
+      restrictionLiftReason: null,
     };
 
     await manager.update(UserEntity, { id: user.id }, next);
