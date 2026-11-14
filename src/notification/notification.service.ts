@@ -677,8 +677,6 @@ export class NotificationService {
       content: notification.content,
       eventTitle: notification.eventTitle,
       targetType: notification.targetType,
-      sanction: notification.sanction,
-      warningCount: notification.warningCount,
     });
 
     // 알림을 눌렀을 때 이동할 화면을 프론트가 고를 수 있게 넘긴다
