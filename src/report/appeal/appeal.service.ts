@@ -101,41 +101,6 @@ export class AppealService {
     return { appealStatus: AppealStatus.PENDING, isAlreadyAppealed: false };
   }
 
-  /*
-   * 지금 이용 제한 상태. 제재 화면이 앱으로 돌아올 때 · 푸시를 받을 때 다시 확인하려고 부른다.
-   * 제한 중이 아니면 { isRestricted: false } 만 준다.
-   * appealStatus: 이 제한에 낸 마지막 이의 신청의 상태. 안 냈으면 null
-   */
-  async getRestriction(currentUserId: number) {
-    const user = await this.dataSource.getRepository(UserEntity).findOne({
-      select: {
-        id: true,
-        restrictedAt: true,
-        restrictedUntil: true,
-        restrictedReason: true,
-      },
-      where: { id: currentUserId },
-    });
-
-    if (!user || !isRestrictedUser(user)) {
-      return { isRestricted: false };
-    }
-
-    const appeal = await this.appealRepository.findOne({
-      select: { id: true, status: true },
-      where: { userId: currentUserId, restrictedAt: user.restrictedAt! },
-      order: { id: 'DESC' },
-    });
-
-    return {
-      isRestricted: true,
-      reason: user.restrictedReason,
-      restrictedAt: user.restrictedAt,
-      restrictedUntil: user.restrictedUntil,
-      appealStatus: appeal?.status ?? null,
-    };
-  }
-
   // 제한 풀기: 이용 제한을 풀고 회원에게 푸시로 알린다
   async accept(appealId: number, handledBy: string) {
     return await this.handle(appealId, handledBy, AppealStatus.ACCEPTED);

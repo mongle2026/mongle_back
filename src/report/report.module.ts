@@ -15,6 +15,7 @@ import { AppealService } from './appeal/appeal.service';
 import { AppealDiscordService } from './appeal/appeal-discord.service';
 import { UserSanctionEntity } from './sanction/entities/user-sanction.entity';
 import { SanctionService } from './sanction/sanction.service';
+import { SanctionController } from './sanction/sanction.controller';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
@@ -31,6 +32,7 @@ import { AuthModule } from '../auth/auth.module';
   controllers: [
     ReportController,
     AppealController,
+    SanctionController,
     DiscordInteractionController,
   ],
   providers: [

@@ -1,0 +1,40 @@
+import { Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { SanctionService } from './sanction.service';
+import { AllowRestricted, JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { CurrentUserId } from '../../auth/current-user-id.decorator';
+
+/*
+ * 회원의 제재 상태 (이용 제한 · 경고).
+ * 이용 제한은 모든 API 가 403 ACCOUNT_RESTRICTED 로 먼저 알리고, 제재 화면은 여기서 다시 확인한다.
+ * 경고 1회는 제한이 아니라서 403 이 없어 여기서 따로 확인한다.
+ */
+@Controller('sanction')
+@UseGuards(JwtAuthGuard)
+export class SanctionController {
+  constructor(private readonly sanctionService: SanctionService) {}
+
+  // 제재 화면에서 부르는 API 라서 제한 중에도 막지 않는다.
+  // 응답: { isRestricted: false } 또는 { isRestricted: true, reason, restrictedAt, restrictedUntil, appealStatus }
+  @Get('restriction')
+  @AllowRestricted()
+  async getRestriction(@CurrentUserId() currentUserId: number) {
+    return await this.sanctionService.getRestriction(currentUserId);
+  }
+
+  // 이용 제한 중이면 제재 화면만 보여서 경고 안내는 필요 없다 (제한 중에는 403 ACCOUNT_RESTRICTED)
+  // 아직 확인하지 않은 경고 1회. 응답: { warning: { reason, warnedAt } | null }
+  @Get('warning')
+  async getUnacknowledgedWarning(@CurrentUserId() currentUserId: number) {
+    return {
+      warning:
+        await this.sanctionService.getUnacknowledgedWarning(currentUserId),
+    };
+  }
+
+  // 경고 안내 화면에서 확인을 눌렀다. 확인하지 않은 경고를 모두 확인한 것으로 남긴다
+  @Post('warning/acknowledge')
+  @HttpCode(204)
+  async acknowledgeWarnings(@CurrentUserId() currentUserId: number) {
+    await this.sanctionService.acknowledgeWarnings(currentUserId);
+  }
+}

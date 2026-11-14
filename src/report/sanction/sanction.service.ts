@@ -7,8 +7,9 @@ import {
   isWithdrawnUser,
 } from '../../user/withdrawn-user';
 import { ReportEntity } from '../entities/report.entity';
-import { ReportTargetType } from '../enums/report.enum';
+import { ReportReason, ReportTargetType } from '../enums/report.enum';
 import { UserSanctionEntity } from './entities/user-sanction.entity';
+import { RestrictionAppealEntity } from '../appeal/entities/restriction-appeal.entity';
 import {
   addDays,
   addMonths,
@@ -259,6 +260,90 @@ export class SanctionService {
         expiresAt: MoreThan(now),
       },
     });
+  }
+
+  /*
+   * 지금 이용 제한 상태. 앱의 제재 화면이 앱으로 돌아올 때 · 푸시를 받을 때 다시 확인하려고 부른다.
+   * 제한 중이 아니면 { isRestricted: false } 만 준다.
+   * appealStatus: 이 제한에 낸 마지막 이의 신청의 상태. 안 냈으면 null
+   */
+  async getRestriction(userId: number) {
+    const user = await this.dataSource.getRepository(UserEntity).findOne({
+      select: {
+        id: true,
+        restrictedAt: true,
+        restrictedUntil: true,
+        restrictedReason: true,
+      },
+      where: { id: userId },
+    });
+
+    if (!user || !isRestrictedUser(user)) {
+      return { isRestricted: false };
+    }
+
+    const appeal = await this.dataSource
+      .getRepository(RestrictionAppealEntity)
+      .findOne({
+        select: { id: true, status: true },
+        where: { userId, restrictedAt: user.restrictedAt! },
+        order: { id: 'DESC' },
+      });
+
+    return {
+      isRestricted: true,
+      reason: user.restrictedReason,
+      restrictedAt: user.restrictedAt,
+      restrictedUntil: user.restrictedUntil,
+      appealStatus: appeal?.status ?? null,
+    };
+  }
+
+  /*
+   * 앱의 경고 안내 화면에 보여줄 아직 확인하지 않은 경고. 없으면 null.
+   * 유효한 경고가 1회일 때만 준다 (2회 이상이면 이용 정지라 제재 화면이 대신 알린다)
+   */
+  async getUnacknowledgedWarning(
+    userId: number,
+    now = new Date(),
+  ): Promise<{ reason: ReportReason; warnedAt: Date } | null> {
+    const warnings = await this.dataSource
+      .getRepository(UserSanctionEntity)
+      .find({
+        select: {
+          id: true,
+          reason: true,
+          acknowledgedAt: true,
+          createdAt: true,
+        },
+        where: {
+          userId,
+          type: SanctionType.WARNING,
+          revokedAt: IsNull(),
+          expiresAt: MoreThan(now),
+        },
+        take: SUSPENSION_WARNING_COUNT,
+      });
+
+    const [warning] = warnings;
+
+    if (warnings.length !== 1 || warning.acknowledgedAt) {
+      return null;
+    }
+
+    return { reason: warning.reason, warnedAt: warning.createdAt };
+  }
+
+  // 확인하지 않은 경고를 모두 확인한 것으로 남긴다
+  async acknowledgeWarnings(userId: number, now = new Date()) {
+    await this.dataSource.getRepository(UserSanctionEntity).update(
+      {
+        userId,
+        type: SanctionType.WARNING,
+        acknowledgedAt: IsNull(),
+      },
+      { acknowledgedAt: now },
+    );
   }
 
   async getUserState(userId: number): Promise<UserSanctionState | null> {

@@ -18,6 +18,7 @@ import { SanctionRestriction, SanctionType } from '../sanction.constants';
  * - 제재로 이용 제한이 바뀌었으면 restriction · restricted_at · restricted_until 에 바꾼 값을,
  *   prev_* 에 바꾸기 전 값을 남긴다. 신고 처리를 되돌리면 회원의 제한이 그대로일 때만 이전 값으로 돌린다
  * - 되돌린 제재는 지우지 않고 revoked_at 을 채운다
+ * - 경고 1회 안내 화면에서 확인을 누르면 acknowledged_at 을 채운다
  */
 @Entity('user_sanction')
 @Index('IDX_user_sanction_user_type_expires_at', [
@@ -94,6 +95,10 @@ export class UserSanctionEntity {
   // 신고 처리를 되돌려 없앤 시각
   @Column({ name: 'revoked_at', type: 'datetime', nullable: true })
   revokedAt!: Date | null;
+
+  // 회원이 앱의 경고 안내 화면에서 확인을 누른 시각. 경고(WARNING)에만 쓴다
+  @Column({ name: 'acknowledged_at', type: 'datetime', nullable: true })
+  acknowledgedAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'datetime' })
   createdAt!: Date;
