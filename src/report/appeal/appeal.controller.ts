@@ -20,7 +20,7 @@ export class AppealController {
     return await this.appealService.create(currentUserId, dto);
   }
 
-  // 지금 이용 제한 상태. 응답: { isRestricted: false } 또는 { isRestricted: true, reason, restrictedUntil, appealStatus }
+  // 지금 이용 제한 상태. 응답: { isRestricted: false } 또는 { isRestricted: true, reason, restrictedAt, restrictedUntil, appealStatus }
   @Get('restriction')
   async getRestriction(@CurrentUserId() currentUserId: number) {
     return await this.appealService.getRestriction(currentUserId);

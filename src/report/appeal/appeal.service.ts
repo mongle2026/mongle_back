@@ -130,6 +130,7 @@ export class AppealService {
     return {
       isRestricted: true,
       reason: user.restrictedReason,
+      restrictedAt: user.restrictedAt,
       restrictedUntil: user.restrictedUntil,
       appealStatus: appeal?.status ?? null,
     };

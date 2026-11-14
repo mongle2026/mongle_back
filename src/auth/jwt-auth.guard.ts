@@ -33,8 +33,8 @@ export const ACCOUNT_RESTRICTED_ERROR_CODE = 'ACCOUNT_RESTRICTED';
 
 /*
  * 탈퇴한 회원은 access token 이 아직 만료되지 않았어도 401 로 막는다.
- * 이용 제한 중인 회원은 403 으로 막는다 (allowRestricted 면 통과). 응답: { code, message, reason, restrictedUntil, appealStatus }
- * (reason: ReportReason, restrictedUntil: 끝나는 시각. 영구 제한이면 null,
+ * 이용 제한 중인 회원은 403 으로 막는다 (allowRestricted 면 통과). 응답: { code, message, reason, restrictedAt, restrictedUntil, appealStatus }
+ * (reason: ReportReason, restrictedAt: 제한이 시작된 시각, restrictedUntil: 끝나는 시각. 영구 제한이면 null,
  *  appealStatus: 이 제한에 낸 마지막 이의 신청의 AppealStatus. 안 냈으면 null)
  */
 export async function assertActiveUser(
@@ -70,6 +70,7 @@ export async function assertActiveUser(
       code: ACCOUNT_RESTRICTED_ERROR_CODE,
       message: '이용이 제한된 계정입니다.',
       reason: user.restrictedReason,
+      restrictedAt: user.restrictedAt,
       restrictedUntil: user.restrictedUntil,
       appealStatus: appeal?.status ?? null,
     });
