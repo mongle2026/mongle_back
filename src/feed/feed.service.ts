@@ -282,6 +282,8 @@ export class FeedService {
       )
       // 내가 차단했거나 나를 차단한 사람의 글은 뺀다
       .andWhere(notBlockedBetweenSql(':userId', 'record.user_id'))
+      // 운영자가 가린 글은 피드 홈에 띄우지 않는다
+      .andWhere('feed.blindedAt IS NULL')
       // 이용 제한 중인 회원의 글은 피드 홈에 띄우지 않는다
       .andWhere(NOT_RESTRICTED_AUTHOR_SQL, { now: new Date() })
       // 로그인 전이면 NULL 이라 내 글 · 내 좋아요 · 내 북마크 · 차단 조건에 걸리지 않는다
@@ -360,7 +362,8 @@ export class FeedService {
     };
   }
 
-  // 정해진 순서의 feedId 들을 피드 홈 카드 모양으로. 볼 수 있는지는 부르는 쪽에서 이미 걸렀다
+  // 정해진 순서의 feedId 들을 피드 홈 카드 모양으로. 볼 수 있는지는 부르는 쪽에서 이미 걸렀다.
+  // 후보를 고른 뒤 카드를 만들기 전에 가려질 수 있어서, 운영자가 가린 글은 여기서 한 번 더 뺀다
   private async findFeedCardsByIds(
     feedIds: number[],
     userId: number | undefined,
@@ -394,6 +397,7 @@ export class FeedService {
         .from(BookmarkEntity, 'bookmark')
         .where('bookmark.feedId = feed.id'), 'bookmarkCount')
       .where('feed.id IN (:...feedIds)', { feedIds })
+      .andWhere('feed.blindedAt IS NULL')
       .setParameter('userId', userId ?? null)
       .getRawAndEntities();
 
@@ -498,6 +502,8 @@ export class FeedService {
       .andWhere('feed.visibility IN (:...visibleVisibilities)', {
         visibleVisibilities: [Visibility.PUBLIC, Visibility.FOLLOWER],
       })
+      // 운영자가 가린 글은 피드 홈에 띄우지 않는다
+      .andWhere('feed.blindedAt IS NULL')
       // 이용 제한 중인 회원의 글은 피드 홈에 띄우지 않는다
       .andWhere(NOT_RESTRICTED_AUTHOR_SQL, { now: new Date() })
       .andWhere(cursor ? 'feed.id < :cursor' : '1=1', { cursor })
