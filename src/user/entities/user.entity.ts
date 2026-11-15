@@ -18,6 +18,8 @@ import { RestrictionLiftReason } from '../../report/sanction/sanction.constants'
   unique: true,
 })
 @Index('UQ_user_public_id', ['publicId'], { unique: true })
+// 최근에 끝난 이용 정지 찾기 (RestrictionExpiryNotificationScheduler)
+@Index('IDX_user_restricted_until', ['restrictedUntil'])
 export class UserEntity {
   // 서버 안에서만 쓰는 id(FK, 토큰 sub). 앱에는 publicId 를 보여준다.
   @PrimaryGeneratedColumn({ type: 'bigint' })
@@ -103,6 +105,11 @@ export class UserEntity {
   // 회원이 앱의 이용 제한 해제 안내 화면에서 확인(몽글 시작하기)을 누른 마지막 시각
   @Column({ name: 'restriction_lift_acknowledged_at', type: 'datetime', nullable: true })
   restrictionLiftAcknowledgedAt!: Date | null;
+
+  // 이용 정지 기간이 끝나서 '이용 정지 해제 안내' 알림을 보낸 마지막 시각 (RestrictionExpiryNotificationScheduler).
+  // restricted_until 보다 이르거나 null 이면 아직 이번 정지의 해제 안내를 보내지 않았다
+  @Column({ name: 'restriction_expiry_notified_at', type: 'datetime', nullable: true })
+  restrictionExpiryNotifiedAt!: Date | null;
 
   // 마지막으로 발급한 refresh token 의 sha256 해시. 로그아웃하면 null. 기본 조회에서는 빠진다.
   @Column({ name: 'refresh_token_hash', type: 'varchar', length: 64, nullable: true, select: false })
