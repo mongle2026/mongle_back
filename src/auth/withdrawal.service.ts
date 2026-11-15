@@ -27,7 +27,14 @@ import {
   isPermanentlyRestrictedUser,
   isRestrictedUser,
 } from '../user/withdrawn-user';
-import { addMonths } from '../report/sanction/sanction.constants';
+import {
+  addMonths,
+  getAppealDeadline,
+} from '../report/sanction/sanction.constants';
+import {
+  AppealStatus,
+  RestrictionAppealEntity,
+} from '../report/appeal/entities/restriction-appeal.entity';
 import { PERMANENT_REJOIN_BAN_MONTHS } from '../report/retention/retention.constants';
 
 type WithdrawingUser = Pick<
@@ -54,7 +61,8 @@ type WithdrawingUser = Pick<
  * 피드와 편지는 직접 삭제할 때와 같은 표시만 하고, 실제 삭제는 기존 정리 크론이 보관 기간 뒤에 한다.
  * 소셜 계정 연결 끊기는 탈퇴가 커밋된 뒤에 하고, 실패하면 SocialUnlinkService 가 다시 시도한다.
  *
- * 운영자가 영구 정지된 회원을 탈퇴시킬 때(forceWithdraw)도 같은 처리를 한다.
+ * 운영자가 영구 정지된 회원을 탈퇴시킬 때(forceWithdraw)와, 이의 신청 기간이 끝난 영구 정지 회원을
+ * 크론이 탈퇴시킬 때(withdrawAfterAppealPeriod)도 같은 처리를 한다.
  *
  * 이용 제한 중에 탈퇴하면(본인 · 운영자 모두) 같은 소셜 계정으로 바로 다시 가입하지 못하게 banned_account 에 남긴다.
  * 영구 정지는 탈퇴 후 1년, 기간 정지는 정지가 끝날 때까지 막는다 (개인정보처리방침의 재가입 제한 정보 보관 기간).
@@ -119,23 +127,77 @@ export class WithdrawalService {
         throw new BadRequestException('영구 정지된 회원만 탈퇴시킬 수 있어요.');
       }
 
-      if (user.provider === AuthProvider.APPLE && !user.appleRefreshToken) {
-        this.logger.warn(
-          `애플 refresh token 이 없어 애플 연결을 끊지 못함 (userId=${user.id})`,
-        );
-      }
-
-      return await this.withdrawInTransaction(
-        manager,
-        user,
-        user.appleRefreshToken,
-        bannedBy,
-      );
+      return await this.withdrawRestrictedUser(manager, user, bannedBy);
     });
 
     this.unlinkAfterCommit(pendingId);
 
     return { message: '탈퇴시켰습니다.' };
+  }
+
+  /**
+   * 이의 신청 기간(제한 후 PERMANENT_APPEAL_DAYS 일)이 끝난 영구 정지 회원을 탈퇴시킨다 (매일 크론).
+   * 처리는 운영자가 탈퇴시킬 때(forceWithdraw)와 같고, 탈퇴시킨 운영자는 null 로 남는다.
+   * 회원 행을 잠근 뒤 다시 확인해서, 그 사이 제한이 풀렸거나 기간이 남았거나
+   * 이 제한에 검토 중인 이의 신청이 있으면 탈퇴시키지 않는다. 탈퇴시켰으면 true
+   */
+  async withdrawAfterAppealPeriod(userId: number, now = new Date()) {
+    const result = await this.dataSource.transaction(async (manager) => {
+      const user = await this.lockUser(manager, userId);
+
+      if (
+        !user ||
+        user.withdrawnAt ||
+        !isPermanentlyRestrictedUser(user) ||
+        getAppealDeadline(user.restrictedAt!, null) > now
+      ) {
+        return null;
+      }
+
+      const hasPendingAppeal = await manager.exists(RestrictionAppealEntity, {
+        where: {
+          userId,
+          restrictedAt: user.restrictedAt!,
+          status: AppealStatus.PENDING,
+        },
+      });
+
+      if (hasPendingAppeal) {
+        return null;
+      }
+
+      return {
+        pendingId: await this.withdrawRestrictedUser(manager, user, null),
+      };
+    });
+
+    if (!result) {
+      return false;
+    }
+
+    this.unlinkAfterCommit(result.pendingId);
+
+    return true;
+  }
+
+  // 영구 정지된 회원을 운영 조치로 탈퇴시킨다. 애플은 로그인 때 받아 둔 refresh token 으로 끊는다
+  private async withdrawRestrictedUser(
+    manager: EntityManager,
+    user: WithdrawingUser,
+    bannedBy: string | null,
+  ) {
+    if (user.provider === AuthProvider.APPLE && !user.appleRefreshToken) {
+      this.logger.warn(
+        `애플 refresh token 이 없어 애플 연결을 끊지 못함 (userId=${user.id})`,
+      );
+    }
+
+    return await this.withdrawInTransaction(
+      manager,
+      user,
+      user.appleRefreshToken,
+      bannedBy,
+    );
   }
 
   private async lockUser(manager: EntityManager, userId: number) {
@@ -165,7 +227,7 @@ export class WithdrawalService {
   }
 
   // 회원 행을 잠근 트랜잭션 안에서 부른다. 연결 끊기 작업 id 를 돌려준다 (끊지 않으면 null)
-  // 애플은 appleRefreshToken 이 있어야 끊는다. bannedBy: 탈퇴시킨 운영자 (본인 탈퇴 · 터미널이면 null)
+  // 애플은 appleRefreshToken 이 있어야 끊는다. bannedBy: 탈퇴시킨 운영자 (본인 탈퇴 · 터미널 · 자동 탈퇴면 null)
   private async withdrawInTransaction(
     manager: EntityManager,
     user: WithdrawingUser,

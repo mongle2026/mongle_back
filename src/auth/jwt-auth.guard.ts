@@ -9,9 +9,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
-import { DataSource, IsNull } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { UserEntity } from '../user/entities/user.entity';
-import { isRestrictedUser } from '../user/withdrawn-user';
+import {
+  isPermanentlyRestrictedUser,
+  isRestrictedUser,
+} from '../user/withdrawn-user';
 import { RestrictionAppealEntity } from '../report/appeal/entities/restriction-appeal.entity';
 import { getJwtSecret, verifyAuthToken } from './auth-token';
 
@@ -31,8 +34,28 @@ export const AllowRestricted = () => SetMetadata(ALLOW_RESTRICTED_KEY, true);
 // 이용 제한된 회원이 API 를 부르면 403 과 함께 이 code 를 준다. 앱은 이걸 보고 제재 화면을 띄운다
 export const ACCOUNT_RESTRICTED_ERROR_CODE = 'ACCOUNT_RESTRICTED';
 
+// 영구 정지 상태에서 탈퇴된 회원(이의 신청 기간이 끝나 자동 탈퇴 · 운영자가 탈퇴시킴)이 API 를 부르거나
+// 토큰을 새로 받으려 하면 401 과 함께 이 code 를 준다. 앱은 이걸 보고 로그아웃하면서 탈퇴 완료 화면을 띄운다
+export const ACCOUNT_WITHDRAWN_ERROR_CODE = 'ACCOUNT_WITHDRAWN';
+
 /*
- * 탈퇴한 회원은 access token 이 아직 만료되지 않았어도 401 로 막는다.
+ * 탈퇴한 회원에게 주는 401. 탈퇴해도 user.restricted_* 는 남아서(보관 기간 1년) 영구 정지 중에 탈퇴됐는지 알 수 있다.
+ * 영구 정지 중에 탈퇴됐으면 ACCOUNT_WITHDRAWN code 를 붙이고, 아니면(정지 없이 스스로 탈퇴 등) code 없이 준다.
+ * restricted_at 만 보지 않는 건 기간 정지가 끝난 뒤에도 restricted_at 이 남아 있기 때문이다
+ */
+export const createWithdrawnUserException = (
+  user: Pick<UserEntity, 'restrictedAt' | 'restrictedUntil'>,
+) =>
+  isPermanentlyRestrictedUser(user)
+    ? new UnauthorizedException({
+        statusCode: 401,
+        code: ACCOUNT_WITHDRAWN_ERROR_CODE,
+        message: '운영정책에 따라 탈퇴 처리된 계정입니다.',
+      })
+    : new UnauthorizedException('탈퇴했거나 존재하지 않는 회원입니다.');
+
+/*
+ * 탈퇴한 회원은 access token 이 아직 만료되지 않았어도 401 로 막는다 (createWithdrawnUserException).
  * 이용 제한 중인 회원은 403 으로 막는다 (allowRestricted 면 통과). 응답: { code, message, reason, restrictedAt, restrictedUntil, appealStatus }
  * (reason: ReportReason, restrictedAt: 제한이 시작된 시각, restrictedUntil: 끝나는 시각. 영구 제한이면 null,
  *  appealStatus: 이 제한에 낸 마지막 이의 신청의 AppealStatus. 안 냈으면 null)
@@ -45,15 +68,20 @@ export async function assertActiveUser(
   const user = await dataSource.getRepository(UserEntity).findOne({
     select: {
       id: true,
+      withdrawnAt: true,
       restrictedAt: true,
       restrictedUntil: true,
       restrictedReason: true,
     },
-    where: { id: userId, withdrawnAt: IsNull() },
+    where: { id: userId },
   });
 
   if (!user) {
     throw new UnauthorizedException('탈퇴했거나 존재하지 않는 회원입니다.');
+  }
+
+  if (user.withdrawnAt) {
+    throw createWithdrawnUserException(user);
   }
 
   if (isRestrictedUser(user) && !allowRestricted) {

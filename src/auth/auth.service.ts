@@ -34,6 +34,7 @@ import {
 } from './auth-token';
 import { SignupDto } from './dto/signup.dto';
 import { BannedAccountEntity } from './entities/banned-account.entity';
+import { createWithdrawnUserException } from './jwt-auth.guard';
 
 // 이용 제한 중에 탈퇴한 소셜 계정이 재가입 제한 기간에 로그인 · 가입하면 403 과 함께 주는 code
 export const ACCOUNT_BANNED_ERROR_CODE = 'ACCOUNT_BANNED';
@@ -221,10 +222,21 @@ export class AuthService {
 
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .select(['user.id'])
+      .select([
+        'user.id',
+        'user.withdrawnAt',
+        'user.restrictedAt',
+        'user.restrictedUntil',
+      ])
       .addSelect('user.refreshTokenHash')
       .where('user.id = :userId', { userId: payload.sub })
       .getOne();
+
+    // 탈퇴하면 refresh token 해시가 지워져서 아래에서도 막히지만, 영구 정지로 탈퇴됐으면 앱이 알 수 있게 code 를 붙인다.
+    // 앱을 오래 꺼 두면 access token 이 만료돼 가드보다 여기를 먼저 거친다
+    if (user?.withdrawnAt) {
+      throw createWithdrawnUserException(user);
+    }
 
     if (
       !user?.refreshTokenHash ||
@@ -332,7 +344,7 @@ export class AuthService {
   }
 
   /*
-   * 이용 제한 중에 탈퇴한 소셜 계정이면 재가입 제한이 끝날 때까지 403 으로 막는다. 앱은 message 를 그대로 토스트로 보여준다.
+   * 이용 제한 중에 탈퇴한 소셜 계정이면 재가입 제한이 끝날 때까지 403 으로 막는다. 앱은 rejoinAvailableAt 으로 재가입 차단 화면을 띄운다.
    * 로그인에서 ?? 로 이어 쓰려고 막히지 않으면 null 을 돌려준다
    */
   private async assertNotBanned(
@@ -351,6 +363,8 @@ export class AuthService {
       throw new ForbiddenException({
         statusCode: 403,
         code: ACCOUNT_BANNED_ERROR_CODE,
+        // 다시 가입할 수 있게 되는 시각. 앱의 재가입 차단 화면에 보여준다 (마이그레이션 전 행이면 null)
+        rejoinAvailableAt: banned.expiresAt,
         message: banned.expiresAt
           ? `운영정책 위반으로 이용이 제한된 계정이라 ${formatKstDate(banned.expiresAt)}까지 다시 가입할 수 없어요.`
           : '운영정책 위반으로 이용이 제한된 계정이라 다시 가입할 수 없어요.',

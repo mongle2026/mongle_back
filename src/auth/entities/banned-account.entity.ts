@@ -14,7 +14,7 @@ import { ReportReason } from '../../report/enums/report.enum';
 
 /**
  * 일정 기간 다시 가입할 수 없는 소셜 계정. 이용 제한 중에 탈퇴하면 남긴다 (withdrawal.service.ts).
- * - 영구 정지된 회원 (본인 탈퇴 · 운영자가 탈퇴시킴): 탈퇴 후 1년
+ * - 영구 정지된 회원 (본인 탈퇴 · 운영자가 탈퇴시킴 · 이의 신청 기간이 끝나 자동 탈퇴): 탈퇴 후 1년
  * - 기간 정지 중 본인 탈퇴: 정지가 끝나는 시각까지
  * 탈퇴하면 user.provider_user_id 가 비워지므로, 같은 소셜 계정을 알아볼 수 있게 여기에 옮겨 둔다.
  * 이 소셜 계정으로 로그인 · 가입하면 expires_at 전까지 403 ACCOUNT_BANNED 로 막는다 (auth.service.ts).
@@ -48,7 +48,7 @@ export class BannedAccountEntity {
   @Column({ type: 'varchar', length: 20, nullable: true })
   reason!: ReportReason | null;
 
-  // 탈퇴시킨 운영자의 디스코드 사용자 id. 본인이 탈퇴했거나 터미널로 처리했으면 null
+  // 탈퇴시킨 운영자의 디스코드 사용자 id. 본인이 탈퇴했거나 터미널로 처리했거나 자동 탈퇴면 null
   @Column({ name: 'banned_by', type: 'varchar', length: 32, nullable: true })
   bannedBy!: string | null;
 

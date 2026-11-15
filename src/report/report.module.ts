@@ -18,6 +18,7 @@ import { SanctionService } from './sanction/sanction.service';
 import { SanctionController } from './sanction/sanction.controller';
 import { AuthModule } from '../auth/auth.module';
 import { ModerationRetentionService } from './retention/moderation-retention.service';
+import { PermanentBanWithdrawalService } from './sanction/permanent-ban-withdrawal.service';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ModerationRetentionService } from './retention/moderation-retention.ser
     AppealService,
     AppealDiscordService,
     ModerationRetentionService,
+    PermanentBanWithdrawalService,
   ],
   exports: [ReportModerationService],
 })
