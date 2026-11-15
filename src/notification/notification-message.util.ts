@@ -37,6 +37,7 @@ const toQuotedContent = (content?: string | null) =>
 
 const REPORT_NOTICE_TITLE = '신고 처리 안내';
 const POLICY_NOTICE_TITLE = '운영정책 안내';
+const APPEAL_RESULT_TITLE = '이의 신청 결과 안내';
 const NO_VIOLATION_SUFFIX = '\n운영정책 위반 사항은 확인되지 않았어요.';
 
 // 신고 처리 알림 본문. 대상 종류마다 다르다
@@ -135,6 +136,16 @@ export const buildPushContent = (params: {
         title: POLICY_NOTICE_TITLE,
         body: getReportNoticeBody(params.status, params.targetType),
       };
+    case NotificationStatus.APPEAL_ACCEPTED:
+      return {
+        title: APPEAL_RESULT_TITLE,
+        body: '이의 신청이 받아들여져 이용 정지가 해제되었어요.',
+      };
+    case NotificationStatus.APPEAL_REJECTED:
+      return {
+        title: APPEAL_RESULT_TITLE,
+        body: '검토 결과 위반이 확인되어 이용 정지가 유지돼요.',
+      };
   }
 };
 
@@ -142,12 +153,4 @@ export const buildPushContent = (params: {
 export const buildNightSummaryPushContent = (count: number) => ({
   title: `새로운 알림 ${count}개`,
   body: '지난밤 도착한 알림을 확인해 주세요.',
-});
-
-// 이용 제한 이의 신청 결과 푸시. 알림 목록에는 남기지 않는다 (NotificationService.sendPushOnly)
-export const buildAppealResultPushContent = (isAccepted: boolean) => ({
-  title: '이의 신청 결과 안내',
-  body: isAccepted
-    ? '이의 신청이 받아들여져 계정 이용 제한이 풀렸어요.'
-    : '이의 신청을 검토했어요.\n운영정책 위반이 확인되어 이용 제한이 유지돼요.',
 });

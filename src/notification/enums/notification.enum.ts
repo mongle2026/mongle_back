@@ -23,6 +23,10 @@ export enum NotificationStatus {
   REPORT_REJECTED = 'report_rejected',
   // 소식: 신고당한 사람에게 "운영정책에 따라 가려짐 / 이용 제한됨"
   POLICY_NOTICE = 'policy_notice',
+  // 소식: 이의 신청한 사람에게 "받아들여져 이용 정지가 해제됨"
+  APPEAL_ACCEPTED = 'appeal_accepted',
+  // 소식: 이의 신청한 사람에게 "위반이 확인되어 이용 정지가 유지됨"
+  APPEAL_REJECTED = 'appeal_rejected',
 }
 
 // 운영 조치 안내라 알림 설정과 관계없이 항상 보낸다.
@@ -32,6 +36,8 @@ export const ALWAYS_DELIVERED_STATUSES: ReadonlySet<NotificationStatus> =
     NotificationStatus.REPORT_RESOLVED,
     NotificationStatus.REPORT_REJECTED,
     NotificationStatus.POLICY_NOTICE,
+    NotificationStatus.APPEAL_ACCEPTED,
+    NotificationStatus.APPEAL_REJECTED,
   ]);
 
 // 사용자가 켜고 끄는 단위. 여러 status 가 하나의 설정으로 묶일 수 있다. (댓글 + 답글)
@@ -61,6 +67,8 @@ export const NOTIFICATION_TYPE_BY_STATUS: Record<
   [NotificationStatus.REPORT_RESOLVED]: NotificationType.NEWS,
   [NotificationStatus.REPORT_REJECTED]: NotificationType.NEWS,
   [NotificationStatus.POLICY_NOTICE]: NotificationType.NEWS,
+  [NotificationStatus.APPEAL_ACCEPTED]: NotificationType.NEWS,
+  [NotificationStatus.APPEAL_REJECTED]: NotificationType.NEWS,
 };
 
 export const NOTIFICATION_SETTING_KEY_BY_STATUS: Record<
@@ -78,6 +86,8 @@ export const NOTIFICATION_SETTING_KEY_BY_STATUS: Record<
   [NotificationStatus.REPORT_RESOLVED]: NotificationSettingKey.SYSTEM,
   [NotificationStatus.REPORT_REJECTED]: NotificationSettingKey.SYSTEM,
   [NotificationStatus.POLICY_NOTICE]: NotificationSettingKey.SYSTEM,
+  [NotificationStatus.APPEAL_ACCEPTED]: NotificationSettingKey.SYSTEM,
+  [NotificationStatus.APPEAL_REJECTED]: NotificationSettingKey.SYSTEM,
 };
 
 // 설정 행이 없을 때의 값. 이벤트(광고성 정보)는 사용자가 직접 동의해야 해서 기본 OFF.

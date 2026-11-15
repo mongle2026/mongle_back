@@ -24,17 +24,7 @@ import {
   RestrictionLiftReason,
 } from '../sanction/sanction.constants';
 import { NotificationService } from '../../notification/notification.service';
-import {
-  NotificationSettingKey,
-  NotificationType,
-} from '../../notification/enums/notification.enum';
-import { buildAppealResultPushContent } from '../../notification/notification-message.util';
-
-// 이의 신청 결과 푸시의 data.status. 알림 목록에는 없는 값이라 앱은 누르면 앱만 연다
-export const APPEAL_PUSH_STATUS = {
-  ACCEPTED: 'appeal_accepted',
-  REJECTED: 'appeal_rejected',
-} as const;
+import { NotificationStatus } from '../../notification/enums/notification.enum';
 
 export type AppealHandleResult = {
   // 이번에 처리했으면 그 결과. 이미 처리된 신청이면 null
@@ -49,7 +39,7 @@ type RestrictionFields = Pick<
 /*
  * 이용 제한 이의 신청.
  * - 회원: 제재 화면에서 낸다. 한 제한에 검토 중인 신청은 하나만 둔다. 기각되면 다시 낼 수 있다.
- * - 운영자: 디스코드 이의 신청 채널의 [제한 풀기] [기각] 버튼으로 처리한다. 결과는 푸시로만 알린다.
+ * - 운영자: 디스코드 이의 신청 채널의 [제한 풀기] [기각] 버튼으로 처리한다. 결과는 알림 목록과 푸시로 알린다.
  */
 @Injectable()
 export class AppealService {
@@ -119,12 +109,12 @@ export class AppealService {
     return { appealStatus: AppealStatus.PENDING, isAlreadyAppealed: false };
   }
 
-  // 제한 풀기: 이용 제한을 풀고 회원에게 푸시로 알린다
+  // 제한 풀기: 이용 제한을 풀고 회원에게 알린다
   async accept(appealId: number, handledBy: string) {
     return await this.handle(appealId, handledBy, AppealStatus.ACCEPTED);
   }
 
-  // 기각: 제한은 그대로 두고 회원에게 푸시로 알린다. 회원은 다시 이의 신청할 수 있다
+  // 기각: 제한은 그대로 두고 회원에게 알린다. 회원은 다시 이의 신청할 수 있다
   async reject(appealId: number, handledBy: string) {
     return await this.handle(appealId, handledBy, AppealStatus.REJECTED);
   }
@@ -190,22 +180,17 @@ export class AppealService {
       );
     }
 
+    // 알림 목록에 남기고 푸시도 보낸다. 운영 조치 안내라 알림 설정과 관계없이 보낸다 (ALWAYS_DELIVERED_STATUSES)
     if (
       result.status === AppealStatus.ACCEPTED ||
       result.status === AppealStatus.REJECTED
     ) {
-      const isAccepted = result.status === AppealStatus.ACCEPTED;
-
-      await this.notificationService.sendPushOnly(result.userId, {
-        ...buildAppealResultPushContent(isAccepted),
-        data: {
-          type: NotificationType.NEWS,
-          status: isAccepted
-            ? APPEAL_PUSH_STATUS.ACCEPTED
-            : APPEAL_PUSH_STATUS.REJECTED,
-        },
-        // 푸시 채널은 운영 조치 안내(policy_notice 등)와 같은 시스템 알림
-        settingKey: NotificationSettingKey.SYSTEM,
+      await this.notificationService.notify({
+        userId: result.userId,
+        status:
+          result.status === AppealStatus.ACCEPTED
+            ? NotificationStatus.APPEAL_ACCEPTED
+            : NotificationStatus.APPEAL_REJECTED,
       });
     }
 
