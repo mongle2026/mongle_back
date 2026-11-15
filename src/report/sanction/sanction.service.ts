@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, IsNull, MoreThan } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, MoreThan } from 'typeorm';
 import { UserEntity } from '../../user/entities/user.entity';
 import {
   getPendingRestrictionLift,
@@ -210,6 +210,7 @@ export class SanctionService {
    * 제재가 바꾼 이용 제한이 아직 그대로면 제재 전 상태로 돌린다.
    * (그 사이 이의 신청 · 다른 제재로 제한이 바뀌었으면 그대로 둔다)
    * 되돌려서 제한이 없어지면, 앱이 풀린 뒤 처음 들어올 때 해제 안내(REVOKED)를 띄운다
+   * reportIds 를 주면 그 신고로 내린 제재만 없앤다 (회원 신고는 처리할 때마다 경고가 쌓여서 한 번의 처리만 되돌린다)
    * 없앤 제재 수를 돌려준다.
    */
   async revokeForTarget(
@@ -217,9 +218,19 @@ export class SanctionService {
     targetType: ReportTargetType,
     targetId: number,
     now: Date,
+    reportIds?: number[],
   ) {
+    if (reportIds?.length === 0) {
+      return 0;
+    }
+
     const sanctions = await manager.find(UserSanctionEntity, {
-      where: { targetType, targetId, revokedAt: IsNull() },
+      where: {
+        targetType,
+        targetId,
+        revokedAt: IsNull(),
+        ...(reportIds && { reportId: In(reportIds) }),
+      },
       order: { id: 'DESC' },
     });
 

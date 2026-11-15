@@ -270,12 +270,21 @@ export class ReportModerationService {
   /*
    * 잘못 처리했을 때 되돌린다. 가림을 풀고, 이 대상으로 준 경고 · 영구 정지를 없애고(이용 제한도 이전으로),
    * 처리했던 신고를 다시 처리 전으로 돌린다. (신고한 사람마다 하나씩. findReportsToReopen 참고)
+   * 회원 신고는 처리할 때마다 경고가 쌓이므로, 누른 신고가 처리된 그 한 번만 되돌린다 (undoUserHandling 참고)
    * 이미 보낸 알림은 지우지 않고, 되돌렸다는 알림도 보내지 않는다. 탈퇴시킨 회원은 되돌릴 수 없다.
    */
   async undo(reportId: number): Promise<ReportHandleResult> {
     const result = await this.dataSource.transaction(async (manager) => {
       const report = await this.findReport(manager, reportId);
       const now = new Date();
+
+      if (report.targetType === ReportTargetType.USER) {
+        return {
+          report,
+          handleResult: await this.undoUserHandling(manager, report, now),
+        };
+      }
+
       let isTargetChanged = false;
 
       if (this.isBlindable(report.targetType)) {
@@ -306,29 +315,9 @@ export class ReportModerationService {
         isTargetChanged = true;
       }
 
-      // 예전 방식(기간을 골라 이용 제한)으로 처리한 회원 신고는 예전처럼 제한을 푼다
-      if (
-        report.targetType === ReportTargetType.USER &&
-        (await this.liftLegacyRestriction(manager, report))
-      ) {
-        isTargetChanged = true;
-      }
-
       const reopenIds = await this.findReportsToReopen(manager, report);
 
-      if (reopenIds.length > 0) {
-        await manager.update(
-          ReportEntity,
-          { id: In(reopenIds) },
-          {
-            status: ReportStatus.PENDING,
-            pendingKey: 1,
-            action: null,
-            handledAt: null,
-            handledBy: null,
-          },
-        );
-      }
+      await this.reopenReports(manager, reopenIds);
 
       return {
         report,
@@ -549,6 +538,109 @@ export class ReportModerationService {
     }
 
     return reopenIds;
+  }
+
+  /*
+   * 회원 신고 되돌리기. 회원 신고는 처리할 때마다 새 경고가 쌓여서, 대상의 제재를 모두 없애면 이전 처리로 준 경고까지 사라진다.
+   * 그래서 누른 신고가 처리된 그 한 번(같은 handled_at 에 함께 처리된 신고들)만 되돌린다.
+   * - 그 처리로 준 경고 · 영구 정지만 없앤다 (user_sanction.report_id 가 그 처리의 신고)
+   * - 그 처리의 신고만 처리 전으로 돌린다. 그 사이 같은 대상에 처리 전 신고를 낸 사람의 신고는 그대로 둔다
+   * - 기각한 처리를 되돌리면 신고만 처리 전으로 돌린다
+   * 회원 행 → 신고 행 순서로 잠근다 (경고 처리와 같은 순서)
+   */
+  private async undoUserHandling(
+    manager: EntityManager,
+    report: ReportEntity,
+    now: Date,
+  ): Promise<ReportHandleResult> {
+    const targetId = Number(report.targetId);
+    const handleResult: ReportHandleResult = {
+      targetType: report.targetType,
+      targetId,
+      isTargetChanged: false,
+      reportCount: 0,
+      sanction: null,
+    };
+
+    await this.sanctionService.lockUser(manager, targetId);
+
+    const reports = await manager.find(ReportEntity, {
+      select: {
+        id: true,
+        reporterId: true,
+        status: true,
+        action: true,
+        handledAt: true,
+      },
+      where: { targetType: report.targetType, targetId: report.targetId },
+      order: { id: 'DESC' },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    const handledAt = reports.find(
+      ({ id }) => Number(id) === Number(report.id),
+    )?.handledAt;
+
+    // 처리 전 신고(이미 되돌렸거나 아직 처리하지 않음)는 되돌릴 게 없다
+    if (!handledAt) {
+      return handleResult;
+    }
+
+    const handledReports = reports.filter(
+      (target) =>
+        target.status !== ReportStatus.PENDING &&
+        target.handledAt &&
+        new Date(target.handledAt).getTime() === new Date(handledAt).getTime(),
+    );
+    const handledIds = handledReports.map(({ id }) => Number(id));
+
+    const revokedCount = await this.sanctionService.revokeForTarget(
+      manager,
+      report.targetType,
+      targetId,
+      now,
+      handledIds,
+    );
+
+    // 예전 방식(기간을 골라 이용 제한)으로 처리한 회원 신고는 예전처럼 제한을 푼다
+    const isLegacyLifted =
+      handledReports.some(({ action }) => action === ReportAction.RESTRICT) &&
+      (await this.liftLegacyRestriction(manager, report));
+
+    const pendingReporterIds = new Set(
+      reports
+        .filter(({ status }) => status === ReportStatus.PENDING)
+        .map(({ reporterId }) => Number(reporterId)),
+    );
+    const reopenIds = handledReports
+      .filter(({ reporterId }) => !pendingReporterIds.has(Number(reporterId)))
+      .map(({ id }) => Number(id));
+
+    await this.reopenReports(manager, reopenIds);
+
+    return {
+      ...handleResult,
+      isTargetChanged: revokedCount > 0 || isLegacyLifted,
+      reportCount: reopenIds.length,
+    };
+  }
+
+  private async reopenReports(manager: EntityManager, reportIds: number[]) {
+    if (reportIds.length === 0) {
+      return;
+    }
+
+    await manager.update(
+      ReportEntity,
+      { id: In(reportIds) },
+      {
+        status: ReportStatus.PENDING,
+        pendingKey: 1,
+        action: null,
+        handledAt: null,
+        handledBy: null,
+      },
+    );
   }
 
   // 같은 대상의 처리 전 신고를 모두 처리한다. 알림을 보낼 신고한 사람을 알기 위해 처리한 신고를 돌려준다
