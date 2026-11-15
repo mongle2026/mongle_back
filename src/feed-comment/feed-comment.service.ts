@@ -13,7 +13,7 @@ import { R2Service } from '../storage/r2.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationStatus } from '../notification/enums/notification.enum';
 import { UserEntity } from '../user/entities/user.entity';
-import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
+import { getDisplayNickname, isRestrictedUser, isWithdrawnUser } from '../user/withdrawn-user';
 import { BlockService } from '../block/block.service';
 
 @Injectable()
@@ -470,6 +470,8 @@ export class FeedCommentService {
       hasProfileImage: !!user.profileImageKey,
       profileImageUrl: this.r2Service.getProfileImageUrl(user),
       isWithdrawn: isWithdrawnUser(user),
+      // 이용 제한 중인 회원. 앱이 아이디 · 프로필 사진만 제한 안내로 바꾸고 내용은 그대로 보여준다
+      isRestricted: isRestrictedUser(user),
     };
   }
 }
