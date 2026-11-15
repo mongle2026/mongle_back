@@ -17,6 +17,7 @@ import { UserSanctionEntity } from './sanction/entities/user-sanction.entity';
 import { SanctionService } from './sanction/sanction.service';
 import { SanctionController } from './sanction/sanction.controller';
 import { AuthModule } from '../auth/auth.module';
+import { ModerationRetentionService } from './retention/moderation-retention.service';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { AuthModule } from '../auth/auth.module';
     DiscordInteractionService,
     AppealService,
     AppealDiscordService,
+    ModerationRetentionService,
   ],
   exports: [ReportModerationService],
 })

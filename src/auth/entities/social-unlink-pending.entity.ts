@@ -26,7 +26,7 @@ export class SocialUnlinkPendingEntity {
   @Column({ name: 'provider_user_id', type: 'varchar', length: 100 })
   providerUserId!: string;
 
-  // 애플만. 탈퇴 직전에 받은 refresh token 을 암호화한 값 (AppleApiService 참고)
+  // 애플만. 로그인 때 받아 둔(또는 탈퇴 직전에 받은) refresh token 을 암호화한 값 (AppleApiService 참고)
   @Column({
     name: 'apple_refresh_token',
     type: 'varchar',

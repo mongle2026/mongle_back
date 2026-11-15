@@ -55,3 +55,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const addDays = (date: Date, days: number) =>
   new Date(date.getTime() + days * DAY_MS);
+
+// 영구 정지는 안내를 받은 날(restricted_at)부터 이 기간 안에만 이의 신청할 수 있다. 기간 정지는 정지가 끝날 때까지
+export const PERMANENT_APPEAL_DAYS = 7;
+
+// 이 제한에 이의 신청할 수 있는 마지막 시각
+export const getAppealDeadline = (
+  restrictedAt: Date,
+  restrictedUntil: Date | null,
+) =>
+  restrictedUntil
+    ? new Date(restrictedUntil)
+    : addDays(new Date(restrictedAt), PERMANENT_APPEAL_DAYS);

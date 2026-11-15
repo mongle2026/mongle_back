@@ -65,7 +65,7 @@ const CONFIRM_PROMPTS: Record<
   },
   withdraw: {
     content: (reportId) =>
-      `신고 #${reportId} 의 신고당한 회원을 **탈퇴**시킬까요? 되돌릴 수 없고, 같은 소셜 계정으로 다시 가입할 수 없어요.`,
+      `신고 #${reportId} 의 신고당한 회원을 **탈퇴**시킬까요? 되돌릴 수 없고, 같은 소셜 계정으로 1년 동안 다시 가입할 수 없어요.`,
     label: '탈퇴시키기',
   },
 };
@@ -249,7 +249,7 @@ export class DiscordInteractionService {
       } else {
         await this.reportModerationService.withdraw(reportId, userId);
 
-        content = `✅ 신고 #${reportId} 회원을 탈퇴시켰어요. 같은 소셜 계정으로 다시 가입할 수 없어요.`;
+        content = `✅ 신고 #${reportId} 회원을 탈퇴시켰어요. 같은 소셜 계정으로 1년 동안 다시 가입할 수 없어요.`;
       }
     } catch (error) {
       content = this.toErrorMessage(error);

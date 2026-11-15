@@ -108,6 +108,12 @@ export class UserEntity {
   @Column({ name: 'refresh_token_hash', type: 'varchar', length: 64, nullable: true, select: false })
   refreshTokenHash!: string | null;
 
+  // 애플 회원만. 로그인 · 가입 때 앱이 보낸 authorizationCode 로 받은 애플 refresh token 을 암호화한 값 (AppleApiService 참고).
+  // 탈퇴할 때(운영자가 탈퇴시킬 때 포함) 회원 없이 애플 연결을 끊는 데 쓴다. 로그인할 때마다 새 값으로 바꾸고, 탈퇴하면 null.
+  // 이 값이 생기기 전에 가입하고 아직 다시 로그인하지 않은 회원은 null. 기본 조회에서는 빠진다.
+  @Column({ name: 'apple_refresh_token', type: 'varchar', length: 1000, nullable: true, select: false })
+  appleRefreshToken!: string | null;
+
   @OneToMany(() => RecordEntity, (record) => record.user)
   records!: RecordEntity[];
 }

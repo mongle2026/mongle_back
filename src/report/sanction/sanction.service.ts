@@ -14,6 +14,7 @@ import { RestrictionAppealEntity } from '../appeal/entities/restriction-appeal.e
 import {
   addDays,
   addMonths,
+  getAppealDeadline,
   PERMANENT_WARNING_COUNT,
   RestrictionLiftReason,
   SanctionNotice,
@@ -324,6 +325,11 @@ export class SanctionService {
       restrictedAt: user.restrictedAt,
       restrictedUntil: user.restrictedUntil,
       appealStatus: appeal?.status ?? null,
+      // 이의 신청할 수 있는 마지막 시각. 지나면 이의 신청 버튼을 숨긴다 (영구 정지는 제한 후 7일, 기간 정지는 끝날 때)
+      appealDeadline: getAppealDeadline(
+        user.restrictedAt!,
+        user.restrictedUntil,
+      ),
     };
   }
 

@@ -55,12 +55,15 @@ export type SignupTokenPayload = {
   providerUserId: string;
   // 소셜 계정에서 받은 이메일. 못 받았으면 null
   email: string | null;
+  // 애플만. 로그인 때 받은 애플 refresh token 을 암호화한 값 (user.apple_refresh_token). 못 받았으면 null
+  appleRefreshToken: string | null;
 };
 
 export function signSignupToken(
   provider: AuthProvider,
   providerUserId: string,
   email: string | null,
+  appleRefreshToken: string | null,
   secret: string,
 ): string {
   const payload: SignupTokenPayload = {
@@ -68,6 +71,7 @@ export function signSignupToken(
     provider,
     providerUserId,
     email,
+    appleRefreshToken,
   };
 
   return jwt.sign(payload, secret, {
@@ -93,10 +97,14 @@ export function verifySignupToken(
       return null;
     }
 
-    // 이메일을 넣기 전에 발급한 토큰에는 email 이 없다
+    // 이메일 · 애플 refresh token 을 넣기 전에 발급한 토큰에는 값이 없다
     return {
       ...(payload as SignupTokenPayload),
       email: typeof payload.email === 'string' ? payload.email : null,
+      appleRefreshToken:
+        typeof payload.appleRefreshToken === 'string'
+          ? payload.appleRefreshToken
+          : null,
     };
   } catch {
     return null;

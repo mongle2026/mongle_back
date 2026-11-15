@@ -4,6 +4,8 @@ import axios from 'axios';
 
 const DISCORD_API_BASE_URL = 'https://discord.com/api/v10';
 const REQUEST_TIMEOUT = 5_000;
+// 메시지를 지울 때 429(요청 너무 많음)를 받으면 기다렸다가 다시 보내는 최대 횟수
+const DELETE_MAX_ATTEMPTS = 3;
 
 export type DiscordMessageBody = Record<string, unknown>;
 
@@ -42,6 +44,15 @@ export class DiscordApiService {
 
   async editAppealMessage(messageId: string, body: DiscordMessageBody) {
     await this.editMessage(this.getAppealChannelId()!, messageId, body);
+  }
+
+  // 보관 기간이 지난 신고 메시지를 지운다
+  async deleteReportMessage(messageId: string) {
+    await this.deleteMessage(this.getReportChannelId()!, messageId);
+  }
+
+  async deleteAppealMessage(messageId: string) {
+    await this.deleteMessage(this.getAppealChannelId()!, messageId);
   }
 
   // 버튼에 응답으로 보낸 메시지(나만 보이는 기간 선택 등)를 고친다
@@ -90,6 +101,47 @@ export class DiscordApiService {
       body,
       { headers: this.getBotHeaders(), timeout: REQUEST_TIMEOUT },
     );
+  }
+
+  /*
+   * 이미 지워졌으면(404) 지운 것으로 본다.
+   * 한꺼번에 많이 지우면 429 를 받으므로, 디스코드가 알려준 시간만큼 기다렸다가 다시 보낸다
+   */
+  private async deleteMessage(channelId: string, messageId: string) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await axios.delete(
+          `${DISCORD_API_BASE_URL}/channels/${channelId}/messages/${messageId}`,
+          { headers: this.getBotHeaders(), timeout: REQUEST_TIMEOUT },
+        );
+        return;
+      } catch (error) {
+        if (!axios.isAxiosError(error)) {
+          throw error;
+        }
+
+        if (error.response?.status === 404) {
+          return;
+        }
+
+        const retryAfterSeconds = Number(
+          (error.response?.data as { retry_after?: number } | undefined)
+            ?.retry_after,
+        );
+
+        if (
+          error.response?.status !== 429 ||
+          attempt >= DELETE_MAX_ATTEMPTS ||
+          !Number.isFinite(retryAfterSeconds)
+        ) {
+          throw error;
+        }
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.ceil(retryAfterSeconds * 1000)),
+        );
+      }
+    }
   }
 
   private getBotToken() {

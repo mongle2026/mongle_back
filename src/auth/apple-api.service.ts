@@ -24,7 +24,7 @@ const APPLE_TOKEN_URL = 'https://appleid.apple.com/auth/token';
 const APPLE_REVOKE_URL = 'https://appleid.apple.com/auth/revoke';
 
 const REQUEST_TIMEOUT = 5_000;
-// client_secret 은 최대 6개월까지 쓸 수 있지만, 탈퇴할 때만 쓰므로 그때그때 짧게 만든다
+// client_secret 은 최대 6개월까지 쓸 수 있지만, 그때그때 짧게 만든다
 const CLIENT_SECRET_TTL_SECONDS = 5 * 60;
 // 모르는 kid 의 토큰이 계속 와도 애플 공개키를 너무 자주 다시 받지 않도록
 const KEYS_REFETCH_INTERVAL = 60_000;
@@ -104,10 +104,10 @@ export class AppleApiService {
   }
 
   /**
-   * 탈퇴 직전에 앱이 애플 로그인을 한 번 더 해서 받은 authorizationCode 를 refresh token 으로 바꾼다.
+   * 앱이 애플 로그인에서 받은 authorizationCode 를 refresh token 으로 바꾼다.
+   * 로그인 · 가입 때 받아 두고(user.apple_refresh_token), 탈퇴할 때 연결 끊기에 쓴다.
    * authorizationCode 는 발급 후 5분 안에 한 번만 쓸 수 있어서 나중에 다시 시도할 수 없다.
-   * 그래서 탈퇴를 처리하기 전에 부르고, 실패하면 탈퇴하지 않는다.
-   * refresh token 은 연결 끊기가 끝날 때까지 DB 에 두므로 암호화해서 돌려준다.
+   * refresh token 은 DB 에 두므로 암호화해서 돌려준다.
    */
   async exchangeCodeForRefreshToken(
     authorizationCode: string,
@@ -148,13 +148,13 @@ export class AppleApiService {
     }
 
     // 애플에서 직접 받은 토큰이라 서명 검증 없이 sub 만 본다.
-    // 탈퇴하는 회원과 다른 애플 계정으로 받은 코드면 그 계정의 연결은 끊지 않는다.
+    // 회원과 다른 애플 계정으로 받은 코드면 그 계정의 토큰을 회원에게 붙이지 않는다.
     const idToken = data.id_token ? jwt.decode(data.id_token) : null;
     const sub = typeof idToken === 'object' ? idToken?.sub : undefined;
 
     if (sub !== appleUserId) {
       throw new BadRequestException(
-        '탈퇴하는 회원의 애플 계정으로 받은 코드가 아닙니다.',
+        '로그인한 애플 계정으로 받은 코드가 아닙니다.',
       );
     }
 
@@ -170,7 +170,7 @@ export class AppleApiService {
 
   /**
    * 탈퇴할 때 우리 앱과 애플 계정의 연결을 끊는다.
-   * exchangeCodeForRefreshToken 이 돌려준 암호화된 refresh token 을 받는다. 실패하면 같은 값으로 다시 부를 수 있다.
+   * exchangeCodeForRefreshToken 이 돌려준(user.apple_refresh_token 에 저장한) 암호화된 refresh token 을 받는다. 실패하면 같은 값으로 다시 부를 수 있다.
    * 이미 끊긴 토큰이어도 애플은 성공으로 응답한다.
    */
   async revokeRefreshToken(encryptedRefreshToken: string): Promise<void> {

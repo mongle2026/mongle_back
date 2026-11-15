@@ -348,7 +348,7 @@ export class ReportModerationService {
   }
 
   /*
-   * 영구 정지된 신고당한 회원을 탈퇴시킨다. 같은 소셜 계정으로 다시 가입할 수 없다 (banned_account).
+   * 영구 정지된 신고당한 회원을 탈퇴시킨다. 같은 소셜 계정으로 1년 동안 다시 가입할 수 없다 (banned_account).
    * 되돌릴 수 없다. 회원에게 알림을 보내지 않는다 (탈퇴하면 알림 · 푸시 토큰이 지워진다).
    */
   async withdraw(reportId: number, handledBy: string | null = null) {

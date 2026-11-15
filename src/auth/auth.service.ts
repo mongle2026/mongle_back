@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -34,8 +35,16 @@ import {
 import { SignupDto } from './dto/signup.dto';
 import { BannedAccountEntity } from './entities/banned-account.entity';
 
-// 운영정책 위반으로 영구 정지되어 탈퇴된 소셜 계정이 로그인 · 가입하면 403 과 함께 주는 code
+// 이용 제한 중에 탈퇴한 소셜 계정이 재가입 제한 기간에 로그인 · 가입하면 403 과 함께 주는 code
 export const ACCOUNT_BANNED_ERROR_CODE = 'ACCOUNT_BANNED';
+
+// 예: 2027년 11월 15일 오후 3:00
+const formatKstDate = (date: Date) =>
+  new Date(date).toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    dateStyle: 'long',
+    timeStyle: 'short',
+  });
 
 const ACCESS_TOKEN_TTL = '1h';
 const REFRESH_TOKEN_TTL = '30d';
@@ -47,6 +56,8 @@ const PROVIDER_LABELS: Record<AuthProvider, string> = {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
@@ -71,20 +82,39 @@ export class AuthService {
         kakaoUserId,
         await this.kakaoApiService.getNickname(kakaoAccessToken),
         null,
+        null,
       )
     );
   }
 
   // 애플은 이름을 최초 인증 때 앱에만 알려줘서 서버는 닉네임 기본값을 줄 수 없다.
   // 이메일은 identity token 에 들어 있어서 가입할 때 저장하도록 signupToken 에 담는다.
-  async loginWithApple(identityToken: string) {
+  // authorizationCode 는 애플 refresh token 으로 바꿔 user.apple_refresh_token 에 둔다.
+  // 운영자가 영구 정지된 회원을 탈퇴시킬 때처럼 회원의 애플 인증 없이도 애플 연결을 끊기 위해서다.
+  // 아직 가입 전이면 가입 화면에 머무는 동안 코드가 만료되므로(5분) 지금 바꿔서 signupToken 에 담는다.
+  async loginWithApple(identityToken: string, authorizationCode?: string) {
     const { sub: appleUserId, email } =
       await this.appleApiService.verifyIdentityToken(identityToken);
 
-    return (
-      (await this.loginIfRegistered(AuthProvider.APPLE, appleUserId)) ??
-      (await this.assertNotBanned(AuthProvider.APPLE, appleUserId)) ??
-      this.toNewUserResponse(AuthProvider.APPLE, appleUserId, null, email)
+    const userId = await this.findUserId(AuthProvider.APPLE, appleUserId);
+
+    if (userId) {
+      const [response] = await Promise.all([
+        this.toLoginResponse(userId),
+        this.saveAppleRefreshToken(userId, appleUserId, authorizationCode),
+      ]);
+
+      return response;
+    }
+
+    await this.assertNotBanned(AuthProvider.APPLE, appleUserId);
+
+    return this.toNewUserResponse(
+      AuthProvider.APPLE,
+      appleUserId,
+      null,
+      email,
+      await this.exchangeAppleCode(appleUserId, authorizationCode),
     );
   }
 
@@ -102,7 +132,7 @@ export class AuthService {
       );
     }
 
-    const { provider, providerUserId, email } = account;
+    const { provider, providerUserId, email, appleRefreshToken } = account;
 
     // 로그인 때 막지만, 그 뒤에 탈퇴된 계정이 가입 화면에 머물러 있을 수 있다
     await this.assertNotBanned(provider, providerUserId);
@@ -139,6 +169,8 @@ export class AuthService {
             provider,
             providerUserId,
             email,
+            appleRefreshToken:
+              provider === AuthProvider.APPLE ? appleRefreshToken : null,
             nickname: dto.nickname,
             userCode: dto.userCode,
             profileImageKey: profileImageKey ?? null,
@@ -233,40 +265,95 @@ export class AuthService {
     provider: AuthProvider,
     providerUserId: string,
   ) {
+    const userId = await this.findUserId(provider, providerUserId);
+
+    return userId ? this.toLoginResponse(userId) : null;
+  }
+
+  // 가입된 소셜 계정이면 회원 id, 아니면 null (탈퇴한 회원은 provider_user_id 를 비워서 찾지 않는다)
+  private async findUserId(provider: AuthProvider, providerUserId: string) {
     const user = await this.userRepository.findOne({
       where: { provider, providerUserId },
       select: { id: true },
     });
 
-    if (!user) {
-      return null;
-    }
+    return user ? Number(user.id) : null;
+  }
 
+  private async toLoginResponse(userId: number) {
     return {
       isNewUser: false as const,
-      ...(await this.issueTokens(Number(user.id))),
-      user: await this.userService.getUserById(Number(user.id)),
+      ...(await this.issueTokens(userId)),
+      user: await this.userService.getUserById(userId),
     };
   }
 
+  // 로그인할 때마다 새로 받은 애플 refresh token 으로 바꾼다. 못 받았으면 저장된 값을 그대로 둔다
+  private async saveAppleRefreshToken(
+    userId: number,
+    appleUserId: string,
+    authorizationCode?: string,
+  ) {
+    const appleRefreshToken = await this.exchangeAppleCode(
+      appleUserId,
+      authorizationCode,
+    );
+
+    if (appleRefreshToken) {
+      await this.userRepository.update({ id: userId }, { appleRefreshToken });
+    }
+  }
+
   /*
-   * 영구 정지로 탈퇴된 소셜 계정이면 403 으로 막는다. 앱은 message 를 그대로 토스트로 보여준다.
+   * 애플 authorizationCode 를 암호화된 refresh token 으로 바꾼다. 코드가 없거나 실패하면 null.
+   * 애플 서버 문제로 로그인까지 막히지 않도록 실패해도 로그만 남긴다.
+   * 이 경우 본인 탈퇴는 그때 받는 authorizationCode 로 끊고, 운영자가 탈퇴시킬 때는 애플 연결을 끊지 못한다
+   */
+  private async exchangeAppleCode(
+    appleUserId: string,
+    authorizationCode?: string,
+  ): Promise<string | null> {
+    if (!authorizationCode) {
+      return null;
+    }
+
+    try {
+      return await this.appleApiService.exchangeCodeForRefreshToken(
+        authorizationCode,
+        appleUserId,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `애플 로그인 코드 교환 실패. 애플 refresh token 없이 진행 (${String(error)})`,
+      );
+
+      return null;
+    }
+  }
+
+  /*
+   * 이용 제한 중에 탈퇴한 소셜 계정이면 재가입 제한이 끝날 때까지 403 으로 막는다. 앱은 message 를 그대로 토스트로 보여준다.
    * 로그인에서 ?? 로 이어 쓰려고 막히지 않으면 null 을 돌려준다
    */
   private async assertNotBanned(
     provider: AuthProvider,
     providerUserId: string,
   ): Promise<null> {
-    const isBanned = await this.dataSource
+    const banned = await this.dataSource
       .getRepository(BannedAccountEntity)
-      .existsBy({ provider, providerUserId });
+      .findOne({
+        select: { id: true, expiresAt: true },
+        where: { provider, providerUserId },
+      });
 
-    if (isBanned) {
+    // expires_at 이 비어 있으면 마이그레이션 전 행이라 막는다
+    if (banned && (!banned.expiresAt || banned.expiresAt > new Date())) {
       throw new ForbiddenException({
         statusCode: 403,
         code: ACCOUNT_BANNED_ERROR_CODE,
-        message:
-          '운영정책 위반으로 이용이 영구 정지된 계정이라 다시 가입할 수 없어요.',
+        message: banned.expiresAt
+          ? `운영정책 위반으로 이용이 제한된 계정이라 ${formatKstDate(banned.expiresAt)}까지 다시 가입할 수 없어요.`
+          : '운영정책 위반으로 이용이 제한된 계정이라 다시 가입할 수 없어요.',
       });
     }
 
@@ -278,6 +365,7 @@ export class AuthService {
     providerUserId: string,
     suggestedNickname: string | null,
     email: string | null,
+    appleRefreshToken: string | null,
   ) {
     return {
       isNewUser: true as const,
@@ -285,6 +373,7 @@ export class AuthService {
         provider,
         providerUserId,
         email,
+        appleRefreshToken,
         getJwtSecret(this.configService),
       ),
       // 가입 화면에서 닉네임 기본값으로 보여줄 값

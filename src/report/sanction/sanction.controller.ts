@@ -15,7 +15,7 @@ export class SanctionController {
 
   // 제재 화면에서 부르는 API 라서 제한 중에도 막지 않는다.
   // 응답: { isRestricted: false, restrictionLift: { reason } | null }
-  //   또는 { isRestricted: true, reason, restrictedAt, restrictedUntil, appealStatus }
+  //   또는 { isRestricted: true, reason, restrictedAt, restrictedUntil, appealStatus, appealDeadline }
   @Get('restriction')
   @AllowRestricted()
   async getRestriction(@CurrentUserId() currentUserId: number) {

@@ -148,7 +148,7 @@ async function handleReport() {
     if (action === 'withdraw') {
       const { userId } = await moderation.withdraw(reportId);
       console.log(
-        `신고 #${reportId} → 회원 #${userId} 탈퇴\n  같은 소셜 계정으로 다시 가입할 수 없어요. (banned_account)`,
+        `신고 #${reportId} → 회원 #${userId} 탈퇴\n  같은 소셜 계정으로 1년 동안 다시 가입할 수 없어요. (banned_account)`,
       );
       return;
     }

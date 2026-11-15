@@ -18,7 +18,11 @@ import {
   buildLiftedRestriction,
   isRestrictedUser,
 } from '../../user/withdrawn-user';
-import { RestrictionLiftReason } from '../sanction/sanction.constants';
+import {
+  getAppealDeadline,
+  PERMANENT_APPEAL_DAYS,
+  RestrictionLiftReason,
+} from '../sanction/sanction.constants';
 import { NotificationService } from '../../notification/notification.service';
 import {
   NotificationSettingKey,
@@ -39,7 +43,7 @@ export type AppealHandleResult = {
 
 type RestrictionFields = Pick<
   UserEntity,
-  'restrictedAt' | 'restrictedUntil' | 'restrictedReason'
+  'withdrawnAt' | 'restrictedAt' | 'restrictedUntil' | 'restrictedReason'
 >;
 
 /*
@@ -67,6 +71,16 @@ export class AppealService {
 
       if (!user || !isRestrictedUser(user)) {
         throw new BadRequestException('이용 제한 중인 계정이 아니에요.');
+      }
+
+      // 영구 정지는 안내를 받은 날부터 PERMANENT_APPEAL_DAYS 일 안에만 낼 수 있다 (기간 정지는 정지 중이면 언제든)
+      if (
+        getAppealDeadline(user.restrictedAt!, user.restrictedUntil) <=
+        new Date()
+      ) {
+        throw new BadRequestException(
+          `영구 이용 정지는 안내를 받은 날부터 ${PERMANENT_APPEAL_DAYS}일 안에만 이의 신청할 수 있어요.`,
+        );
       }
 
       const pending = await manager.findOne(RestrictionAppealEntity, {
@@ -198,13 +212,15 @@ export class AppealService {
     return { status: result.status };
   }
 
-  // 이의를 낸 제한이 아직 이어지고 있는지. 기간만 바뀐 건 같은 제한이다
+  // 이의를 낸 제한이 아직 이어지고 있는지. 기간만 바뀐 건 같은 제한이다.
+  // 검토 전에 탈퇴했으면 풀어 줄 계정이 없어서 이어지지 않는 것으로 본다 (재가입 제한은 그대로)
   private isSameRestriction(
     user: RestrictionFields | null,
     appeal: RestrictionAppealEntity,
   ) {
     return (
       !!user &&
+      !user.withdrawnAt &&
       isRestrictedUser(user) &&
       new Date(user.restrictedAt!).getTime() ===
         new Date(appeal.restrictedAt).getTime()
@@ -215,6 +231,7 @@ export class AppealService {
     return await manager.findOne(UserEntity, {
       select: {
         id: true,
+        withdrawnAt: true,
         restrictedAt: true,
         restrictedUntil: true,
         restrictedReason: true,
