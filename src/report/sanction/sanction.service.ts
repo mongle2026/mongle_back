@@ -24,6 +24,7 @@ import {
   SUSPENSION_WARNING_COUNT,
   WARNING_EXPIRY_MONTHS,
 } from './sanction.constants';
+import { PERMANENT_REJOIN_BAN_MONTHS } from '../retention/retention.constants';
 
 // 제재에 필요한 회원 값. 같은 트랜잭션 안에서 제한을 바꾸면 이 객체도 같이 고친다
 export type SanctionUser = Pick<
@@ -319,17 +320,26 @@ export class SanctionService {
         order: { id: 'DESC' },
       });
 
+    // 이의 신청할 수 있는 마지막 시각. 지나면 이의 신청 버튼을 숨긴다 (영구 정지는 제한 후 7일, 기간 정지는 끝날 때)
+    const appealDeadline = getAppealDeadline(
+      user.restrictedAt!,
+      user.restrictedUntil,
+    );
+
     return {
       isRestricted: true,
       reason: user.restrictedReason,
       restrictedAt: user.restrictedAt,
       restrictedUntil: user.restrictedUntil,
       appealStatus: appeal?.status ?? null,
-      // 이의 신청할 수 있는 마지막 시각. 지나면 이의 신청 버튼을 숨긴다 (영구 정지는 제한 후 7일, 기간 정지는 끝날 때)
-      appealDeadline: getAppealDeadline(
-        user.restrictedAt!,
-        user.restrictedUntil,
-      ),
+      appealDeadline,
+      // 다시 가입할 수 있게 되는 시각 (앱의 이의 신청 화면 제한 기간 끝).
+      // 영구 정지는 이의 신청 기간이 끝나면 크론이 탈퇴시키고 그때부터 1년이라 예정 시각을 계산해서 준다.
+      // 실제 banned_account.expires_at 은 탈퇴 시각으로 정해지므로 크론 시각 · 검토 중인 이의 신청만큼 늦어질 수 있다.
+      // 기간 정지는 정지가 끝나는 시각 (banRejoinIfRestricted 와 같다)
+      rejoinAvailableAt:
+        user.restrictedUntil ??
+        addMonths(appealDeadline, PERMANENT_REJOIN_BAN_MONTHS),
     };
   }
 
