@@ -202,15 +202,22 @@ export class LetterService {
       const isBlinded = !!letter.blindedAt;
 
       // 받은 편지에서 내가 보낸 사람을 차단했는지. 앱이 답장 대신 차단 해제 안내를 띄운다
-      // (상대가 나를 차단한 사실은 알려주지 않는다)
       const isSenderBlocked =
         isReceiver && !isSender
           ? await this.blockService.hasBlocked(userId, senderId)
           : false;
 
+      // 받은 편지에서 보낸 사람이 나를 차단했는지. 앱이 보낸 사람을 흐리게 보여주고
+      // 답장 대신 보낼 수 없다는 안내를 띄운다 (프로필 조회의 hasBlockedMe 와 같은 뜻)
+      const hasSenderBlockedMe =
+        isReceiver && !isSender
+          ? await this.blockService.hasBlocked(senderId, userId)
+          : false;
+
       return {
         isBlinded,
         isSenderBlocked,
+        hasSenderBlockedMe,
         letter: {
           id: Number(letter.id),
           recordId: Number(letter.recordId),
