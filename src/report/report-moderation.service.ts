@@ -7,6 +7,7 @@ import { DataSource, EntityManager, In } from 'typeorm';
 import { ReportEntity } from './entities/report.entity';
 import {
   ReportAction,
+  ReportReason,
   ReportStatus,
   ReportTargetType,
 } from './enums/report.enum';
@@ -54,6 +55,9 @@ type HandledReports = {
     reporterId: number;
     isReporterWithdrawn: boolean;
     targetType: ReportTargetType;
+    // 신고 검토 결과 화면에 쓰려고 처리 결과 알림에 복사한다 (신고 기록은 처리 후 며칠 안에 지워진다)
+    reason: ReportReason;
+    reportedAt: Date;
   }[];
 };
 
@@ -655,6 +659,8 @@ export class ReportModerationService {
       select: {
         id: true,
         reporterId: true,
+        reason: true,
+        createdAt: true,
         reporter: { id: true, withdrawnAt: true },
       },
       relations: { reporter: true },
@@ -686,6 +692,8 @@ export class ReportModerationService {
       reporterId: Number(pendingReport.reporterId),
       isReporterWithdrawn: isWithdrawnUser(pendingReport.reporter),
       targetType: report.targetType,
+      reason: pendingReport.reason,
+      reportedAt: pendingReport.createdAt,
     }));
   }
 
@@ -696,7 +704,13 @@ export class ReportModerationService {
       | NotificationStatus.REPORT_RESOLVED
       | NotificationStatus.REPORT_REJECTED,
   ) {
-    for (const { reporterId, isReporterWithdrawn, targetType } of reports) {
+    for (const {
+      reporterId,
+      isReporterWithdrawn,
+      targetType,
+      reason,
+      reportedAt,
+    } of reports) {
       if (isReporterWithdrawn) {
         continue;
       }
@@ -705,6 +719,8 @@ export class ReportModerationService {
         userId: Number(reporterId),
         status,
         targetType,
+        reportReason: reason,
+        reportedAt,
       });
     }
   }
@@ -724,6 +740,7 @@ export class ReportModerationService {
       targetType: report.targetType,
       sanction: sanction.notice,
       warningCount: sanction.warningCount,
+      sanctionId: sanction.sanctionId,
     });
   }
 }

@@ -1,4 +1,12 @@
-import { Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { SanctionService } from './sanction.service';
 import { AllowRestricted, JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { CurrentUserId } from '../../auth/current-user-id.decorator';
@@ -54,5 +62,21 @@ export class SanctionController {
   @HttpCode(204)
   async acknowledgeWarnings(@CurrentUserId() currentUserId: number) {
     await this.sanctionService.acknowledgeWarnings(currentUserId);
+  }
+
+  // 운영정책 안내 · 이용 정지 해제 안내 화면의 제재 상세. 알림 목록의 sanctionId 로 부른다.
+  // 정지가 풀린 뒤 알림 목록에서 들어오므로 제한 중에는 막는다 (403 ACCOUNT_RESTRICTED).
+  // 응답: { sanctionId, type, reason, targetType, sanctionedAt, restriction, restrictedAt, restrictedUntil,
+  //        warnings: [{ warnedAt, targetType }] }
+  // 위의 고정 경로(restriction · warning 등)가 먼저 맞도록 맨 아래에 둔다
+  @Get(':sanctionId')
+  async getSanctionDetail(
+    @Param('sanctionId', ParseIntPipe) sanctionId: number,
+    @CurrentUserId() currentUserId: number,
+  ) {
+    return await this.sanctionService.getSanctionDetail(
+      currentUserId,
+      sanctionId,
+    );
   }
 }

@@ -12,7 +12,7 @@ import {
   NotificationStatus,
   NotificationType,
 } from '../enums/notification.enum';
-import { ReportTargetType } from '../../report/enums/report.enum';
+import { ReportReason, ReportTargetType } from '../../report/enums/report.enum';
 import { SanctionNotice } from '../../report/sanction/sanction.constants';
 
 // 알림 목록 한 줄. 원본(편지/댓글)이 지워져도 목록에서는 남겨두기로 해서
@@ -80,6 +80,25 @@ export class NotificationEntity {
     nullable: true,
   })
   warningCount!: number | null;
+
+  // 신고한 사람에게 보내는 처리 결과 알림(report_resolved / report_rejected)의 신고 사유와 신고한 시각.
+  // 신고 기록은 처리 후 며칠 안에 지워져서(moderation-retention) 신고 검토 결과 화면에 쓸 값을 복사해 둔다. 다른 알림은 null
+  @Column({
+    name: 'report_reason',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  reportReason!: ReportReason | null;
+
+  @Column({ name: 'reported_at', type: 'datetime', nullable: true })
+  reportedAt!: Date | null;
+
+  // 운영정책 안내(policy_notice) · 이용 정지 해제 안내(restriction_expired)를 만든 제재(user_sanction.id).
+  // GET /sanction/:sanctionId 로 상세를 받는다. 제재 기록이 지워져도 알림은 남아야 해서 외래키를 걸지 않는다.
+  // 예전 방식(RESTRICT)으로 내린 이용 제한의 해제 안내 · 다른 알림은 null
+  @Column({ name: 'sanction_id', type: 'bigint', nullable: true })
+  sanctionId!: number | null;
 
   // 야간 알림을 끈 사람에게 밤에 생긴 알림. 목록에는 바로 보이고 푸시만 아침에 모아서 보낸다.
   @Column({ name: 'push_pending', type: 'boolean', default: false })

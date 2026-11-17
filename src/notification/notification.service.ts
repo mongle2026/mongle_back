@@ -28,7 +28,7 @@ import {
 import { R2Service } from '../storage/r2.service';
 import { getDisplayNickname, isWithdrawnUser } from '../user/withdrawn-user';
 import { BlockService } from '../block/block.service';
-import { ReportTargetType } from '../report/enums/report.enum';
+import { ReportReason, ReportTargetType } from '../report/enums/report.enum';
 import { SanctionNotice } from '../report/sanction/sanction.constants';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -72,6 +72,11 @@ export type CreateNotificationInput = {
   // 운영정책 안내(policy_notice)에 붙는 제재 내용과 그때의 유효한 경고 수
   sanction?: SanctionNotice | null;
   warningCount?: number | null;
+  // 처리 결과 알림(report_resolved / report_rejected)의 신고 사유와 신고한 시각
+  reportReason?: ReportReason | null;
+  reportedAt?: Date | null;
+  // 운영정책 안내(policy_notice) · 이용 정지 해제 안내(restriction_expired)를 만든 제재
+  sanctionId?: number | null;
 };
 
 // 운영자가 가린 댓글의 알림 목록 내용
@@ -144,6 +149,9 @@ export class NotificationService {
           targetType: input.targetType ?? null,
           sanction: input.sanction ?? null,
           warningCount: input.warningCount ?? null,
+          reportReason: input.reportReason ?? null,
+          reportedAt: input.reportedAt ?? null,
+          sanctionId: input.sanctionId ?? null,
           pushPending: pushTiming === 'later',
         }),
       );
@@ -766,6 +774,11 @@ export class NotificationService {
       // 운영정책 안내의 제재 내용(SanctionNotice: WARNING / SUSPENSION / PERMANENT)과 그때의 유효한 경고 수
       sanction: notification.sanction,
       warningCount: notification.warningCount,
+      // 신고 검토 결과 화면: 신고 사유(ReportReason)와 신고한 시각. 처리한 시각은 createdAt
+      reportReason: notification.reportReason,
+      reportedAt: notification.reportedAt,
+      // 운영정책 안내 · 이용 정지 해제 안내 화면: GET /sanction/:sanctionId 로 상세를 받는다
+      sanctionId: this.toNullableNumber(notification.sanctionId),
       isToSelf: this.isToSelf(notification),
       letterId: this.toNullableNumber(notification.letterId),
       feedId: this.toNullableNumber(notification.feedId),

@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { UserEntity } from '../../user/entities/user.entity';
 import { NotificationService } from '../../notification/notification.service';
 import { NotificationStatus } from '../../notification/enums/notification.enum';
+import { SanctionService } from './sanction.service';
 
 const BATCH_SIZE = 100;
 // 한 번 실행에서 처리할 최대 묶음 수. 남은 회원은 다음 실행(1분 뒤)에 이어서 처리한다
@@ -48,6 +49,7 @@ export class RestrictionExpiryNotificationScheduler {
   constructor(
     private readonly dataSource: DataSource,
     private readonly notificationService: NotificationService,
+    private readonly sanctionService: SanctionService,
   ) {}
 
   @Cron('0 * * * * *')
@@ -73,7 +75,7 @@ export class RestrictionExpiryNotificationScheduler {
       const users = await this.dataSource
         .getRepository(UserEntity)
         .createQueryBuilder('user')
-        .select('user.id')
+        .select(['user.id', 'user.restrictedAt'])
         .where(EXPIRY_NOTIFICATION_DUE, getDueParams(now))
         .orderBy('user.id', 'ASC')
         .take(BATCH_SIZE)
@@ -83,22 +85,22 @@ export class RestrictionExpiryNotificationScheduler {
         return;
       }
 
-      const userIds: number[] = [];
+      const claimedUsers: { userId: number; restrictedAt: Date }[] = [];
 
       for (const user of users) {
         if (await this.claim(Number(user.id), now)) {
-          userIds.push(Number(user.id));
+          claimedUsers.push({
+            userId: Number(user.id),
+            restrictedAt: user.restrictedAt!,
+          });
         }
       }
 
-      for (let i = 0; i < userIds.length; i += NOTIFY_CONCURRENCY) {
+      for (let i = 0; i < claimedUsers.length; i += NOTIFY_CONCURRENCY) {
         await Promise.all(
-          userIds.slice(i, i + NOTIFY_CONCURRENCY).map((userId) =>
-            this.notificationService.notify({
-              userId,
-              status: NotificationStatus.RESTRICTION_EXPIRED,
-            }),
-          ),
+          claimedUsers
+            .slice(i, i + NOTIFY_CONCURRENCY)
+            .map((claimed) => this.notifyExpired(claimed)),
         );
       }
 
@@ -106,6 +108,36 @@ export class RestrictionExpiryNotificationScheduler {
         return;
       }
     }
+  }
+
+  // 끝난 정지를 내린 제재(sanctionId)를 붙여 보낸다. 해제 안내 화면이 GET /sanction/:sanctionId 로 정지 기간 · 경고 내역을 받는다.
+  // 제재를 찾지 못해도(예전 방식 제한 · 조회 실패) 알림은 보낸다
+  private async notifyExpired({
+    userId,
+    restrictedAt,
+  }: {
+    userId: number;
+    restrictedAt: Date;
+  }) {
+    let sanctionId: number | null = null;
+
+    try {
+      sanctionId = await this.sanctionService.findRestrictionSanctionId(
+        userId,
+        restrictedAt,
+      );
+    } catch (error) {
+      this.logger.error(
+        `이용 정지 해제 안내의 제재를 찾지 못함 (userId=${userId})`,
+        error as Error,
+      );
+    }
+
+    await this.notificationService.notify({
+      userId,
+      status: NotificationStatus.RESTRICTION_EXPIRED,
+      sanctionId,
+    });
   }
 
   // 아직 조건이 그대로일 때만 표시한다. 영향받은 행이 있으면 이 프로세스가 보낼 차례다

@@ -1,5 +1,14 @@
-import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, In, IsNull, MoreThan } from 'typeorm';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  DataSource,
+  EntityManager,
+  In,
+  IsNull,
+  LessThanOrEqual,
+  MoreThan,
+  Not,
+  Or,
+} from 'typeorm';
 import { UserEntity } from '../../user/entities/user.entity';
 import {
   getPendingRestrictionLift,
@@ -39,6 +48,8 @@ export type SanctionUser = Pick<
 >;
 
 export type SanctionResult = {
+  // 이번에 남긴 제재(user_sanction.id). 운영정책 안내 알림에 붙여서 상세 화면에서 조회한다
+  sanctionId: number;
   // 신고당한 회원에게 보낼 안내 종류
   notice: SanctionNotice;
   // 경고를 준 뒤의 유효한 경고 수. 영구 정지(BAN)면 null
@@ -155,6 +166,7 @@ export class SanctionService {
     }
 
     return {
+      sanctionId: Number(sanction.id),
       notice:
         applied.restriction === SanctionRestriction.PERMANENT
           ? SanctionNotice.PERMANENT
@@ -183,7 +195,7 @@ export class SanctionService {
       now,
     );
 
-    await manager.save(
+    const sanction = await manager.save(
       manager.create(UserSanctionEntity, {
         userId: Number(user.id),
         type: SanctionType.BAN,
@@ -198,6 +210,7 @@ export class SanctionService {
     );
 
     return {
+      sanctionId: Number(sanction.id),
       notice: SanctionNotice.PERMANENT,
       warningCount: null,
       restriction: applied.restriction,
@@ -432,6 +445,90 @@ export class SanctionService {
       },
       { acknowledgedAt: now },
     );
+  }
+
+  /*
+   * 운영정책 안내 · 이용 정지 해제 안내 화면에 보여줄 제재 상세. 알림의 sanctionId 로 부른다.
+   * 본인 제재가 아니거나 보관 기간이 지나 지워졌으면 404.
+   *
+   * warnings: 이 제재를 내린 시점에 유효했던 경고(이 제재 포함), 오래된 순. 경고 내역 1회차 · 2회차에 쓴다.
+   *   그 뒤에 소멸 · 되돌림된 경고도 그 시점 기준으로 보여준다 (알림의 warningCount 와 같은 기준)
+   * 되돌린 제재(revokedAt)도 이미 보낸 알림은 남아 있어서 그대로 돌려준다
+   */
+  async getSanctionDetail(userId: number, sanctionId: number) {
+    const repository = this.dataSource.getRepository(UserSanctionEntity);
+    const sanction = await repository.findOne({
+      select: {
+        id: true,
+        type: true,
+        targetType: true,
+        reason: true,
+        restriction: true,
+        restrictedAt: true,
+        restrictedUntil: true,
+        createdAt: true,
+      },
+      where: { id: sanctionId, userId },
+    });
+
+    if (!sanction) {
+      throw new NotFoundException('제재 내역을 찾을 수 없어요.');
+    }
+
+    const sanctionedAt = sanction.createdAt;
+    const warnings = await repository.find({
+      select: { id: true, targetType: true, createdAt: true },
+      where: {
+        userId,
+        type: SanctionType.WARNING,
+        id: LessThanOrEqual(Number(sanction.id)),
+        expiresAt: MoreThan(sanctionedAt),
+        revokedAt: Or(IsNull(), MoreThan(sanctionedAt)),
+      },
+      order: { id: 'ASC' },
+    });
+
+    return {
+      sanctionId: Number(sanction.id),
+      // WARNING: 경고 (누적되면 7일 · 영구 정지), BAN: 운영자가 바로 내린 영구 정지
+      type: sanction.type,
+      // 위반 사유 (ReportReason)
+      reason: sanction.reason,
+      // 신고 대상 종류. 조치 내용(댓글 삭제 / 피드 가림 / 편지 삭제 / 계정 제한)을 고른다
+      targetType: sanction.targetType,
+      // 조치 일자
+      sanctionedAt,
+      // 이 제재로 내려진 이용 제한 (SUSPENSION / PERMANENT). 경고 1회처럼 제한이 바뀌지 않았으면 null
+      restriction: sanction.restriction,
+      // 정지 기간. restriction 이 null 이면 둘 다 null, 영구 정지면 restrictedUntil 이 null
+      restrictedAt: sanction.restrictedAt,
+      restrictedUntil: sanction.restrictedUntil,
+      warnings: warnings.map((warning) => ({
+        warnedAt: warning.createdAt,
+        targetType: warning.targetType,
+      })),
+    };
+  }
+
+  /*
+   * 회원의 지금 이용 제한(restrictedAt)을 내린 제재. 이용 정지 해제 안내 알림에 붙인다.
+   * 예전 방식(RESTRICT)으로 내린 제한은 제재 기록이 없어서 null
+   */
+  async findRestrictionSanctionId(userId: number, restrictedAt: Date) {
+    const sanction = await this.dataSource
+      .getRepository(UserSanctionEntity)
+      .findOne({
+        select: { id: true },
+        where: {
+          userId,
+          restrictedAt,
+          restriction: Not(IsNull()),
+          revokedAt: IsNull(),
+        },
+        order: { id: 'DESC' },
+      });
+
+    return sanction ? Number(sanction.id) : null;
   }
 
   async getUserState(userId: number): Promise<UserSanctionState | null> {
