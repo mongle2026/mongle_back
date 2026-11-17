@@ -100,6 +100,28 @@ export class NotificationEntity {
   @Column({ name: 'sanction_id', type: 'bigint', nullable: true })
   sanctionId!: number | null;
 
+  // 처리 결과 알림(report_resolved / report_rejected)의 신고당한 회원. 신고 검토 결과 화면의 대상 카드(아이디 · 프로필)에 쓴다.
+  // actor 로 두면 차단한 회원이라 알림이 막히고 목록 프로필도 바뀌어서 따로 둔다. 다른 알림은 null
+  @Column({ name: 'target_user_id', type: 'bigint', nullable: true })
+  targetUserId!: number | null;
+
+  @ManyToOne(() => UserEntity, {
+    nullable: true,
+    createForeignKeyConstraints: false,
+  })
+  @JoinColumn({ name: 'target_user_id' })
+  targetUser!: UserEntity | null;
+
+  // 처리 결과 알림의 신고 당시 내용 미리보기 (피드 · 편지 글, 댓글 내용. 앞 REPORT_PREVIEW_MAX_LENGTH 자).
+  // 신고 기록은 처리 후 며칠 안에 지워져서 복사해 둔다. 회원 신고 · 다른 알림은 null
+  @Column({
+    name: 'target_preview',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  targetPreview!: string | null;
+
   // 야간 알림을 끈 사람에게 밤에 생긴 알림. 목록에는 바로 보이고 푸시만 아침에 모아서 보낸다.
   @Column({ name: 'push_pending', type: 'boolean', default: false })
   pushPending!: boolean;

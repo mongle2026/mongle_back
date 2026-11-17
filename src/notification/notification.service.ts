@@ -77,6 +77,9 @@ export type CreateNotificationInput = {
   reportedAt?: Date | null;
   // 운영정책 안내(policy_notice) · 이용 정지 해제 안내(restriction_expired)를 만든 제재
   sanctionId?: number | null;
+  // 처리 결과 알림의 신고당한 회원과 신고 당시 내용 미리보기 (신고 검토 결과 화면의 대상 카드)
+  targetUserId?: number | null;
+  targetPreview?: string | null;
 };
 
 // 운영자가 가린 댓글의 알림 목록 내용
@@ -152,6 +155,8 @@ export class NotificationService {
           reportReason: input.reportReason ?? null,
           reportedAt: input.reportedAt ?? null,
           sanctionId: input.sanctionId ?? null,
+          targetUserId: input.targetUserId ?? null,
+          targetPreview: input.targetPreview ?? null,
           pushPending: pushTiming === 'later',
         }),
       );
@@ -328,6 +333,7 @@ export class NotificationService {
 
     const qb = this.createVisibleNotificationQuery(userId)
       .leftJoinAndSelect('notification.actor', 'actor')
+      .leftJoinAndSelect('notification.targetUser', 'targetUser')
       .orderBy('notification.id', 'DESC')
       .limit(safeLimit + 1);
 
@@ -749,6 +755,8 @@ export class NotificationService {
       notification.status === NotificationStatus.REPLY ||
       notification.status === NotificationStatus.FOLLOW;
     const isActorWithdrawn = !!actor && isWithdrawnUser(actor);
+    const { targetUser } = notification;
+    const isTargetUserWithdrawn = !!targetUser && isWithdrawnUser(targetUser);
 
     return {
       notificationId: Number(notification.id),
@@ -779,6 +787,15 @@ export class NotificationService {
       reportedAt: notification.reportedAt,
       // 운영정책 안내 · 이용 정지 해제 안내 화면: GET /sanction/:sanctionId 로 상세를 받는다
       sanctionId: this.toNullableNumber(notification.sanctionId),
+      // 신고 검토 결과 화면의 대상 카드: 신고당한 회원(지금 아이디 · 프로필)과 신고 당시 내용 미리보기.
+      // 신고당한 회원이 탈퇴했으면 아이디가 없다
+      targetUserCode:
+        targetUser && !isTargetUserWithdrawn ? targetUser.userCode : null,
+      targetProfileImageUrl: targetUser
+        ? this.r2Service.getProfileImageUrl(targetUser)
+        : null,
+      isTargetUserWithdrawn,
+      targetPreview: notification.targetPreview,
       isToSelf: this.isToSelf(notification),
       letterId: this.toNullableNumber(notification.letterId),
       feedId: this.toNullableNumber(notification.feedId),

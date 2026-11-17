@@ -58,6 +58,16 @@ export class UserSanctionEntity {
   @Column({ type: 'varchar', length: 20 })
   reason!: ReportReason;
 
+  // 신고 당시 내용 미리보기 (피드 · 편지 글, 댓글 내용. 앞 REPORT_PREVIEW_MAX_LENGTH 자).
+  // 신고 기록은 처리 후 며칠 안에 지워져서, 운영정책 안내 화면의 대상 카드에 쓰려고 복사해 둔다. 회원 신고는 null
+  @Column({
+    name: 'content_preview',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  contentPreview!: string | null;
+
   // 경고가 사라지는 시각 (부여 + 6개월). 영구 정지(BAN)는 null
   @Column({ name: 'expires_at', type: 'datetime', nullable: true })
   expiresAt!: Date | null;

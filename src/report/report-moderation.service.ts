@@ -26,6 +26,7 @@ import { NotificationStatus } from '../notification/enums/notification.enum';
 import { ReportDiscordService } from './discord/report-discord.service';
 import { SanctionResult, SanctionService } from './sanction/sanction.service';
 import { WithdrawalService } from '../auth/withdrawal.service';
+import { getReportPreview } from './report-preview.util';
 
 // 가릴 수 있는 대상. 회원은 가리지 않고 경고 · 영구 정지만 한다
 const BLINDABLE_ENTITIES = {
@@ -362,7 +363,7 @@ export class ReportModerationService {
       | NotificationStatus.REPORT_REJECTED,
   ): Promise<ReportHandleResult> {
     await this.syncDiscordMessages(report);
-    await this.notifyReporters(pendingReports, reporterStatus);
+    await this.notifyReporters(report, pendingReports, reporterStatus);
 
     if (sanction) {
       await this.notifyReportedUser(report, sanction);
@@ -698,12 +699,20 @@ export class ReportModerationService {
   }
 
   // 신고한 사람마다 한 번씩. 같은 사람은 같은 대상에 처리 전 신고를 하나만 가질 수 있다. 탈퇴한 회원에게는 보내지 않는다
+  // 대상 카드(신고당한 회원 · 신고 당시 내용)는 같은 대상이라 처리한 신고의 것을 함께 쓴다
   private async notifyReporters(
+    report: ReportEntity,
     reports: HandledReports['pendingReports'],
     status:
       | NotificationStatus.REPORT_RESOLVED
       | NotificationStatus.REPORT_REJECTED,
   ) {
+    const targetUserId = Number(report.reportedUserId);
+    const targetPreview = getReportPreview(
+      report.targetType,
+      report.contentSnapshot,
+    );
+
     for (const {
       reporterId,
       isReporterWithdrawn,
@@ -721,6 +730,8 @@ export class ReportModerationService {
         targetType,
         reportReason: reason,
         reportedAt,
+        targetUserId,
+        targetPreview,
       });
     }
   }

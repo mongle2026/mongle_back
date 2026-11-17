@@ -34,6 +34,8 @@ import {
   WARNING_EXPIRY_MONTHS,
 } from './sanction.constants';
 import { PERMANENT_REJOIN_BAN_MONTHS } from '../retention/retention.constants';
+import { getReportPreview } from '../report-preview.util';
+import { R2Service } from '../../storage/r2.service';
 
 // 제재에 필요한 회원 값. 같은 트랜잭션 안에서 제한을 바꾸면 이 객체도 같이 고친다
 export type SanctionUser = Pick<
@@ -101,7 +103,10 @@ const isSameTime = (a: Date | null, b: Date | null) =>
  */
 @Injectable()
 export class SanctionService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly r2Service: R2Service,
+  ) {}
 
   async lockUser(
     manager: EntityManager,
@@ -138,6 +143,10 @@ export class SanctionService {
         targetType: report.targetType,
         targetId: Number(report.targetId),
         reason: report.reason,
+        contentPreview: getReportPreview(
+          report.targetType,
+          report.contentSnapshot,
+        ),
         expiresAt: addMonths(now, WARNING_EXPIRY_MONTHS),
         handledBy,
         ...NO_RESTRICTION_CHANGE,
@@ -203,6 +212,10 @@ export class SanctionService {
         targetType: report.targetType,
         targetId: Number(report.targetId),
         reason: report.reason,
+        contentPreview: getReportPreview(
+          report.targetType,
+          report.contentSnapshot,
+        ),
         expiresAt: null,
         handledBy,
         ...applied,
@@ -463,6 +476,7 @@ export class SanctionService {
         type: true,
         targetType: true,
         reason: true,
+        contentPreview: true,
         restriction: true,
         restrictedAt: true,
         restrictedUntil: true,
@@ -474,6 +488,17 @@ export class SanctionService {
     if (!sanction) {
       throw new NotFoundException('제재 내역을 찾을 수 없어요.');
     }
+
+    // 대상 카드는 처리된 내 글(또는 계정)이라 내 아이디 · 프로필을 보여준다
+    const user = await this.dataSource.getRepository(UserEntity).findOne({
+      select: {
+        id: true,
+        userCode: true,
+        profileImageKey: true,
+        defaultProfileImageNo: true,
+      },
+      where: { id: userId },
+    });
 
     const sanctionedAt = sanction.createdAt;
     const warnings = await repository.find({
@@ -496,6 +521,10 @@ export class SanctionService {
       reason: sanction.reason,
       // 신고 대상 종류. 조치 내용(댓글 삭제 / 피드 가림 / 편지 삭제 / 계정 제한)을 고른다
       targetType: sanction.targetType,
+      // 대상 카드: 내 아이디 · 프로필과 신고 당시 내용 미리보기 (회원 신고는 미리보기 null)
+      userCode: user?.userCode ?? null,
+      profileImageUrl: user ? this.r2Service.getProfileImageUrl(user) : null,
+      preview: sanction.contentPreview,
       // 조치 일자
       sanctionedAt,
       // 이 제재로 내려진 이용 제한 (SUSPENSION / PERMANENT). 경고 1회처럼 제한이 바뀌지 않았으면 null
