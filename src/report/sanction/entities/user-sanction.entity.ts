@@ -68,6 +68,19 @@ export class UserSanctionEntity {
   })
   contentPreview!: string | null;
 
+  // 운영정책 안내 화면의 대상 카드에 아이디를 보여줄 상대 회원.
+  // 댓글은 댓글을 단 피드의 작성자, 편지는 받은 사람. 피드 · 회원 신고는 null ('내가 올린 피드' · '내 계정')
+  // 상대가 탈퇴해 지워져도 제재 기록은 남아야 해서 FK 는 걸지 않는다
+  @Column({ name: 'target_user_id', type: 'bigint', nullable: true })
+  targetUserId!: number | null;
+
+  @ManyToOne(() => UserEntity, {
+    nullable: true,
+    createForeignKeyConstraints: false,
+  })
+  @JoinColumn({ name: 'target_user_id' })
+  targetUser!: UserEntity | null;
+
   // 경고가 사라지는 시각 (부여 + 6개월). 영구 정지(BAN)는 null
   @Column({ name: 'expires_at', type: 'datetime', nullable: true })
   expiresAt!: Date | null;

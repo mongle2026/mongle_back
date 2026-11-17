@@ -36,6 +36,8 @@ import {
 import { PERMANENT_REJOIN_BAN_MONTHS } from '../retention/retention.constants';
 import { getReportPreview } from '../report-preview.util';
 import { R2Service } from '../../storage/r2.service';
+import { FeedEntity } from '../../feed/entities/feed.entity';
+import { RecordEntity } from '../../record/entities/record.entity';
 
 // 제재에 필요한 회원 값. 같은 트랜잭션 안에서 제한을 바꾸면 이 객체도 같이 고친다
 export type SanctionUser = Pick<
@@ -147,6 +149,7 @@ export class SanctionService {
           report.targetType,
           report.contentSnapshot,
         ),
+        targetUserId: await this.findTargetUserId(manager, report),
         expiresAt: addMonths(now, WARNING_EXPIRY_MONTHS),
         handledBy,
         ...NO_RESTRICTION_CHANGE,
@@ -216,6 +219,7 @@ export class SanctionService {
           report.targetType,
           report.contentSnapshot,
         ),
+        targetUserId: await this.findTargetUserId(manager, report),
         expiresAt: null,
         handledBy,
         ...applied,
@@ -477,6 +481,7 @@ export class SanctionService {
         targetType: true,
         reason: true,
         contentPreview: true,
+        targetUserId: true,
         restriction: true,
         restrictedAt: true,
         restrictedUntil: true,
@@ -489,16 +494,23 @@ export class SanctionService {
       throw new NotFoundException('제재 내역을 찾을 수 없어요.');
     }
 
-    // 대상 카드는 처리된 내 글(또는 계정)이라 내 아이디 · 프로필을 보여준다
+    // 대상 카드는 처리된 내 글(또는 계정)이라 내 프로필을 보여준다
     const user = await this.dataSource.getRepository(UserEntity).findOne({
       select: {
         id: true,
-        userCode: true,
         profileImageKey: true,
         defaultProfileImageNo: true,
       },
       where: { id: userId },
     });
+
+    // 대상 카드의 아이디는 상대 회원 것 ('@id님의 피드에 남긴 댓글' · '@id님에게 보낸 편지')
+    const targetUser = sanction.targetUserId
+      ? await this.dataSource.getRepository(UserEntity).findOne({
+          select: { id: true, userCode: true, withdrawnAt: true },
+          where: { id: Number(sanction.targetUserId) },
+        })
+      : null;
 
     const sanctionedAt = sanction.createdAt;
     const warnings = await repository.find({
@@ -521,8 +533,11 @@ export class SanctionService {
       reason: sanction.reason,
       // 신고 대상 종류. 조치 내용(댓글 삭제 / 피드 가림 / 편지 삭제 / 계정 제한)을 고른다
       targetType: sanction.targetType,
-      // 대상 카드: 내 아이디 · 프로필과 신고 당시 내용 미리보기 (회원 신고는 미리보기 null)
-      userCode: user?.userCode ?? null,
+      // 대상 카드: 상대 회원 아이디, 내 프로필, 신고 당시 내용 미리보기 (회원 신고는 미리보기 null)
+      // userCode: 댓글은 댓글을 단 피드의 작성자, 편지는 받은 사람.
+      //   피드 · 회원 신고('내가 올린 피드' · '내 계정')이거나 상대가 탈퇴했으면 null
+      userCode:
+        targetUser && !isWithdrawnUser(targetUser) ? targetUser.userCode : null,
       profileImageUrl: user ? this.r2Service.getProfileImageUrl(user) : null,
       preview: sanction.contentPreview,
       // 조치 일자
@@ -584,6 +599,50 @@ export class SanctionService {
       isPermanent: isPermanentlyRestrictedUser(user),
       restrictedUntil: isRestricted ? user.restrictedUntil : null,
     };
+  }
+
+  /*
+   * 운영정책 안내 화면의 대상 카드에 아이디를 보여줄 상대 회원 (user_sanction.target_user_id).
+   * 댓글: 댓글을 단 피드의 작성자. 피드가 지워졌어도 정리 크론이 완전히 지우기 전이면 찾는다
+   * 편지: 받은 사람. 받은 편지만 신고할 수 있어서 신고한 사람이 받은 사람이다
+   * 피드 · 회원 신고는 null
+   */
+  private async findTargetUserId(
+    manager: EntityManager,
+    report: ReportEntity,
+  ): Promise<number | null> {
+    switch (report.targetType) {
+      case ReportTargetType.LETTER:
+        return Number(report.reporterId);
+
+      case ReportTargetType.COMMENT: {
+        const feedId = Number(report.contentSnapshot?.feedId);
+
+        if (!Number.isSafeInteger(feedId)) {
+          return null;
+        }
+
+        const feed = await manager.findOne(FeedEntity, {
+          select: { id: true, recordId: true },
+          where: { id: feedId },
+          withDeleted: true,
+        });
+
+        if (!feed) {
+          return null;
+        }
+
+        const record = await manager.findOne(RecordEntity, {
+          select: { id: true, userId: true },
+          where: { id: Number(feed.recordId) },
+        });
+
+        return record ? Number(record.userId) : null;
+      }
+
+      default:
+        return null;
+    }
   }
 
   // 지금 제한보다 무거울 때만 바꾸고, 바꾼 값과 바꾸기 전 값을 돌려준다
