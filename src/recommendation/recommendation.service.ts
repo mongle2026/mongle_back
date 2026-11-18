@@ -147,7 +147,9 @@ export class RecommendationService {
     now: Date;
   }): Promise<RecommendedPage> {
     const { userId, followingIds, cursor, limit, now } = params;
-    const sessionStart = new Date(cursor?.s ?? now.getTime());
+    // feed_impression.served_at 은 초 단위(datetime)라 저장할 때 밀리초가 잘리거나 반올림된다.
+    // 탐색 시작 시각도 초 단위로 내려야, 첫 페이지에 내려준 글이 '이번 탐색에서 준 글'로 잡혀 다음 페이지에 다시 나오지 않는다
+    const sessionStart = new Date(Math.floor((cursor?.s ?? now.getTime()) / 1000) * 1000);
     const isFirstPage = !cursor;
 
     const [rows, popularContext, profile, impressions, signedUpAt] = await Promise.all([
