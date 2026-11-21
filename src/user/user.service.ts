@@ -14,7 +14,7 @@ import { ProfileImageService } from './profile-image.service';
 import { notBlockedBetweenSql } from '../block/block.sql';
 import { DEFAULT_PROFILE_IMAGE_COUNT } from './default-profile-image';
 import { FollowEntity } from '../follow/entities/follow.entity';
-import { isRestrictedUser } from './withdrawn-user';
+import { isRestrictedUser, WITHDRAWN_USER_NICKNAME } from './withdrawn-user';
 
 @Injectable()
 export class UserService {
@@ -137,9 +137,28 @@ export class UserService {
   }
 
   // 다른 사람 프로필 조회. 앱은 publicId 로만 회원을 가리킨다.
-  // 프로필 주인이 나(viewerId)를 차단했으면 누구인지 알 수 없게 닉네임 · 아이디 · 사진을 비우고
-  // hasBlockedMe 만 true 로 준다. 앱은 '알 수 없는 사용자' 모양으로 보여주고 게시물을 숨긴다.
+  // 탈퇴한 회원이면 닉네임을 '(탈퇴한 회원)'으로, 아이디 · 사진을 비우고 isWithdrawn 을 true 로 준다.
+  // 프로필 주인이 나(viewerId)를 차단했으면 닉네임만 두고 아이디 · 사진을 비우고 hasBlockedMe 를 true 로 준다.
+  // 앱은 두 경우 모두 탈퇴 회원 모양(닉네임만 다르게)으로 보여주고 게시물을 숨긴다.
   async getUserByPublicId(publicId: string, viewerId: number) {
+    const withdrawnUser = await this.userRepository.findOne({
+      select: { id: true, publicId: true },
+      where: { publicId, withdrawnAt: Not(IsNull()) },
+    });
+
+    if (withdrawnUser) {
+      return {
+        userId: withdrawnUser.publicId,
+        userCode: null,
+        nickname: WITHDRAWN_USER_NICKNAME,
+        hasProfileImage: false,
+        profileImageUrl: null,
+        isRestricted: false,
+        isWithdrawn: true,
+        hasBlockedMe: false,
+      };
+    }
+
     const profile = await this.getUserProfile({ publicId }, false);
 
     const [{ blockCount }]: Array<{ blockCount: string }> =
@@ -151,21 +170,22 @@ export class UserService {
       );
 
     if (Number(blockCount) === 0) {
-      return { ...profile, hasBlockedMe: false };
+      return { ...profile, isWithdrawn: false, hasBlockedMe: false };
     }
 
     return {
       userId: profile.userId,
       userCode: null,
-      nickname: null,
+      nickname: profile.nickname,
       hasProfileImage: false,
       profileImageUrl: null,
       isRestricted: false,
+      isWithdrawn: false,
       hasBlockedMe: true,
     };
   }
 
-  // 탈퇴한 회원의 프로필은 없다
+  // 탈퇴한 회원은 찾지 않는다 (다른 사람 프로필 조회는 getUserByPublicId 에서 먼저 따로 처리한다)
   private async getUserProfile(
     where: { id: number } | { publicId: string },
     includeAccount: boolean,
