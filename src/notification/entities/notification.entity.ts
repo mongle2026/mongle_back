@@ -58,11 +58,12 @@ export class NotificationEntity {
   commentId!: number | null;
 
   // 댓글/답글 본문. 원본 댓글이 지워져도 목록 문구가 남도록 만들 때 복사해 둔다.
-  // 공지(system)는 공지 내용. 예전 공지는 null 이라 기본 문구를 보여준다
+  // 공지(system) · 이벤트(event)는 그 내용. 예전 공지 · 이벤트는 null 이라 기본 문구를 보여준다
   @Column({ type: 'varchar', length: 500, nullable: true })
   content!: string | null;
 
-  // 공지(system) 제목. 공지마다 달라서 복사해 둔다. 예전 공지 · 다른 알림은 null
+  // 공지(system) · 이벤트(event) 제목. 보낼 때마다 달라서 복사해 둔다. 이벤트도 (광고) 없이 저장한다.
+  // 예전 공지 · 이벤트, 다른 알림은 null
   @Column({
     name: 'notice_title',
     type: 'varchar',
@@ -70,9 +71,6 @@ export class NotificationEntity {
     nullable: true,
   })
   noticeTitle!: string | null;
-
-  @Column({ name: 'event_title', type: 'varchar', length: 100, nullable: true })
-  eventTitle!: string | null;
 
   // 신고 처리 알림(report_resolved / report_rejected / policy_notice)의 대상 종류. 문구가 대상마다 다르다
   @Column({ name: 'target_type', type: 'varchar', length: 20, nullable: true })

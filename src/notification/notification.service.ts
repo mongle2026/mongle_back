@@ -46,7 +46,7 @@ const BROADCAST_BATCH_SIZE = 500;
 const KST_OFFSET_HOURS = 9;
 
 // KST 기준 야간(NIGHT_START_HOUR ~ NIGHT_END_HOUR)인지
-const isKstNightTime = (date: Date) => {
+export const isKstNightTime = (date: Date) => {
   const kstHour = (date.getUTCHours() + KST_OFFSET_HOURS) % 24;
 
   return kstHour >= NIGHT_START_HOUR || kstHour < NIGHT_END_HOUR;
@@ -66,7 +66,6 @@ export type CreateNotificationInput = {
   feedId?: number | null;
   commentId?: number | null;
   content?: string | null;
-  eventTitle?: string | null;
   // 신고 처리 알림의 대상 종류
   targetType?: ReportTargetType | null;
   // 운영정책 안내(policy_notice)에 붙는 제재 내용과 그때의 유효한 경고 수
@@ -81,6 +80,9 @@ export type CreateNotificationInput = {
   targetUserId?: number | null;
   targetPreview?: string | null;
 };
+
+// 공지 · 이벤트 알림의 제목 · 내용. 이벤트 제목에는 (광고)를 붙이지 않고 넘긴다 (푸시 문구를 만들 때 붙인다)
+export type BroadcastNotice = { title: string; body: string };
 
 // 운영자가 가린 댓글의 알림 목록 내용
 const BLINDED_COMMENT_CONTENT = '운영정책에 따라 삭제된 댓글이에요.';
@@ -148,7 +150,6 @@ export class NotificationService {
           feedId: input.feedId ?? null,
           commentId: input.commentId ?? null,
           content: input.content ?? null,
-          eventTitle: input.eventTitle ?? null,
           targetType: input.targetType ?? null,
           sanction: input.sanction ?? null,
           warningCount: input.warningCount ?? null,
@@ -202,14 +203,41 @@ export class NotificationService {
 
   /*
    * 공지(시스템 알림)를 모든 회원과 로그인하지 않은 기기에 보낸다. 서버에서 스크립트로 실행한다. (npm run notify:system -- "<제목>" "<내용>")
-   * 회원: notify 와 같은 규칙이다. 꺼둔 사람은 빼고, 목록에 남기고, 야간 알림을 끈 사람은 밤에 생긴 푸시를 아침으로 미룬다.
    * 로그인하지 않은 기기: 남길 목록이 없어서 푸시만 보낸다. 설정이 없으니 회원 기본값(켜짐 · 야간 켜짐)처럼 바로 보내고,
    * 끄려면 기기 알림 설정에서 끈다.
-   * 광고성 정보(이벤트)는 수신 동의가 필요해서 로그인하지 않은 기기에는 보내지 않는다.
+   */
+  async broadcastSystemNotice(notice: BroadcastNotice) {
+    return this.broadcastNotice(NotificationStatus.SYSTEM, notice, {
+      includeGuests: true,
+    });
+  }
+
+  /*
+   * 이벤트 알림(광고성 정보)을 이벤트 알림을 켠 회원에게만 보낸다. 서버에서 스크립트로 실행한다. (npm run notify:event -- "<제목>" "<내용>")
+   * 정보통신망법 제50조: 수신 동의(이벤트 알림 켬, 기본 꺼짐)한 사람에게만 보내고, 제목 앞에 (광고)를 붙이고,
+   * 야간(21시~8시)에는 별도 동의 없이 보낼 수 없다.
+   * 로그인하지 않은 기기는 동의를 받을 수 없어서 보내지 않는다. 야간에는 보내지 않고 에러를 던진다.
+   */
+  async broadcastEventNotice(notice: BroadcastNotice) {
+    if (isKstNightTime(new Date())) {
+      throw new Error('이벤트 알림은 야간(21시~8시)에 보낼 수 없어요.');
+    }
+
+    return this.broadcastNotice(NotificationStatus.EVENT, notice, {
+      includeGuests: false,
+    });
+  }
+
+  /*
+   * 공지 · 이벤트 알림을 한꺼번에 보낸다.
+   * 회원: notify 와 같은 규칙이다. 꺼둔 사람은 빼고, 목록에 남기고, 야간 알림을 끈 사람은 밤에 생긴 푸시를 아침으로 미룬다.
    * 제목 · 내용은 알림에 저장한다. 아침으로 미룬 푸시와 알림 목록이 같은 문구를 보여준다.
    */
-  async broadcastSystemNotice(notice: { title: string; body: string }) {
-    const status = NotificationStatus.SYSTEM;
+  private async broadcastNotice(
+    status: NotificationStatus.SYSTEM | NotificationStatus.EVENT,
+    notice: BroadcastNotice,
+    { includeGuests }: { includeGuests: boolean },
+  ) {
     const type = NOTIFICATION_TYPE_BY_STATUS[status];
     const settingKey = NOTIFICATION_SETTING_KEY_BY_STATUS[status];
     const isNight = isKstNightTime(new Date());
@@ -304,7 +332,7 @@ export class NotificationService {
       memberCount += targetIds.length;
     }
 
-    for (let lastTokenId = 0; ; ) {
+    for (let lastTokenId = 0; includeGuests; ) {
       const tokenRows = await this.pushTokenRepository.find({
         select: { id: true, token: true },
         where: { id: MoreThan(lastTokenId), userId: IsNull() },
@@ -671,7 +699,6 @@ export class NotificationService {
       recipientNickname: recipient?.nickname,
       isToSelf: this.isToSelf(notification),
       content: notification.content,
-      eventTitle: notification.eventTitle,
       noticeTitle: notification.noticeTitle,
       targetType: notification.targetType,
     });
@@ -784,7 +811,6 @@ export class NotificationService {
       content: isCommentBlinded
         ? BLINDED_COMMENT_CONTENT
         : notification.content,
-      eventTitle: notification.eventTitle,
       // 공지 제목. 공지 내용은 content 에 있다. 예전 공지는 null 이라 프론트가 기본 문구를 보여준다
       noticeTitle: notification.noticeTitle,
       // 신고 처리 알림의 대상 종류 (FEED / COMMENT / LETTER / USER)

@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-// 공지(시스템 알림) 제목. 공지는 보낼 때마다 제목 · 내용이 달라서 알림에 복사해 둔다. 내용은 content 에 둔다.
-// 아침으로 미룬 푸시와 알림 목록이 같은 문구를 보여주려고 저장한다. 예전 공지 · 다른 알림은 null
+// 공지(system) · 이벤트(event) 알림 제목. 보낼 때마다 제목 · 내용이 달라서 알림에 복사해 둔다. 내용은 content 에 둔다.
+// 아침으로 미룬 푸시와 알림 목록이 같은 문구를 보여주려고 저장한다. 예전 공지 · 이벤트, 다른 알림은 null
 const COLUMNS = [
   {
     table: 'notification',
