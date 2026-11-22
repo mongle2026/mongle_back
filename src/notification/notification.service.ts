@@ -201,13 +201,14 @@ export class NotificationService {
   }
 
   /*
-   * 공지(시스템 알림)를 모든 회원과 로그인하지 않은 기기에 보낸다. 서버에서 스크립트로 실행한다. (npm run notify:system)
+   * 공지(시스템 알림)를 모든 회원과 로그인하지 않은 기기에 보낸다. 서버에서 스크립트로 실행한다. (npm run notify:system -- "<제목>" "<내용>")
    * 회원: notify 와 같은 규칙이다. 꺼둔 사람은 빼고, 목록에 남기고, 야간 알림을 끈 사람은 밤에 생긴 푸시를 아침으로 미룬다.
    * 로그인하지 않은 기기: 남길 목록이 없어서 푸시만 보낸다. 설정이 없으니 회원 기본값(켜짐 · 야간 켜짐)처럼 바로 보내고,
    * 끄려면 기기 알림 설정에서 끈다.
    * 광고성 정보(이벤트)는 수신 동의가 필요해서 로그인하지 않은 기기에는 보내지 않는다.
+   * 제목 · 내용은 알림에 저장한다. 아침으로 미룬 푸시와 알림 목록이 같은 문구를 보여준다.
    */
-  async broadcastSystemNotice() {
+  async broadcastSystemNotice(notice: { title: string; body: string }) {
     const status = NotificationStatus.SYSTEM;
     const type = NOTIFICATION_TYPE_BY_STATUS[status];
     const settingKey = NOTIFICATION_SETTING_KEY_BY_STATUS[status];
@@ -215,7 +216,11 @@ export class NotificationService {
 
     // 이동할 원본이 없어서 종류만 넘긴다. 누르면 프론트가 알림 목록으로 보낸다.
     const message = {
-      ...buildPushContent({ status }),
+      ...buildPushContent({
+        status,
+        noticeTitle: notice.title,
+        content: notice.body,
+      }),
       data: { type, status },
       channelId: settingKey,
     };
@@ -276,6 +281,8 @@ export class NotificationService {
           userId,
           type,
           status,
+          noticeTitle: notice.title,
+          content: notice.body,
           pushPending: laterIds.has(userId),
         })),
       );
@@ -665,6 +672,7 @@ export class NotificationService {
       isToSelf: this.isToSelf(notification),
       content: notification.content,
       eventTitle: notification.eventTitle,
+      noticeTitle: notification.noticeTitle,
       targetType: notification.targetType,
     });
 
@@ -777,6 +785,8 @@ export class NotificationService {
         ? BLINDED_COMMENT_CONTENT
         : notification.content,
       eventTitle: notification.eventTitle,
+      // 공지 제목. 공지 내용은 content 에 있다. 예전 공지는 null 이라 프론트가 기본 문구를 보여준다
+      noticeTitle: notification.noticeTitle,
       // 신고 처리 알림의 대상 종류 (FEED / COMMENT / LETTER / USER)
       targetType: notification.targetType,
       // 운영정책 안내의 제재 내용(SanctionNotice: WARNING / SUSPENSION / PERMANENT)과 그때의 유효한 경고 수

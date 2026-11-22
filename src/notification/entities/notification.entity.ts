@@ -58,8 +58,18 @@ export class NotificationEntity {
   commentId!: number | null;
 
   // 댓글/답글 본문. 원본 댓글이 지워져도 목록 문구가 남도록 만들 때 복사해 둔다.
+  // 공지(system)는 공지 내용. 예전 공지는 null 이라 기본 문구를 보여준다
   @Column({ type: 'varchar', length: 500, nullable: true })
   content!: string | null;
+
+  // 공지(system) 제목. 공지마다 달라서 복사해 둔다. 예전 공지 · 다른 알림은 null
+  @Column({
+    name: 'notice_title',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  noticeTitle!: string | null;
 
   @Column({ name: 'event_title', type: 'varchar', length: 100, nullable: true })
   eventTitle!: string | null;

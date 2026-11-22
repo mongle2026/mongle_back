@@ -35,6 +35,12 @@ const toUserCode = (userCode: string) => `@${userCode.replace(/^@+/, '')}`;
 const toQuotedContent = (content?: string | null) =>
   content ? `'${content}'` : '';
 
+// 예전 공지(제목 · 내용을 저장하지 않던 때) 문구. 프론트 NotificationListItem 과 같다
+const DEFAULT_SYSTEM_NOTICE = {
+  title: '시스템 개선',
+  body: '더 편리하게 이용할 수 있도록 개선했습니다.\n새롭게 달라진 기능을 확인해 보세요.',
+};
+
 const REPORT_NOTICE_TITLE = '신고 처리 안내';
 const POLICY_NOTICE_TITLE = '운영정책 안내';
 const APPEAL_RESULT_TITLE = '이의 신청 결과 안내';
@@ -78,6 +84,8 @@ export const buildPushContent = (params: {
   isToSelf?: boolean;
   content?: string | null;
   eventTitle?: string | null;
+  // 공지 제목. 공지 내용은 content 로 받는다
+  noticeTitle?: string | null;
   // 신고 처리 알림 · 운영정책 안내의 대상 종류
   targetType?: ReportTargetType | null;
 }): { title: string; body: string } => {
@@ -109,9 +117,10 @@ export const buildPushContent = (params: {
         body: toQuotedContent(params.content),
       };
     case NotificationStatus.SYSTEM:
+      // 제목 · 내용을 저장하기 전에 보낸 예전 공지는 기본 문구로 보여준다
       return {
-        title: '시스템 개선',
-        body: '더 편리하게 이용할 수 있도록 개선했습니다.\n새롭게 달라진 기능을 확인해 보세요.',
+        title: params.noticeTitle || DEFAULT_SYSTEM_NOTICE.title,
+        body: params.content || DEFAULT_SYSTEM_NOTICE.body,
       };
     case NotificationStatus.EVENT:
       // 광고성 정보는 제목 앞에 (광고) 표기가 필요하다 (정보통신망법 제50조)
