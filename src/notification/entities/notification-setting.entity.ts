@@ -26,6 +26,6 @@ export class NotificationSettingEntity {
   @Column({ type: 'boolean' })
   enabled!: boolean;
 
-  @UpdateDateColumn({ name: 'updated_at', type: 'datetime' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
 }

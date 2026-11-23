@@ -62,17 +62,18 @@ import { UserEventModule } from './user-event/user-event.module';
         const useSsl = configService.get<string>('DB_SSL') === 'true';
 
         return {
-          type: 'mysql',
+          type: 'postgres',
           host: configService.get<string>('DB_HOST'),
           port: Number(configService.get<string>('DB_PORT')),
           username: configService.get<string>('DB_USERNAME'),
           password: configService.get<string>('DB_PASSWORD'),
           database: configService.get<string>('DB_DATABASE'),
-          // Aiven 플랜의 max connection 한도를 넘지 않도록 풀 크기 제한
+          // 호스팅 플랜의 max connection 한도를 넘지 않도록 풀 크기 제한
           poolSize: Number(configService.get<string>('DB_POOL_SIZE') ?? 5),
-          // DB 는 UTC 로 저장한다. 서버가 도는 컴퓨터의 시간대와 상관없이 UTC 로 읽고 쓰도록 고정
-          timezone: 'Z',
-          // Aiven은 SSL 연결을 강제하므로 DB_SSL(_CA) 환경변수로 활성화
+          // 시각 컬럼은 모두 timestamptz 라 UTC 로 저장된다. 세션 시간대도 UTC 로 고정해
+          // 문자열 비교 · to_char 처럼 세션 시간대를 따르는 곳도 서버 위치와 상관없이 같게 한다
+          extra: { options: '-c TimeZone=UTC' },
+          // 클라우드 DB 는 보통 SSL 연결을 강제하므로 DB_SSL(_CA) 환경변수로 활성화
           ssl: dbSslCa
             ? { ca: dbSslCa, rejectUnauthorized: true }
             : useSsl

@@ -30,6 +30,6 @@ export class BookmarkEntity {
   @JoinColumn({ name: 'feed_id' })
   feed!: FeedEntity;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

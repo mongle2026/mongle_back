@@ -91,23 +91,23 @@ export class ModerationRetentionService {
         await this.dataSource.query(
           `SELECT r.id, r.discord_message_id
              FROM report r
-            WHERE r.id > ?
-              AND r.status <> ?
-              AND r.handled_at <= ?
+            WHERE r.id > $1
+              AND r.status <> $2
+              AND r.handled_at <= $3
               AND NOT EXISTS (
-                SELECT 1 FROM \`user\` u
+                SELECT 1 FROM "user" u
                  WHERE u.id = r.reported_user_id
                    AND u.restricted_at IS NOT NULL
-                   AND (u.restricted_until > ?
-                        OR (u.restricted_until IS NULL AND u.restricted_at > ?))
+                   AND (u.restricted_until > $4
+                        OR (u.restricted_until IS NULL AND u.restricted_at > $5))
               )
               AND NOT EXISTS (
                 SELECT 1 FROM restriction_appeal a
                  WHERE a.user_id = r.reported_user_id
-                   AND (a.status = ? OR a.handled_at > ?)
+                   AND (a.status = $6 OR a.handled_at > $7)
               )
             ORDER BY r.id
-            LIMIT ?`,
+            LIMIT $8`,
           [
             lastId,
             ReportStatus.PENDING,
@@ -244,17 +244,17 @@ export class ModerationRetentionService {
       const rows: { id: string }[] = await this.dataSource.query(
         `SELECT s.id
            FROM user_sanction s
-          WHERE COALESCE(s.revoked_at, s.created_at) <= ?
+          WHERE COALESCE(s.revoked_at, s.created_at) <= $1
             AND NOT EXISTS (
-              SELECT 1 FROM \`user\` u
+              SELECT 1 FROM "user" u
                WHERE u.id = s.user_id
                  AND s.restriction IS NOT NULL
                  AND s.revoked_at IS NULL
                  AND u.restricted_at = s.restricted_at
-                 AND (u.restricted_until IS NULL OR u.restricted_until > ?)
+                 AND (u.restricted_until IS NULL OR u.restricted_until > $2)
             )
           ORDER BY s.id
-          LIMIT ?`,
+          LIMIT $3`,
         [handledBefore, now, BATCH_SIZE],
       );
 

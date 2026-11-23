@@ -366,7 +366,11 @@ export class WithdrawalService {
         bannedBy,
         expiresAt,
       })
-      .orUpdate(['user_id', 'reason', 'banned_by', 'expires_at'])
+      // PG 의 ON CONFLICT DO UPDATE 는 어느 unique 에 걸린 경우인지(provider + provider_user_id) 꼭 적어야 한다
+      .orUpdate(
+        ['user_id', 'reason', 'banned_by', 'expires_at'],
+        ['provider', 'provider_user_id'],
+      )
       .execute();
   }
 

@@ -9,7 +9,7 @@ import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import { UserEntity } from './entities/user.entity';
 import { R2Service } from '../storage/r2.service';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { isDuplicateEntryError } from '../database/mysql-error.util';
+import { isDuplicateEntryError } from '../database/db-error.util';
 import { ProfileImageService } from './profile-image.service';
 import { notBlockedBetweenSql } from '../block/block.sql';
 import { DEFAULT_PROFILE_IMAGE_COUNT } from './default-profile-image';
@@ -61,8 +61,8 @@ export class UserService {
       .where(
         `
         (
-          user.nickname LIKE :keyword
-          OR user.userCode LIKE :keyword
+          user.nickname ILIKE :keyword
+          OR user.userCode ILIKE :keyword
         )
       `,
         {
@@ -84,10 +84,10 @@ export class UserService {
       .addOrderBy(
         `
         CASE
-          WHEN user.nickname LIKE :prefixKeyword THEN 0
-          WHEN user.userCode LIKE :prefixKeyword THEN 1
-          WHEN user.nickname LIKE :keyword THEN 2
-          WHEN user.userCode LIKE :keyword THEN 3
+          WHEN user.nickname ILIKE :prefixKeyword THEN 0
+          WHEN user.userCode ILIKE :prefixKeyword THEN 1
+          WHEN user.nickname ILIKE :keyword THEN 2
+          WHEN user.userCode ILIKE :keyword THEN 3
           ELSE 4
         END
       `,
@@ -163,9 +163,9 @@ export class UserService {
 
     const [{ blockCount }]: Array<{ blockCount: string }> =
       await this.dataSource.query(
-        `SELECT COUNT(*) AS blockCount FROM \`user_block\`
-          INNER JOIN \`user\` ON \`user\`.\`id\` = \`user_block\`.\`blocker_id\`
-          WHERE \`user\`.\`public_id\` = ? AND \`user_block\`.\`blocked_id\` = ?`,
+        `SELECT COUNT(*) AS "blockCount" FROM user_block
+          INNER JOIN "user" ON "user".id = user_block.blocker_id
+          WHERE "user".public_id = $1 AND user_block.blocked_id = $2`,
         [publicId, viewerId],
       );
 

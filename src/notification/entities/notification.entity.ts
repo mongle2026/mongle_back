@@ -83,8 +83,7 @@ export class NotificationEntity {
   // 운영정책 안내를 보낼 때의 유효한 경고 수. 영구 정지를 바로 내렸거나 다른 알림이면 null
   @Column({
     name: 'warning_count',
-    type: 'tinyint',
-    unsigned: true,
+    type: 'smallint',
     nullable: true,
   })
   warningCount!: number | null;
@@ -99,7 +98,7 @@ export class NotificationEntity {
   })
   reportReason!: ReportReason | null;
 
-  @Column({ name: 'reported_at', type: 'datetime', nullable: true })
+  @Column({ name: 'reported_at', type: 'timestamptz', nullable: true })
   reportedAt!: Date | null;
 
   // 운영정책 안내(policy_notice) · 이용 정지 해제 안내(restriction_expired)를 만든 제재(user_sanction.id).
@@ -134,6 +133,6 @@ export class NotificationEntity {
   @Column({ name: 'push_pending', type: 'boolean', default: false })
   pushPending!: boolean;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

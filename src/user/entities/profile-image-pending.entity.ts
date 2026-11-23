@@ -26,9 +26,9 @@ export class ProfileImagePendingEntity {
   fileKey!: string;
 
   @Index('IDX_profile_image_pending_purge_after')
-  @Column({ name: 'purge_after', type: 'datetime' })
+  @Column({ name: 'purge_after', type: 'timestamptz' })
   purgeAfter!: Date;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

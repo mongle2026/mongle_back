@@ -423,12 +423,12 @@ export class NotificationService {
    */
   async checkNotifications(userId: number) {
     await this.userRepository.query(
-      `UPDATE \`user\`
+      `UPDATE "user"
        SET notification_checked_id = GREATEST(
          notification_checked_id,
-         COALESCE((SELECT MAX(id) FROM notification WHERE user_id = ?), 0)
+         COALESCE((SELECT MAX(id) FROM notification WHERE user_id = $1), 0)
        )
-       WHERE id = ?`,
+       WHERE id = $2`,
       [userId, userId],
     );
 

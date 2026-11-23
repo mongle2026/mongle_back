@@ -82,7 +82,7 @@ export class UserSanctionEntity {
   targetUser!: UserEntity | null;
 
   // 경고가 사라지는 시각 (부여 + 6개월). 영구 정지(BAN)는 null
-  @Column({ name: 'expires_at', type: 'datetime', nullable: true })
+  @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
   expiresAt!: Date | null;
 
   // 이 제재로 내려진 이용 제한. 제한이 바뀌지 않았으면 null (경고 1회, 이미 더 무거운 제한 중 등)
@@ -90,17 +90,17 @@ export class UserSanctionEntity {
   restriction!: SanctionRestriction | null;
 
   // 이 제재로 회원에게 넣은 user.restricted_at / restricted_until. restriction 이 null 이면 둘 다 null
-  @Column({ name: 'restricted_at', type: 'datetime', nullable: true })
+  @Column({ name: 'restricted_at', type: 'timestamptz', nullable: true })
   restrictedAt!: Date | null;
 
-  @Column({ name: 'restricted_until', type: 'datetime', nullable: true })
+  @Column({ name: 'restricted_until', type: 'timestamptz', nullable: true })
   restrictedUntil!: Date | null;
 
   // 이 제재 직전 회원의 이용 제한. 제한 중이 아니었으면 모두 null
-  @Column({ name: 'prev_restricted_at', type: 'datetime', nullable: true })
+  @Column({ name: 'prev_restricted_at', type: 'timestamptz', nullable: true })
   prevRestrictedAt!: Date | null;
 
-  @Column({ name: 'prev_restricted_until', type: 'datetime', nullable: true })
+  @Column({ name: 'prev_restricted_until', type: 'timestamptz', nullable: true })
   prevRestrictedUntil!: Date | null;
 
   @Column({
@@ -116,13 +116,13 @@ export class UserSanctionEntity {
   handledBy!: string | null;
 
   // 신고 처리를 되돌려 없앤 시각
-  @Column({ name: 'revoked_at', type: 'datetime', nullable: true })
+  @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })
   revokedAt!: Date | null;
 
   // 회원이 앱의 경고 안내 화면에서 확인을 누른 시각. 경고(WARNING)에만 쓴다
-  @Column({ name: 'acknowledged_at', type: 'datetime', nullable: true })
+  @Column({ name: 'acknowledged_at', type: 'timestamptz', nullable: true })
   acknowledgedAt!: Date | null;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

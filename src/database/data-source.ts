@@ -30,14 +30,14 @@ import { FeedImpressionEntity } from '../recommendation/entities/feed-impression
 import { UserEventEntity } from '../user-event/entities/user-event.entity';
 
 export const AppDataSource = new DataSource({
-    type: 'mysql',
+    type: 'postgres',
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT),
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
-    // DB 는 UTC 로 저장한다. 실행 환경의 시간대와 상관없이 UTC 로 읽고 쓰도록 고정
-    timezone: 'Z',
+    // 시각 컬럼은 timestamptz(UTC 저장). 세션 시간대도 UTC 로 고정 (app.module.ts 와 같게)
+    extra: { options: '-c TimeZone=UTC' },
     ssl: process.env.DB_SSL_CA
         ? { ca: process.env.DB_SSL_CA, rejectUnauthorized: true }
         : process.env.DB_SSL === 'true'

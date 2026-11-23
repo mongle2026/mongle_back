@@ -58,23 +58,20 @@ export class FollowService {
     // DB 왕복 한 번으로 처리한다. publicId 로 찾은 사용자를 그대로 넣는다.
     // 이미 팔로우 중이면 유니크 키에 걸려 아무것도 바뀌지 않는다.
     // 탈퇴한 회원, 내가 차단했거나 나를 차단한 회원은 팔로우할 수 없다.
-    const result: { affectedRows: number } = await this.followRepository.query(
-      `INSERT INTO \`follow\` (\`follower_id\`, \`following_id\`)
-        SELECT ?, \`id\` FROM \`user\`
-        WHERE \`public_id\` = ? AND \`id\` <> ? AND \`withdrawn_at\` IS NULL
-          AND ${notBlockedBetweenSql('?', '`user`.`id`')}
-        ON DUPLICATE KEY UPDATE \`follower_id\` = \`follower_id\``,
-      [
-        currentUserId,
-        targetPublicId,
-        currentUserId,
-        currentUserId,
-        currentUserId,
-      ],
-    );
+    // PG 는 INSERT 결과에 넣은 행 수가 없어서 RETURNING 으로 넣은 행을 돌려받아 센다
+    const insertedRows: Array<{ id: string }> =
+      await this.followRepository.query(
+        `INSERT INTO follow (follower_id, following_id)
+          SELECT $1::bigint, "user".id FROM "user"
+          WHERE "user".public_id = $2 AND "user".id <> $1 AND "user".withdrawn_at IS NULL
+            AND ${notBlockedBetweenSql('$1', '"user".id')}
+          ON CONFLICT (follower_id, following_id) DO NOTHING
+          RETURNING id`,
+        [currentUserId, targetPublicId],
+      );
 
     // 넣은 행이 없으면 이미 팔로우 중이거나, 없는(탈퇴한) 사용자거나, 나 자신이거나, 차단 사이다
-    if (result.affectedRows === 0) {
+    if (insertedRows.length === 0) {
       const targetUserId =
         await this.userService.getIdByPublicId(targetPublicId);
       this.validateDifferentUser(currentUserId, targetUserId);
@@ -96,17 +93,20 @@ export class FollowService {
 
   async unfollowUser(currentUserId: number, targetPublicId: string) {
     // 없는 사용자거나 나 자신이면 지워지는 행이 없을 뿐이라 따로 확인하지 않는다
-    const result: { affectedRows: number } = await this.followRepository.query(
-      `DELETE \`follow\` FROM \`follow\`
-        INNER JOIN \`user\` ON \`user\`.\`id\` = \`follow\`.\`following_id\`
-        WHERE \`follow\`.\`follower_id\` = ? AND \`user\`.\`public_id\` = ?`,
-      [currentUserId, targetPublicId],
-    );
+    // PG 드라이버는 DELETE 결과를 [지운 행들, 지운 행 수] 로 돌려준다
+    const [, deletedCount]: [unknown[], number] =
+      await this.followRepository.query(
+        `DELETE FROM follow
+          USING "user"
+          WHERE "user".id = follow.following_id
+            AND follow.follower_id = $1 AND "user".public_id = $2`,
+        [currentUserId, targetPublicId],
+      );
 
     return {
       followingId: targetPublicId,
       isFollowing: false,
-      deleted: result.affectedRows > 0,
+      deleted: deletedCount > 0,
     };
   }
 

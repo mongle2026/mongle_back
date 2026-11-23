@@ -28,8 +28,9 @@ export class FeedEntity {
   @JoinColumn({ name: 'record_id' })
   record!: RecordEntity;
 
+  // PG 의 char(n) 은 읽을 때 뒤를 공백으로 채워('PUBLIC  ') 돌려주므로 varchar 로 둔다
   @Column({
-    type: 'char',
+    type: 'varchar',
     length: 8,
     default: Visibility.PUBLIC,
   })
@@ -42,12 +43,12 @@ export class FeedEntity {
 
   // 운영자가 신고를 확인하고 가린 시각. 관리 화면이 없어서 DB 에서 직접 채운다.
   // 가린 글은 작성자를 포함해 모두에게 내용 없이 "가려진 피드"로 내려간다
-  @Column({ name: 'blinded_at', type: 'datetime', nullable: true })
+  @Column({ name: 'blinded_at', type: 'timestamptz', nullable: true })
   blindedAt!: Date | null;
 
   @DeleteDateColumn({
     name: 'deleted_at',
-    type: 'datetime',
+    type: 'timestamptz',
     nullable: true,
   })
   deletedAt!: Date | null;

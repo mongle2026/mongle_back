@@ -79,7 +79,7 @@ export class ReportEntity {
   @Column({ type: 'varchar', length: 200, nullable: true })
   detail!: string | null;
 
-  @Column({ name: 'content_snapshot', type: 'json' })
+  @Column({ name: 'content_snapshot', type: 'jsonb' })
   contentSnapshot!: ReportContentSnapshot;
 
   @Column({
@@ -91,13 +91,13 @@ export class ReportEntity {
 
   /**
    * 처리 전이면 1, 처리했으면 null. status 를 바꿀 때 함께 바꾼다 (report-moderation.service.ts).
-   * MySQL 유니크 인덱스는 null 끼리 겹쳐도 되므로, 처리 전 신고만 중복을 막는다 (UQ_report_pending_reporter_target)
+   * PostgreSQL 유니크 제약은 null 끼리 겹쳐도 되므로, 처리 전 신고만 중복을 막는다 (UQ_report_pending_reporter_target)
    * DB 생성 컬럼으로 만들면 TypeORM 이 PK 없는 typeorm_metadata 테이블을 만들려 하는데,
    * Aiven 은 sql_require_primary_key 가 켜져 있어 실패하므로 일반 컬럼으로 둔다.
    */
   @Column({
     name: 'pending_key',
-    type: 'tinyint',
+    type: 'smallint',
     nullable: true,
     default: 1,
     select: false,
@@ -109,7 +109,7 @@ export class ReportEntity {
   action!: ReportAction | null;
 
   // 처리한 시각. 처리 전이면 null
-  @Column({ name: 'handled_at', type: 'datetime', nullable: true })
+  @Column({ name: 'handled_at', type: 'timestamptz', nullable: true })
   handledAt!: Date | null;
 
   // 처리한 운영자의 디스코드 사용자 id. 터미널(npm run report:handle)로 처리했거나 처리 전이면 null
@@ -125,6 +125,6 @@ export class ReportEntity {
   })
   discordMessageId!: string | null;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

@@ -55,13 +55,13 @@ export class RecordEntity {
 
   @CreateDateColumn({
     name: 'created_at',
-    type: 'datetime',
+    type: 'timestamptz',
   })
   createdAt!: Date;
 
   @UpdateDateColumn({
     name: 'updated_at',
-    type: 'datetime',
+    type: 'timestamptz',
   })
   updatedAt!: Date;
 }

@@ -45,11 +45,11 @@ export class RestrictionAppealEntity {
   user!: UserEntity;
 
   // 이의를 낸 제한이 시작된 시각 (신청할 때의 user.restricted_at)
-  @Column({ name: 'restricted_at', type: 'datetime' })
+  @Column({ name: 'restricted_at', type: 'timestamptz' })
   restrictedAt!: Date;
 
   // 신청할 때의 user.restricted_until. 영구 제한이면 null
-  @Column({ name: 'restricted_until', type: 'datetime', nullable: true })
+  @Column({ name: 'restricted_until', type: 'timestamptz', nullable: true })
   restrictedUntil!: Date | null;
 
   // 신청할 때의 user.restricted_reason
@@ -68,7 +68,7 @@ export class RestrictionAppealEntity {
   status!: AppealStatus;
 
   // 처리한 시각. 처리 전이면 null
-  @Column({ name: 'handled_at', type: 'datetime', nullable: true })
+  @Column({ name: 'handled_at', type: 'timestamptz', nullable: true })
   handledAt!: Date | null;
 
   // 처리한 운영자의 디스코드 사용자 id. 처리 전이면 null
@@ -84,6 +84,6 @@ export class RestrictionAppealEntity {
   })
   discordMessageId!: string | null;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

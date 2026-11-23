@@ -54,9 +54,9 @@ export class BannedAccountEntity {
 
   // 이 시각부터 다시 가입할 수 있다.
   // null 은 이 컬럼이 생기기 전에 남긴 행이 마이그레이션 전에 잠깐 갖는 값이라, 막힌 것으로 본다 (마이그레이션이 채운다)
-  @Column({ name: 'expires_at', type: 'datetime', nullable: true })
+  @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
   expiresAt!: Date | null;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

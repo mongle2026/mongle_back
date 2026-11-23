@@ -19,6 +19,7 @@ import { FollowEntity } from '../follow/entities/follow.entity';
 import { R2Service } from '../storage/r2.service';
 import { UserEntity } from '../user/entities/user.entity';
 import { blockedBetweenSql, notBlockedBetweenSql } from '../block/block.sql';
+import { SqlParams } from '../database/sql-params';
 import { isRestrictedUser } from '../user/withdrawn-user';
 import { RecommendationService } from '../recommendation/recommendation.service';
 import { UserEventService } from '../user-event/user-event.service';
@@ -36,9 +37,9 @@ const NOT_RESTRICTED_AUTHOR_SQL =
 // 묶음 안에서는 DB collation 순서 (가~하, 대소문자 구분 없이 A~Z)
 const TITLE_GROUP_SQL = `
   CASE
-    WHEN music.music_title REGEXP '^[가-힣ㄱ-ㅎㅏ-ㅣ]' THEN 0
-    WHEN music.music_title REGEXP '^[A-Za-z]' THEN 1
-    WHEN music.music_title REGEXP '^[0-9]' THEN 2
+    WHEN music.music_title ~ '^[가-힣ㄱ-ㅎㅏ-ㅣ]' THEN 0
+    WHEN music.music_title ~ '^[A-Za-z]' THEN 1
+    WHEN music.music_title ~ '^[0-9]' THEN 2
     ELSE 3
   END
 `;
@@ -63,7 +64,7 @@ type MyFeedFileRow = {
 type MyFeedRow = {
   feedId: number | string;
   visibility: Visibility;
-  profileHidden: number | string;
+  profileHidden: boolean;
   recordId: number | string;
   font: string;
   text: string | null;
@@ -144,9 +145,11 @@ export class FeedService {
           visibility: dto.visibility,
         })
         .updateEntity(false)
+        // PG 에는 MySQL 의 insertId 가 없어서 RETURNING 으로 새 id 를 받는다 (raw = 넣은 행 목록)
+        .returning('id')
         .execute();
 
-      const feedId = Number(insertResult.raw.insertId);
+      const feedId = Number((insertResult.raw as Array<{ id: string }>)[0].id);
 
       /*
        * 목록과 같은 형태로 새 글을 돌려주면
@@ -1120,28 +1123,34 @@ export class FeedService {
     const { userId, cursor, limit, genre, month, sort = 'latest' } = params;
     const keywordPattern = toKeywordLikePattern(params.keyword);
 
+    const sql = new SqlParams();
+
     // 운영자가 가린 글(blinded_at)은 보관함 가림 카드 디자인이 나오기 전까지 빼 둔다
-    const conditions = ['record.user_id = ?', 'feed.deleted_at IS NULL', 'feed.blinded_at IS NULL'];
-    const conditionParams: unknown[] = [userId];
+    const conditions = [
+      `record.user_id = ${sql.add(userId)}`,
+      'feed.deleted_at IS NULL',
+      'feed.blinded_at IS NULL',
+    ];
 
     if (genre !== undefined) {
-      conditions.push('JSON_CONTAINS(music.music_genre, JSON_QUOTE(?))');
-      conditionParams.push(genre);
+      // 장르 배열(jsonb)에 그 장르 문자열이 들어 있는 글만
+      conditions.push(`music.music_genre @> jsonb_build_array(${sql.add(genre)}::text)`);
     }
 
     if (month !== undefined) {
       const { start, end } = this.getKstMonthRange(month);
 
-      conditions.push('record.created_at >= ?', 'record.created_at < ?');
-      conditionParams.push(start, end);
+      conditions.push(`record.created_at >= ${sql.add(start)}`, `record.created_at < ${sql.add(end)}`);
     }
 
     if (keywordPattern !== undefined) {
-      conditions.push('(music.music_title LIKE ? OR music.music_artist LIKE ?)');
-      conditionParams.push(keywordPattern, keywordPattern);
+      // MySQL 기본 정렬 규칙과 달리 PG 의 LIKE 는 대소문자를 구분해서 ILIKE 를 쓴다
+      const keywordParam = sql.add(keywordPattern);
+
+      conditions.push(`(music.music_title ILIKE ${keywordParam} OR music.music_artist ILIKE ${keywordParam})`);
     }
 
-    return this.findFeedCardPage({ conditions, conditionParams, cursor, limit, sort });
+    return this.findFeedCardPage({ conditions, sql, cursor, limit, sort });
   }
 
   /*
@@ -1158,44 +1167,37 @@ export class FeedService {
     limit?: number;
   }) {
     const { viewerId, ownerPublicId, cursor, limit } = params;
+    const sql = new SqlParams();
+    const viewer = sql.add(viewerId);
 
     return this.findFeedCardPage({
       conditions: [
-        'record.user_id = (SELECT owner.id FROM `user` owner WHERE owner.public_id = ?)',
+        `record.user_id = (SELECT owner.id FROM "user" owner WHERE owner.public_id = ${sql.add(ownerPublicId)})`,
         // 이용 제한 중인 회원의 프로필은 게시물을 모두 숨긴다 (withdrawn-user.ts isRestrictedUser 와 같은 기준)
         `NOT EXISTS (
-          SELECT 1 FROM \`user\` owner
+          SELECT 1 FROM "user" owner
           WHERE owner.id = record.user_id
             AND owner.restricted_at IS NOT NULL
-            AND (owner.restricted_until IS NULL OR owner.restricted_until > ?)
+            AND (owner.restricted_until IS NULL OR owner.restricted_until > ${sql.add(new Date())})
         )`,
         'feed.deleted_at IS NULL',
         // 운영자가 가린 글은 프로필 가림 카드 디자인이 나오기 전까지 빼 둔다
         'feed.blinded_at IS NULL',
-        'feed.profile_hidden = 0',
+        'feed.profile_hidden = false',
         `(
-          record.user_id = ?
-          OR feed.visibility = ?
+          record.user_id = ${viewer}
+          OR feed.visibility = ${sql.add(Visibility.PUBLIC)}
           OR (
-            feed.visibility = ?
+            feed.visibility = ${sql.add(Visibility.FOLLOWER)}
             AND EXISTS (
               SELECT 1 FROM follow
-              WHERE follow.follower_id = ? AND follow.following_id = record.user_id
+              WHERE follow.follower_id = ${viewer} AND follow.following_id = record.user_id
             )
           )
         )`,
-        notBlockedBetweenSql('?', 'record.user_id'),
+        notBlockedBetweenSql(viewer, 'record.user_id'),
       ],
-      conditionParams: [
-        ownerPublicId,
-        new Date(),
-        viewerId,
-        Visibility.PUBLIC,
-        Visibility.FOLLOWER,
-        viewerId,
-        viewerId,
-        viewerId,
-      ],
+      sql,
       cursor,
       limit,
       sort: 'latest',
@@ -1217,23 +1219,25 @@ export class FeedService {
     const feedIds = [...showFeedIds, ...hideFeedIds];
 
     if (feedIds.length > 0) {
-      const toPlaceholders = (ids: number[]) => ids.map(() => '?').join(', ');
+      const sql = new SqlParams();
 
-      // hideFeedIds 에 있으면 1, 아니면(showFeedIds) 0
+      // hideFeedIds 에 있으면 true, 아니면(showFeedIds) false
       const profileHiddenSql = hideFeedIds.length > 0
-        ? `feed.id IN (${toPlaceholders(hideFeedIds)})`
-        : '0';
+        ? `feed.id = ANY(${sql.add(hideFeedIds)}::bigint[])`
+        : 'false';
 
+      // PG 의 UPDATE 는 JOIN 대신 FROM 으로 다른 테이블을 붙이고, SET 의 컬럼에는 테이블 이름을 붙이지 않는다
       await this.dataSource.query(
         `
         UPDATE feed
-        JOIN record ON record.id = feed.record_id
-        SET feed.profile_hidden = ${profileHiddenSql}
-        WHERE record.user_id = ?
+        SET profile_hidden = ${profileHiddenSql}
+        FROM record
+        WHERE record.id = feed.record_id
+          AND record.user_id = ${sql.add(userId)}
           AND feed.deleted_at IS NULL
-          AND feed.id IN (${toPlaceholders(feedIds)})
+          AND feed.id = ANY(${sql.add(feedIds)}::bigint[])
         `,
-        [...hideFeedIds, userId, ...feedIds],
+        sql.values,
       );
     }
 
@@ -1245,25 +1249,24 @@ export class FeedService {
 
   /*
    * 보관함 내 기록 · 프로필 커버 그리드 공용 목록 쿼리. conditions 는 AND 로 묶인다.
+   * conditions 안의 값 자리($1 ...)는 sql 로 만든 것이어야 하고, 여기서 붙이는 자리도 sql 에 이어서 더한다.
    * sort: latest / oldest 는 feedId 커서, title 은 offset 커서
    */
   private async findFeedCardPage(params: {
     conditions: string[];
-    conditionParams: unknown[];
+    sql: SqlParams;
     cursor?: number;
     limit?: number;
     sort: MyFeedSort;
   }) {
-    const { cursor, sort } = params;
+    const { cursor, sort, sql } = params;
     const conditions = [...params.conditions];
-    const conditionParams = [...params.conditionParams];
     const safeLimit = Math.min(Math.max(params.limit ?? 20, 1), 50);
     const offset = sort === 'title' ? cursor ?? 0 : 0;
     const isOldest = sort === 'oldest';
 
     if (sort !== 'title' && cursor !== undefined) {
-      conditions.push(isOldest ? 'feed.id > ?' : 'feed.id < ?');
-      conditionParams.push(cursor);
+      conditions.push(`feed.id ${isOldest ? '>' : '<'} ${sql.add(cursor)}`);
     }
 
     // 안쪽(페이지 고르기)과 바깥쪽(상세) 모두 같은 별칭을 쓰므로 정렬식을 그대로 같이 쓴다
@@ -1274,29 +1277,29 @@ export class FeedService {
     const rows: MyFeedRow[] = await this.dataSource.query(
       `
       SELECT
-        feed.id AS feedId,
+        feed.id AS "feedId",
         feed.visibility AS visibility,
-        feed.profile_hidden AS profileHidden,
-        record.id AS recordId,
+        feed.profile_hidden AS "profileHidden",
+        record.id AS "recordId",
         record.font AS font,
         record.text AS text,
-        record.created_at AS createdAt,
-        record.updated_at AS updatedAt,
-        music.id AS musicId,
-        music.external_id AS externalId,
-        music.music_title AS musicTitle,
-        music.music_artist AS musicArtist,
-        music.music_artwork AS musicArtwork,
-        music.preview_url AS previewUrl,
+        record.created_at AS "createdAt",
+        record.updated_at AS "updatedAt",
+        music.id AS "musicId",
+        music.external_id AS "externalId",
+        music.music_title AS "musicTitle",
+        music.music_artist AS "musicArtist",
+        music.music_artwork AS "musicArtwork",
+        music.preview_url AS "previewUrl",
         (
-          SELECT JSON_ARRAYAGG(JSON_OBJECT(
-            'fileId', recordFile.id,
-            'fileType', recordFile.file_type,
-            'mimeType', recordFile.mime_type,
-            'fileKey', recordFile.file_key
+          SELECT json_agg(json_build_object(
+            'fileId', record_file.id,
+            'fileType', record_file.file_type,
+            'mimeType', record_file.mime_type,
+            'fileKey', record_file.file_key
           ))
-          FROM record_file recordFile
-          WHERE recordFile.record_id = record.id
+          FROM record_file
+          WHERE record_file.record_id = record.id
         ) AS files
       FROM (
         SELECT feed.id AS id
@@ -1305,14 +1308,14 @@ export class FeedService {
         LEFT JOIN music ON music.id = record.music_id
         WHERE ${conditions.join(' AND ')}
         ORDER BY ${orderBySql}
-        LIMIT ? OFFSET ?
+        LIMIT ${sql.add(safeLimit + 1)} OFFSET ${sql.add(offset)}
       ) AS page
       JOIN feed ON feed.id = page.id
       JOIN record ON record.id = feed.record_id
       LEFT JOIN music ON music.id = record.music_id
       ORDER BY ${orderBySql}
       `,
-      [...conditionParams, safeLimit + 1, offset],
+      sql.values,
     );
 
     const hasNext = rows.length > safeLimit;
@@ -1344,6 +1347,10 @@ export class FeedService {
    * limit 이 없으면 모든 장르를 내려줍니다.
    */
   async getMyFeedGenres(userId: number, limit?: number, coverSeed = '') {
+    const sql = new SqlParams();
+
+    // 장르 배열(jsonb)을 jsonb_array_elements_text 로 펼쳐 장르 하나 = 행 하나로 만든다.
+    // 배열이 아닌 값(JSON null 등)을 펼치면 에러가 나서 빈 배열로 바꿔 넘긴다
     const rows: Array<{
       genre: string;
       feedCount: number | string;
@@ -1352,29 +1359,26 @@ export class FeedService {
       `
       SELECT
         jt.genre AS genre,
-        COUNT(DISTINCT feed.id) AS feedCount,
-        MAX(feed.id) AS latestFeedId,
-        JSON_ARRAYAGG(music.music_artwork) AS artworks
+        COUNT(DISTINCT feed.id) AS "feedCount",
+        MAX(feed.id) AS "latestFeedId",
+        json_agg(music.music_artwork) AS artworks
       FROM feed
       JOIN record ON record.id = feed.record_id
       JOIN music ON music.id = record.music_id
-      JOIN JSON_TABLE(
-        music.music_genre,
-        '$[*]' COLUMNS (genre VARCHAR(100) PATH '$')
-      ) AS jt
-      WHERE record.user_id = ?
+      CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE WHEN jsonb_typeof(music.music_genre) = 'array' THEN music.music_genre ELSE '[]'::jsonb END
+      ) AS jt(genre)
+      WHERE record.user_id = ${sql.add(userId)}
         AND feed.deleted_at IS NULL
         AND feed.blinded_at IS NULL
         AND jt.genre IS NOT NULL
         AND jt.genre <> ''
-        AND jt.genre NOT IN (?)
+        AND jt.genre <> ALL(${sql.add(EXCLUDED_ARCHIVE_GENRES)}::text[])
       GROUP BY jt.genre
-      ORDER BY feedCount DESC, latestFeedId DESC
-      ${limit ? 'LIMIT ?' : ''}
+      ORDER BY "feedCount" DESC, "latestFeedId" DESC
+      ${limit ? `LIMIT ${sql.add(limit)}` : ''}
       `,
-      limit
-        ? [userId, EXCLUDED_ARCHIVE_GENRES, limit]
-        : [userId, EXCLUDED_ARCHIVE_GENRES],
+      sql.values,
     );
 
     const covers = this.pickSeededCovers(
@@ -1401,11 +1405,15 @@ export class FeedService {
    */
   async getMyFeedMonths(userId: number, limit?: number, coverSeed = '', keyword?: string) {
     const keywordPattern = toKeywordLikePattern(keyword);
-    const params: unknown[] = [userId];
+    const sql = new SqlParams();
+    let keywordSql = '';
 
-    if (keywordPattern !== undefined) params.push(keywordPattern, keywordPattern);
-    if (limit) params.push(limit);
+    if (keywordPattern !== undefined) {
+      const keywordParam = sql.add(keywordPattern);
+      keywordSql = `AND (music.music_title ILIKE ${keywordParam} OR music.music_artist ILIKE ${keywordParam})`;
+    }
 
+    // created_at(timestamptz) 을 한국 시간으로 바꿔 'YYYY-MM' 으로 묶는다. 1 = SELECT 의 첫 번째 칸(month)
     const rows: Array<{
       month: string;
       feedCount: number | string;
@@ -1414,22 +1422,22 @@ export class FeedService {
     }> = await this.dataSource.query(
       `
       SELECT
-        DATE_FORMAT(CONVERT_TZ(record.created_at, '+00:00', '+09:00'), '%Y-%m') AS month,
-        COUNT(*) AS feedCount,
-        MAX(feed.id) AS latestFeedId,
-        JSON_ARRAYAGG(music.music_artwork) AS artworks
+        to_char(record.created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM') AS month,
+        COUNT(*) AS "feedCount",
+        MAX(feed.id) AS "latestFeedId",
+        json_agg(music.music_artwork) AS artworks
       FROM feed
       JOIN record ON record.id = feed.record_id
       JOIN music ON music.id = record.music_id
-      WHERE record.user_id = ?
+      WHERE record.user_id = ${sql.add(userId)}
         AND feed.deleted_at IS NULL
         AND feed.blinded_at IS NULL
-        ${keywordPattern !== undefined ? 'AND (music.music_title LIKE ? OR music.music_artist LIKE ?)' : ''}
-      GROUP BY month
-      ORDER BY month DESC
-      ${limit ? 'LIMIT ?' : ''}
+        ${keywordSql}
+      GROUP BY 1
+      ORDER BY 1 DESC
+      ${limit ? `LIMIT ${sql.add(limit)}` : ''}
       `,
-      params,
+      sql.values,
     );
 
     const covers = this.pickSeededCovers(
@@ -1731,7 +1739,7 @@ export class FeedService {
       feedId: row.feedId,
       visibility: row.visibility,
       // 프로필 게시글 편집에서 뺀 글이면 true
-      profileHidden: Number(row.profileHidden) === 1,
+      profileHidden: row.profileHidden === true,
       font: row.font,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -1762,7 +1770,7 @@ export class FeedService {
     };
   }
 
-  // JSON_ARRAYAGG 결과. 드라이버에 따라 문자열로 올 수 있고, 파일이 없으면 NULL 이다
+  // json_agg 결과. pg 드라이버는 배열로 주지만 문자열로 와도 읽는다. 파일이 없으면 NULL 이다
   private toMyFeedFileList(value: unknown): MyFeedFileRow[] {
     let list: unknown = value;
 
@@ -1784,12 +1792,11 @@ export class FeedService {
   private getKstMonthRange(month: string) {
     const [year, monthIndex] = month.split('-').map(Number);
     const kstOffsetMs = 9 * 60 * 60 * 1000;
-    const toDbDatetime = (date: Date) =>
-      date.toISOString().slice(0, 19).replace('T', ' ');
 
+    // timestamptz 와 비교하므로 Date 그대로 넘긴다 (드라이버가 시간대를 붙여 보낸다)
     return {
-      start: toDbDatetime(new Date(Date.UTC(year, monthIndex - 1, 1) - kstOffsetMs)),
-      end: toDbDatetime(new Date(Date.UTC(year, monthIndex, 1) - kstOffsetMs)),
+      start: new Date(Date.UTC(year, monthIndex - 1, 1) - kstOffsetMs),
+      end: new Date(Date.UTC(year, monthIndex, 1) - kstOffsetMs),
     };
   }
 
@@ -1822,7 +1829,7 @@ export class FeedService {
     });
   }
 
-  // JSON_ARRAYAGG 결과(드라이버에 따라 문자열/배열) → 중복·빈 값 없는 커버 URL 목록
+  // json_agg 결과(배열, 문자열로 와도 읽는다) → 중복·빈 값 없는 커버 URL 목록
   private toArtworkList(value: unknown): string[] {
     let list: unknown = value;
 

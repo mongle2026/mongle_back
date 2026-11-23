@@ -36,10 +36,10 @@ export class UserEventService {
     void this.dataSource
       .query(
         `INSERT INTO user_event (user_id, event_type, feed_id, music_id, occurred_at)
-         SELECT ?, ?, f.id, r.music_id, ?
+         SELECT $1::bigint, $2, f.id, r.music_id, $3::timestamptz
            FROM feed f
            INNER JOIN record r ON r.id = f.record_id
-          WHERE f.id = ?`,
+          WHERE f.id = $4`,
         [params.userId, params.type, occurredAt, params.feedId],
       )
       .catch(error => {
@@ -111,12 +111,15 @@ export class UserEventService {
     const cutoff = new Date(Date.now() - USER_EVENT_RETENTION_DAYS * DAY_MS);
 
     for (let batch = 0; batch < 50; batch++) {
-      const result = (await this.dataSource.query(
-        'DELETE FROM user_event WHERE occurred_at < ? LIMIT ?',
+      // PG 의 DELETE 에는 LIMIT 이 없어서 지울 id 를 서브쿼리로 고른다.
+      // PG 드라이버는 DELETE 결과를 [지운 행들, 지운 행 수] 로 돌려준다
+      const [, deletedCount] = (await this.dataSource.query(
+        `DELETE FROM user_event
+          WHERE id IN (SELECT id FROM user_event WHERE occurred_at < $1 LIMIT $2)`,
         [cutoff, PURGE_BATCH],
-      )) as { affectedRows?: number };
+      )) as [unknown[], number];
 
-      if ((result.affectedRows ?? 0) < PURGE_BATCH) break;
+      if (deletedCount < PURGE_BATCH) break;
     }
   }
 
@@ -124,10 +127,10 @@ export class UserEventService {
     if (feedIds.length === 0) return new Map<number, number>();
 
     const rows = (await this.dataSource.query(
-      `SELECT f.id AS feedId, r.music_id AS musicId
+      `SELECT f.id AS "feedId", r.music_id AS "musicId"
          FROM feed f
          INNER JOIN record r ON r.id = f.record_id
-        WHERE f.id IN (?)`,
+        WHERE f.id = ANY($1::bigint[])`,
       [[...new Set(feedIds)]],
     )) as { feedId: string; musicId: string }[];
 
@@ -138,7 +141,7 @@ export class UserEventService {
     if (musicIds.length === 0) return new Set<number>();
 
     const rows = (await this.dataSource.query(
-      'SELECT id FROM music WHERE id IN (?)',
+      'SELECT id FROM music WHERE id = ANY($1::bigint[])',
       [[...new Set(musicIds)]],
     )) as { id: string }[];
 

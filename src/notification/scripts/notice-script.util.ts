@@ -35,7 +35,7 @@ class SendNoticeModule {}
 // 입력이 잘못됐을 때. 안내 문구만 찍고 끝낸다
 export class NoticeInputError extends Error {}
 
-// 이모지도 한 글자로 센다 (MySQL utf8mb4 VARCHAR 길이와 같다)
+// 이모지도 한 글자로 센다 (PostgreSQL VARCHAR 길이도 글자 수로 센다)
 const countChars = (text: string) => Array.from(text).length;
 
 const parseNotice = (args: string[], usage: string): BroadcastNotice => {

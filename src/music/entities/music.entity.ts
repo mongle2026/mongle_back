@@ -21,7 +21,7 @@ export class MusicEntity {
   @Column({ name: 'music_artist', type: 'varchar', length: 255 })
   musicArtist!: string;
 
-  @Column({ name: 'music_genre', type: 'json', nullable: true })
+  @Column({ name: 'music_genre', type: 'jsonb', nullable: true })
   musicGenre!: string[] | null;
 
   @Column({ name: 'music_artwork', type: 'varchar', length: 1000, nullable: true })
@@ -30,6 +30,6 @@ export class MusicEntity {
   @Column({ name: 'preview_url', type: 'varchar', length: 1000, nullable: true })
   previewUrl!: string | null;
 
-  @UpdateDateColumn({ name: 'updated_at', type: 'datetime' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
 }

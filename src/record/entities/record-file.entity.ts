@@ -56,7 +56,7 @@ export class RecordFileEntity {
 
   @CreateDateColumn({
     name: 'created_at',
-    type: 'datetime',
+    type: 'timestamptz',
   })
   createdAt!: Date;
 }

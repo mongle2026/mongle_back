@@ -47,6 +47,6 @@ export class UserBlockEntity {
   })
   blocked!: UserEntity;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

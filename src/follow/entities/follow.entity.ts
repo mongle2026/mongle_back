@@ -38,6 +38,6 @@ export class FollowEntity {
   @JoinColumn({ name: 'following_id' })
   following!: UserEntity;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

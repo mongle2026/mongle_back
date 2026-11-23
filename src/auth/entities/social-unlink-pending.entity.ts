@@ -40,13 +40,13 @@ export class SocialUnlinkPendingEntity {
   attempts!: number;
 
   @Index('IDX_social_unlink_pending_next_attempt_at')
-  @Column({ name: 'next_attempt_at', type: 'datetime' })
+  @Column({ name: 'next_attempt_at', type: 'timestamptz' })
   nextAttemptAt!: Date;
 
   // 마지막 실패 이유. 운영 중 확인용
   @Column({ name: 'last_error', type: 'varchar', length: 500, nullable: true })
   lastError!: string | null;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

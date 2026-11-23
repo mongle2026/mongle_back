@@ -28,6 +28,6 @@ export class PopularMusicEntity {
   @Column({ name: 'chart_date', type: 'date' })
   chartDate!: string;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

@@ -285,7 +285,7 @@ export class RecommendationService {
   // 가입 시각. 신규 회원 판단용
   private async loadSignedUpAt(userId: number) {
     const rows = (await this.dataSource.query(
-      'SELECT created_at AS createdAt FROM `user` WHERE id = ?',
+      'SELECT created_at AS "createdAt" FROM "user" WHERE id = $1',
       [userId],
     )) as { createdAt: Date | null }[];
 
@@ -380,15 +380,15 @@ export class RecommendationService {
 
     const [letterRows, chartRows] = await Promise.all([
       this.dataSource.query(
-        `SELECT r.music_id AS musicId, COUNT(*) AS letterCount
+        `SELECT r.music_id AS "musicId", COUNT(*) AS "letterCount"
            FROM letter l
            INNER JOIN record r ON r.id = l.record_id
-          WHERE r.created_at >= ? AND l.blinded_at IS NULL
+          WHERE r.created_at >= $1 AND l.blinded_at IS NULL
           GROUP BY r.music_id`,
         [popularSince],
       ) as Promise<{ musicId: string; letterCount: string }[]>,
       this.dataSource.query(
-        'SELECT music_id AS musicId, `rank` AS chartRank FROM popular_music',
+        'SELECT music_id AS "musicId", rank AS "chartRank" FROM popular_music',
       ) as Promise<{ musicId: string; chartRank: number }[]>,
     ]);
 
@@ -419,48 +419,42 @@ export class RecommendationService {
 
     const [ownRows, interactedRows, playedRows] = await Promise.all([
       this.dataSource.query(
-        'SELECT music_id AS musicId FROM record WHERE user_id = ? AND created_at >= ?',
+        'SELECT music_id AS "musicId" FROM record WHERE user_id = $1 AND created_at >= $2',
         [userId, since],
       ) as Promise<{ musicId: string }[]>,
       // 반응을 여러 개 남겨도 글 하나는 한 번만 센다. 내 글에 남긴 반응은 1번(직접 기록)에서 이미 셌다.
       // 상세 체류는 한 번 본 것이 여러 줄로 나뉠 수 있어서 글마다 더한 시간으로 본다
       this.dataSource.query(
-        `SELECT x.feed_id AS feedId, r.music_id AS musicId
+        `SELECT x.feed_id AS "feedId", r.music_id AS "musicId"
            FROM (
-             SELECT feed_id FROM feed_like WHERE user_id = ? AND created_at >= ?
+             SELECT feed_id FROM feed_like WHERE user_id = $1 AND created_at >= $2
              UNION
-             SELECT feed_id FROM bookmark WHERE user_id = ? AND created_at >= ?
+             SELECT feed_id FROM bookmark WHERE user_id = $1 AND created_at >= $2
              UNION
-             SELECT feed_id FROM feed_comment WHERE user_id = ? AND created_at >= ? AND deleted_at IS NULL
+             SELECT feed_id FROM feed_comment WHERE user_id = $1 AND created_at >= $2 AND deleted_at IS NULL
              UNION
              SELECT feed_id FROM user_event
-              WHERE user_id = ? AND event_type = ? AND occurred_at >= ?
+              WHERE user_id = $1 AND event_type = $3 AND occurred_at >= $2
               GROUP BY feed_id
-             HAVING SUM(duration_ms) >= ?
+             HAVING SUM(duration_ms) >= $4
            ) x
            INNER JOIN feed f ON f.id = x.feed_id
            INNER JOIN record r ON r.id = f.record_id
-          WHERE r.user_id <> ?`,
-        [
-          userId, since,
-          userId, since,
-          userId, since,
-          userId, UserEventType.FEED_DETAIL_VIEW, since, detailViewMinMs,
-          userId,
-        ],
+          WHERE r.user_id <> $1`,
+        [userId, since, UserEventType.FEED_DETAIL_VIEW, detailViewMinMs],
       ) as Promise<{ feedId: string; musicId: string }[]>,
       // 틀어 본 곡(music_play) 중 들은 시간 합이 listenMinMs 보다 짧은 곡은 뺀다.
       // 들은 시간 기록이 없으면(앱이 보내기 전에 종료 등) 틀어 본 것만으로 센다
       this.dataSource.query(
-        `SELECT mp.music_id AS musicId
+        `SELECT mp.music_id AS "musicId"
            FROM music_play mp
-          WHERE mp.user_id = ? AND mp.last_played_at >= ?
+          WHERE mp.user_id = $1 AND mp.last_played_at >= $2
             AND NOT EXISTS (
               SELECT 1 FROM user_event ue
                WHERE ue.user_id = mp.user_id AND ue.music_id = mp.music_id
-                 AND ue.event_type = ? AND ue.occurred_at >= ?
+                 AND ue.event_type = $3 AND ue.occurred_at >= $4
                GROUP BY ue.music_id
-              HAVING SUM(ue.duration_ms) < ?
+              HAVING SUM(ue.duration_ms) < $5
             )`,
         [userId, since, UserEventType.MUSIC_LISTEN, since, listenMinMs],
       ) as Promise<{ musicId: string }[]>,
@@ -505,7 +499,7 @@ export class RecommendationService {
 
     const musicIds = [...new Set(signals.map(signal => signal.musicId))];
     const musicRows = (await this.dataSource.query(
-      'SELECT id, music_artist AS musicArtist, music_genre AS musicGenre FROM music WHERE id IN (?)',
+      'SELECT id, music_artist AS "musicArtist", music_genre AS "musicGenre" FROM music WHERE id = ANY($1::bigint[])',
       [musicIds],
     )) as { id: string; musicArtist: string | null; musicGenre: unknown }[];
 
@@ -539,7 +533,7 @@ export class RecommendationService {
   private async loadImpressions(userId: number, now: Date) {
     const since = new Date(now.getTime() - CONFIG.seen.retentionDays * DAY_MS);
     const rows = (await this.dataSource.query(
-      'SELECT feed_id AS feedId, served_at AS servedAt FROM feed_impression WHERE user_id = ? AND served_at >= ?',
+      'SELECT feed_id AS "feedId", served_at AS "servedAt" FROM feed_impression WHERE user_id = $1 AND served_at >= $2',
       [userId, since],
     )) as { feedId: string; servedAt: Date }[];
 
@@ -550,15 +544,16 @@ export class RecommendationService {
   private async saveImpressions(userId: number, feedIds: number[], now: Date) {
     if (feedIds.length === 0) return;
 
-    const placeholders = feedIds.map(() => '(?, ?, ?)').join(', ');
-    const values = feedIds.flatMap(feedId => [userId, feedId, now]);
+    // ON CONFLICT DO UPDATE 는 한 문장 안에서 같은 행을 두 번 바꿀 수 없어서 겹치는 id 를 먼저 뺀다
+    const uniqueFeedIds = [...new Set(feedIds)];
 
     try {
+      // 회원 · 시각은 하나씩만 넘기고 글 id 는 배열 하나로 넘겨 unnest 로 행을 만든다
       await this.dataSource.query(
         `INSERT INTO feed_impression (user_id, feed_id, served_at)
-         VALUES ${placeholders} AS new
-         ON DUPLICATE KEY UPDATE served_at = new.served_at`,
-        values,
+         SELECT $1::bigint, feed_id, $2::timestamptz FROM unnest($3::bigint[]) AS feed_id
+         ON CONFLICT (user_id, feed_id) DO UPDATE SET served_at = EXCLUDED.served_at`,
+        [userId, now, uniqueFeedIds],
       );
     } catch (error) {
       this.logger.warn(`노출 기록 저장 실패 (userId=${userId}): ${String(error)}`);
@@ -572,16 +567,19 @@ export class RecommendationService {
    */
   async recordMusicPlay(userId: number, musicId: number) {
     const now = new Date();
-    const result = (await this.dataSource.query(
+    // 없는 음악이면 SELECT 가 비어 넣은(바꾼) 행이 없다. PG 는 INSERT 행 수를 주지 않아 RETURNING 으로 센다
+    const rows = (await this.dataSource.query(
       `INSERT INTO music_play (user_id, music_id, play_count, last_played_at, created_at)
-       SELECT ?, m.id, 1, ?, ?
+       SELECT $1::bigint, m.id, 1, $2::timestamptz, $2::timestamptz
          FROM music m
-        WHERE m.id = ?
-       ON DUPLICATE KEY UPDATE play_count = music_play.play_count + 1, last_played_at = ?`,
-      [userId, now, now, musicId, now],
-    )) as { affectedRows?: number };
+        WHERE m.id = $3
+       ON CONFLICT (user_id, music_id)
+       DO UPDATE SET play_count = music_play.play_count + 1, last_played_at = EXCLUDED.last_played_at
+       RETURNING id`,
+      [userId, now, musicId],
+    )) as { id: string }[];
 
-    if (!result.affectedRows) {
+    if (rows.length === 0) {
       throw new NotFoundException('음악을 찾을 수 없습니다.');
     }
 
@@ -594,12 +592,15 @@ export class RecommendationService {
     const cutoff = new Date(Date.now() - CONFIG.seen.retentionDays * DAY_MS);
 
     for (let batch = 0; batch < 20; batch++) {
-      const result = (await this.dataSource.query(
-        'DELETE FROM feed_impression WHERE served_at < ? LIMIT ?',
+      // PG 의 DELETE 에는 LIMIT 이 없어서 지울 id 를 서브쿼리로 고른다.
+      // PG 드라이버는 DELETE 결과를 [지운 행들, 지운 행 수] 로 돌려준다
+      const [, deletedCount] = (await this.dataSource.query(
+        `DELETE FROM feed_impression
+          WHERE id IN (SELECT id FROM feed_impression WHERE served_at < $1 LIMIT $2)`,
         [cutoff, IMPRESSION_PURGE_BATCH],
-      )) as { affectedRows?: number };
+      )) as [unknown[], number];
 
-      if ((result.affectedRows ?? 0) < IMPRESSION_PURGE_BATCH) break;
+      if (deletedCount < IMPRESSION_PURGE_BATCH) break;
     }
   }
 

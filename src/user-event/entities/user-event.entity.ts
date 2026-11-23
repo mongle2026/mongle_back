@@ -37,17 +37,17 @@ export class UserEventEntity {
   @Column({ name: 'music_id', type: 'bigint', nullable: true })
   musicId!: number | null;
 
-  @Column({ name: 'duration_ms', type: 'int', unsigned: true, nullable: true })
+  @Column({ name: 'duration_ms', type: 'int', nullable: true })
   durationMs!: number | null;
 
-  @Column({ name: 'position_ms', type: 'int', unsigned: true, nullable: true })
+  @Column({ name: 'position_ms', type: 'int', nullable: true })
   positionMs!: number | null;
 
   @Column({ type: 'varchar', length: 20, nullable: true })
   detail!: string | null;
 
   // 일이 일어난 시각. 앱 이벤트는 앱이 보낸 시각(서버 시각 기준으로 7일 전 ~ 지금 사이로 맞춘다), 서버 이벤트는 처리한 시각
-  @Column({ name: 'occurred_at', type: 'datetime' })
+  @Column({ name: 'occurred_at', type: 'timestamptz' })
   occurredAt!: Date;
 
   @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
@@ -58,6 +58,6 @@ export class UserEventEntity {
   user!: UserEntity;
 
   // 서버가 받은 시각
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

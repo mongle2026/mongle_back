@@ -30,7 +30,7 @@ export class FeedImpressionEntity {
   @Column({ name: 'feed_id', type: 'bigint' })
   feedId!: number;
 
-  @Column({ name: 'served_at', type: 'datetime' })
+  @Column({ name: 'served_at', type: 'timestamptz' })
   servedAt!: Date;
 
   @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })

@@ -14,7 +14,7 @@ import { FeedCommentEntity } from '../feed-comment/entities/feed-comment.entity'
 import { LetterEntity } from '../letter/entities/letter.entity';
 import { RecordEntity } from '../record/entities/record.entity';
 import { UserEntity } from '../user/entities/user.entity';
-import { isDuplicateEntryError } from '../database/mysql-error.util';
+import { isDuplicateEntryError } from '../database/db-error.util';
 
 type CreateReportParams = {
   reporterId: number;

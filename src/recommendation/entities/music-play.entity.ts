@@ -28,10 +28,10 @@ export class MusicPlayEntity {
   @Column({ name: 'music_id', type: 'bigint' })
   musicId!: number;
 
-  @Column({ name: 'play_count', type: 'int', unsigned: true, default: 1 })
+  @Column({ name: 'play_count', type: 'int', default: 1 })
   playCount!: number;
 
-  @Column({ name: 'last_played_at', type: 'datetime' })
+  @Column({ name: 'last_played_at', type: 'timestamptz' })
   lastPlayedAt!: Date;
 
   @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
@@ -48,6 +48,6 @@ export class MusicPlayEntity {
   })
   music!: MusicEntity;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

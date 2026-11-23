@@ -51,18 +51,18 @@ export class BlockService {
     await this.dataSource.transaction(async (manager) => {
       // 이미 차단 중이면 유니크 키에 걸려 아무것도 바뀌지 않는다
       await manager.query(
-        `INSERT INTO \`user_block\` (\`blocker_id\`, \`blocked_id\`)
-          VALUES (?, ?)
-          ON DUPLICATE KEY UPDATE \`blocker_id\` = \`blocker_id\``,
+        `INSERT INTO user_block (blocker_id, blocked_id)
+          VALUES ($1, $2)
+          ON CONFLICT (blocker_id, blocked_id) DO NOTHING`,
         [currentUserId, targetUserId],
       );
 
       // 내가 그 사람을, 그 사람이 나를 팔로우하던 것 모두 끊는다
       await manager.query(
-        `DELETE FROM \`follow\`
-          WHERE (\`follower_id\` = ? AND \`following_id\` = ?)
-            OR (\`follower_id\` = ? AND \`following_id\` = ?)`,
-        [currentUserId, targetUserId, targetUserId, currentUserId],
+        `DELETE FROM follow
+          WHERE (follower_id = $1 AND following_id = $2)
+            OR (follower_id = $2 AND following_id = $1)`,
+        [currentUserId, targetUserId],
       );
     });
 
@@ -75,17 +75,20 @@ export class BlockService {
   async unblockUser(currentUserId: number, targetPublicId: string) {
     // 없는 사용자거나 차단하지 않은 사용자면 지워지는 행이 없을 뿐이라 따로 확인하지 않는다.
     // 상대가 나를 차단한 것은 내가 풀 수 없다
-    const result: { affectedRows: number } = await this.blockRepository.query(
-      `DELETE \`user_block\` FROM \`user_block\`
-        INNER JOIN \`user\` ON \`user\`.\`id\` = \`user_block\`.\`blocked_id\`
-        WHERE \`user_block\`.\`blocker_id\` = ? AND \`user\`.\`public_id\` = ?`,
-      [currentUserId, targetPublicId],
-    );
+    // PG 드라이버는 DELETE 결과를 [지운 행들, 지운 행 수] 로 돌려준다
+    const [, deletedCount]: [unknown[], number] =
+      await this.blockRepository.query(
+        `DELETE FROM user_block
+          USING "user"
+          WHERE "user".id = user_block.blocked_id
+            AND user_block.blocker_id = $1 AND "user".public_id = $2`,
+        [currentUserId, targetPublicId],
+      );
 
     return {
       blockedId: targetPublicId,
       isBlocked: false,
-      deleted: result.affectedRows > 0,
+      deleted: deletedCount > 0,
     };
   }
 
@@ -173,10 +176,10 @@ export class BlockService {
   // 내가 차단했거나 나를 차단한 사람의 id
   async getBlockedPairUserIds(userId: number): Promise<number[]> {
     const rows: Array<{ otherId: string }> = await this.blockRepository.query(
-      `SELECT \`blocked_id\` AS otherId FROM \`user_block\` WHERE \`blocker_id\` = ?
+      `SELECT blocked_id AS "otherId" FROM user_block WHERE blocker_id = $1
         UNION
-        SELECT \`blocker_id\` AS otherId FROM \`user_block\` WHERE \`blocked_id\` = ?`,
-      [userId, userId],
+        SELECT blocker_id AS "otherId" FROM user_block WHERE blocked_id = $1`,
+      [userId],
     );
 
     return rows.map((row) => Number(row.otherId));
@@ -186,13 +189,13 @@ export class BlockService {
   async getBlockedPairSince(userId: number): Promise<Map<number, Date>> {
     const rows: Array<{ otherId: string; blockedAt: Date }> =
       await this.blockRepository.query(
-        `SELECT otherId, MIN(blockedAt) AS blockedAt FROM (
-            SELECT \`blocked_id\` AS otherId, \`created_at\` AS blockedAt FROM \`user_block\` WHERE \`blocker_id\` = ?
+        `SELECT "otherId", MIN("blockedAt") AS "blockedAt" FROM (
+            SELECT blocked_id AS "otherId", created_at AS "blockedAt" FROM user_block WHERE blocker_id = $1
             UNION ALL
-            SELECT \`blocker_id\` AS otherId, \`created_at\` AS blockedAt FROM \`user_block\` WHERE \`blocked_id\` = ?
+            SELECT blocker_id AS "otherId", created_at AS "blockedAt" FROM user_block WHERE blocked_id = $1
           ) pair
-          GROUP BY otherId`,
-        [userId, userId],
+          GROUP BY "otherId"`,
+        [userId],
       );
 
     return new Map(

@@ -46,10 +46,10 @@ export class UserEntity {
   // 가입한 시각. 회원 행은 가입을 마칠 때(AuthService.signup) 처음 만들어진다.
   // 이 칸을 추가하기 전에 가입한 회원은 정확한 시각이 없어서 2026-11-10 00:00(KST)로 넣었다
   // (마이그레이션 1792900000000-AddUserCreatedAt). 추천 피드의 신규 회원 판단에 쓴다
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
 
   // 직접 올린 프로필 사진의 R2 키(profile/{uuid}.jpg). null 이면 기본 사진(defaultProfileImageNo)을 보여준다
@@ -58,7 +58,7 @@ export class UserEntity {
 
   // 기본 프로필 사진 번호(1~5). 가입할 때 정하고 바뀌지 않아서, 사진을 지우면 늘 같은 기본 사진으로 돌아간다.
   // 사진 파일은 모든 회원이 함께 쓴다(R2 defaults/profile_{번호}.png). 탈퇴하면 null
-  @Column({ name: 'default_profile_image_no', type: 'tinyint', unsigned: true, nullable: true })
+  @Column({ name: 'default_profile_image_no', type: 'smallint', nullable: true })
   defaultProfileImageNo!: number | null;
 
   // 알림 화면을 마지막으로 나갈 때 와 있던 가장 큰 알림 id. 알림마다 읽음을 따지지 않고,
@@ -69,7 +69,7 @@ export class UserEntity {
 
   // 서비스 안에서 회원을 구별하는 아이디. 화면의 @ 없이 저장한다. 규칙은 user-profile.validation.ts
   // 탈퇴하면 null. 다른 회원이 이 아이디를 다시 쓸 수 있다.
-  @Column({ name: 'user_code', type: 'varchar', length: 30, unique: true, nullable: true })
+  @Column({ name: 'user_code', type: 'citext', unique: true, nullable: true })
   userCode!: string | null;
 
   // 사용자가 정한 이름. 중복 가능. 탈퇴하면 null 이고, 화면에는 withdrawn-user.ts 의 이름으로 보여준다.
@@ -78,18 +78,18 @@ export class UserEntity {
 
   // 탈퇴한 시각. 탈퇴한 회원도 행은 남긴다.
   // 남긴 댓글/편지/우표에서 보낸 사람을 사람마다 구분해야 해서 지우지 않고 개인정보만 비운다.
-  @Column({ name: 'withdrawn_at', type: 'datetime', nullable: true })
+  @Column({ name: 'withdrawn_at', type: 'timestamptz', nullable: true })
   withdrawnAt!: Date | null;
 
   // 이용을 제한한 시각. 신고 처리에서 경고가 쌓이거나(2회 7일, 3회 영구) 운영자가 영구 정지하면 채운다 (report/sanction).
   // 제한 중이면 API 를 막고(jwt-auth.guard.ts) 앱은 제재 화면만 띄운다.
   // 편지함에서는 이름 · 프로필 사진을 '(이용 제한된 회원)'으로 바꿔 보여준다
-  @Column({ name: 'restricted_at', type: 'datetime', nullable: true })
+  @Column({ name: 'restricted_at', type: 'timestamptz', nullable: true })
   restrictedAt!: Date | null;
 
   // 이용 제한이 끝나는 시각. restricted_at 이 있는데 null 이면 영구 제한이다.
   // 이 시각이 지나면 따로 풀지 않아도 제한되지 않은 회원으로 본다 (withdrawn-user.ts isRestrictedUser)
-  @Column({ name: 'restricted_until', type: 'datetime', nullable: true })
+  @Column({ name: 'restricted_until', type: 'timestamptz', nullable: true })
   restrictedUntil!: Date | null;
 
   // 이용 제한 사유. 제한을 내린 신고의 사유를 넣는다
@@ -103,12 +103,12 @@ export class UserEntity {
   restrictionLiftReason!: RestrictionLiftReason | null;
 
   // 회원이 앱의 이용 제한 해제 안내 화면에서 확인(몽글 시작하기)을 누른 마지막 시각
-  @Column({ name: 'restriction_lift_acknowledged_at', type: 'datetime', nullable: true })
+  @Column({ name: 'restriction_lift_acknowledged_at', type: 'timestamptz', nullable: true })
   restrictionLiftAcknowledgedAt!: Date | null;
 
   // 이용 정지 기간이 끝나서 '이용 정지 해제 안내' 알림을 보낸 마지막 시각 (RestrictionExpiryNotificationScheduler).
   // restricted_until 보다 이르거나 null 이면 아직 이번 정지의 해제 안내를 보내지 않았다
-  @Column({ name: 'restriction_expiry_notified_at', type: 'datetime', nullable: true })
+  @Column({ name: 'restriction_expiry_notified_at', type: 'timestamptz', nullable: true })
   restrictionExpiryNotifiedAt!: Date | null;
 
   // 마지막으로 발급한 refresh token 의 sha256 해시. 로그아웃하면 null. 기본 조회에서는 빠진다.

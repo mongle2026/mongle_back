@@ -20,7 +20,7 @@ import {
   USER_CODE_PATTERN,
   USER_CODE_RULE_MESSAGE,
 } from '../user/user-profile.validation';
-import { isDuplicateEntryError } from '../database/mysql-error.util';
+import { isDuplicateEntryError } from '../database/db-error.util';
 import { UserService } from '../user/user.service';
 import { ProfileImageService } from '../user/profile-image.service';
 import { pickDefaultProfileImageNo } from '../user/default-profile-image';

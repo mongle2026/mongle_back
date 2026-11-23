@@ -66,24 +66,24 @@ export class FeedCommentEntity {
 
   @CreateDateColumn({
     name: 'created_at',
-    type: 'datetime',
+    type: 'timestamptz',
   })
   createdAt!: Date;
 
   @UpdateDateColumn({
     name: 'updated_at',
-    type: 'datetime',
+    type: 'timestamptz',
   })
   updatedAt!: Date;
 
   // 운영자가 신고를 확인하고 가린 시각. 관리 화면이 없어서 DB 에서 직접 채운다.
   // 가린 댓글은 내용 · 작성자 없이 내려가고, 원댓글이 가려지면 그 묶음의 답글도 보이지 않는다
-  @Column({ name: 'blinded_at', type: 'datetime', nullable: true })
+  @Column({ name: 'blinded_at', type: 'timestamptz', nullable: true })
   blindedAt!: Date | null;
 
   @DeleteDateColumn({
     name: 'deleted_at',
-    type: 'datetime',
+    type: 'timestamptz',
     nullable: true,
   })
   deletedAt!: Date | null;

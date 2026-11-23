@@ -99,12 +99,12 @@ export class PermanentBanWithdrawalService {
 
     return await this.dataSource.query(
       `SELECT u.id, s.target_type, s.target_id
-         FROM \`user\` u
+         FROM "user" u
          LEFT JOIN user_sanction s
            ON s.id = (
              SELECT s2.id FROM user_sanction s2
               WHERE s2.user_id = u.id
-                AND s2.restriction = ?
+                AND s2.restriction = $1
                 AND s2.restricted_at = u.restricted_at
                 AND s2.revoked_at IS NULL
               ORDER BY s2.id DESC
@@ -113,15 +113,15 @@ export class PermanentBanWithdrawalService {
         WHERE u.withdrawn_at IS NULL
           AND u.restricted_at IS NOT NULL
           AND u.restricted_until IS NULL
-          AND u.restricted_at <= ?
+          AND u.restricted_at <= $2
           AND NOT EXISTS (
             SELECT 1 FROM restriction_appeal a
              WHERE a.user_id = u.id
                AND a.restricted_at = u.restricted_at
-               AND a.status = ?
+               AND a.status = $3
           )
         ORDER BY u.id
-        LIMIT ?`,
+        LIMIT $4`,
       [
         SanctionRestriction.PERMANENT,
         restrictedBefore,
