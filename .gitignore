@@ -58,3 +58,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# 한 번만 쓰는 도구의 의존성
+/tools/*/node_modules

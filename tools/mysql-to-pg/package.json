@@ -1,0 +1,12 @@
+{
+  "name": "mysql-to-pg",
+  "private": true,
+  "description": "한 번만 쓰는 이관 도구: MySQL(mysql-final 스키마) 데이터를 PostgreSQL(InitPostgres 스키마)로 옮긴다",
+  "scripts": {
+    "migrate": "node migrate.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.22.3",
+    "pg": "^8.23.1"
+  }
+}
