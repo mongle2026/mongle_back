@@ -15,6 +15,7 @@ import { AllowRestricted, JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUserId } from './current-user-id.decorator';
 import { KakaoLoginDto } from './dto/kakao-login.dto';
 import { AppleLoginDto } from './dto/apple-login.dto';
+import { ReviewLoginDto } from './dto/review-login.dto';
 import { SignupDto } from './dto/signup.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { WithdrawDto } from './dto/withdraw.dto';
@@ -41,6 +42,14 @@ export class AuthController {
       dto.identityToken,
       dto.authorizationCode,
     );
+  }
+
+  // 앱 심사용 계정 로그인. 앱 로그인 화면의 숨겨진 입력창에서 부른다 (AuthService.loginForReview)
+  // TODO(심사 로그인): 앱 심사에 쓸 피드 · 편지 같은 샘플 데이터를 심사 계정에 미리 넣어 두기
+  @Post('review')
+  @HttpCode(HttpStatus.OK)
+  async loginForReview(@Body() dto: ReviewLoginDto) {
+    return this.authService.loginForReview(dto.loginId, dto.password);
   }
 
   @Post('signup')
