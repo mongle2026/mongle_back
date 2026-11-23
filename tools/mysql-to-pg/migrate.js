@@ -19,7 +19,7 @@
  *
  * 실행 (접속 정보는 환경변수로)
  *   MYSQL_HOST=localhost MYSQL_PORT=13306 MYSQL_USER=root MYSQL_PASSWORD=... MYSQL_DATABASE=...
- *   PG_HOST=localhost PG_PORT=15432 PG_USER=postgres PG_PASSWORD=... PG_DATABASE=... [PG_SSL=true]
+ *   PG_HOST=localhost PG_PORT=15432 PG_USER=postgres PG_PASSWORD=... PG_DATABASE=... [PG_SSL_CA=... 또는 PG_SSL=true]
  *   [DRY_RUN=true]  ← 확인(2, 3)과 행 수 세기만 하고 쓰지 않는다
  *   node migrate.js
  */
@@ -98,7 +98,12 @@ async function main() {
     user: requireEnv('PG_USER'),
     password: requireEnv('PG_PASSWORD'),
     database: requireEnv('PG_DATABASE'),
-    ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+    // PG_SSL_CA 가 있으면 서버 인증서까지 검증한다 (운영 DB). 없으면 PG_SSL=true 일 때 암호화만 한다
+    ssl: process.env.PG_SSL_CA
+      ? { ca: process.env.PG_SSL_CA, rejectUnauthorized: true }
+      : process.env.PG_SSL === 'true'
+        ? { rejectUnauthorized: false }
+        : undefined,
     options: '-c TimeZone=UTC',
   });
   await pg.connect();
