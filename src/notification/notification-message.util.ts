@@ -36,16 +36,10 @@ const toQuotedContent = (content?: string | null) =>
   content ? `'${content}'` : '';
 
 // 광고성 정보(이벤트) 푸시에 붙이는 표시 (정보통신망법 제50조)
-// 제목 앞에 (광고), 내용 끝에 보내는 곳 이름과 수신 거부 방법.
+// 제목 · 내용 앞에 (광고), 내용 끝에 수신 거부 방법.
 // 수신 거부 경로는 앱 메뉴 이름(설정 > 알림 설정 > 이벤트 알림)과 같아야 한다. 메뉴 이름이 바뀌면 같이 바꾼다
-const AD_TITLE_PREFIX = '(광고) ';
-const AD_BODY_FOOTER = '\n\n[몽글] 수신 거부: 설정 > 알림 설정 > 이벤트 알림';
-
-// 예전 공지(제목 · 내용을 저장하지 않던 때) 문구. 프론트 NotificationListItem 과 같다
-const DEFAULT_SYSTEM_NOTICE = {
-  title: '시스템 개선',
-  body: '더 편리하게 이용할 수 있도록 개선했습니다.\n새롭게 달라진 기능을 확인해 보세요.',
-};
+const AD_PREFIX = '(광고) ';
+const AD_BODY_FOOTER = '\n\n수신 거부: 설정 > 알림 설정 > 이벤트 알림';
 
 const REPORT_NOTICE_TITLE = '신고 처리 안내';
 const POLICY_NOTICE_TITLE = '운영정책 안내';
@@ -122,16 +116,15 @@ export const buildPushContent = (params: {
         body: toQuotedContent(params.content),
       };
     case NotificationStatus.SYSTEM:
-      // 제목 · 내용을 저장하기 전에 보낸 예전 공지는 기본 문구로 보여준다
       return {
-        title: params.noticeTitle || DEFAULT_SYSTEM_NOTICE.title,
-        body: params.content || DEFAULT_SYSTEM_NOTICE.body,
+        title: params.noticeTitle ?? '',
+        body: params.content ?? '',
       };
     case NotificationStatus.EVENT:
       // 광고성 정보 표시는 푸시에만 붙인다. 저장(목록)에는 입력한 제목 · 내용 그대로 둔다
       return {
-        title: `${AD_TITLE_PREFIX}${params.noticeTitle ?? ''}`,
-        body: `${params.content ?? ''}${AD_BODY_FOOTER}`,
+        title: `${AD_PREFIX}${params.noticeTitle ?? ''}`,
+        body: `${AD_PREFIX}${params.content ?? ''}${AD_BODY_FOOTER}`,
       };
     case NotificationStatus.FOLLOW:
       return {
