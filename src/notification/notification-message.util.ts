@@ -36,7 +36,7 @@ const toQuotedContent = (content?: string | null) =>
   content ? `'${content}'` : '';
 
 // 광고성 정보(이벤트) 푸시에 붙이는 표시 (정보통신망법 제50조)
-// 제목 · 내용 앞에 (광고), 내용 끝에 수신 거부 방법.
+// 내용 앞에 (광고), 내용 끝에 수신 거부 방법.
 // 수신 거부 경로는 앱 메뉴 이름(설정 > 알림 설정 > 이벤트 알림)과 같아야 한다. 메뉴 이름이 바뀌면 같이 바꾼다
 const AD_PREFIX = '(광고) ';
 const AD_BODY_FOOTER = '\n\n수신 거부: 설정 > 알림 설정 > 이벤트 알림';
@@ -123,7 +123,7 @@ export const buildPushContent = (params: {
     case NotificationStatus.EVENT:
       // 광고성 정보 표시는 푸시에만 붙인다. 저장(목록)에는 입력한 제목 · 내용 그대로 둔다
       return {
-        title: `${AD_PREFIX}${params.noticeTitle ?? ''}`,
+        title: params.noticeTitle ?? '',
         body: `${AD_PREFIX}${params.content ?? ''}${AD_BODY_FOOTER}`,
       };
     case NotificationStatus.FOLLOW:
