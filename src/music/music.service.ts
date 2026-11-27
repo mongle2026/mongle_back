@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -95,6 +95,7 @@ const APPLE_MUSIC_LANGUAGE = 'ko';
 
 @Injectable()
 export class MusicService {
+  private readonly logger = new Logger(MusicService.name);
   private readonly searchCache = new Map<string, SearchCacheEntry>();
 
   constructor(
@@ -117,6 +118,35 @@ export class MusicService {
     return {
       Authorization: `Bearer ${this.appleMusicTokenService.getDeveloperToken()}`,
     };
+  }
+
+  // Apple Music API 호출 공통 래퍼.
+  // AxiosError 를 그대로 던지면 Nest 가 config(Authorization 헤더 = 개발자 토큰)까지 통째로 로깅하므로,
+  // 상태 코드만 요약해 로깅하고 토큰이 없는 예외로 바꿔 던진다.
+  private async appleMusicGet<T>(
+    path: string,
+    params: Record<string, string | number>,
+  ): Promise<T> {
+    const url = `https://api.music.apple.com/v1/catalog/${this.getStorefront()}${path}`;
+
+    try {
+      const response = await axios.get<T>(url, {
+        params,
+        headers: this.getAuthHeaders(),
+      });
+
+      return response.data;
+    } catch (error) {
+      const status = axios.isAxiosError(error)
+        ? (error.response?.status ?? error.code ?? 'unknown')
+        : 'unknown';
+
+      this.logger.warn(
+        `Apple Music 요청 실패 (path=${path}, params=${JSON.stringify(params)}, status=${status})`,
+      );
+
+      throw new BadGatewayException('Apple Music 요청에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    }
   }
 
   private resolveArtworkUrl(artwork?: AppleMusicArtwork): string | undefined {
@@ -196,34 +226,40 @@ export class MusicService {
       this.searchCache.delete(cacheKey);
     }
 
-    const storefront = this.getStorefront();
     const offsets = Array.from(
       { length: APPLE_MUSIC_SEARCH_TOTAL / APPLE_MUSIC_API_PAGE_LIMIT },
       (_, i) => i * APPLE_MUSIC_API_PAGE_LIMIT,
     );
 
-    const pages = await Promise.all(
+    // Apple Music은 검색어에 따라 뒤쪽 offset 요청에만 간헐적으로 500을 돌려준다.
+    // Promise.all 로 묶으면 한 페이지 실패에 검색 전체가 실패하므로, 성공한 페이지만 모은다.
+    // (실패 로그는 appleMusicGet 에서 페이지별로 남긴다.)
+    const results = await Promise.allSettled(
       offsets.map((offset) =>
-        axios.get<AppleMusicSearchResponse>(
-          `https://api.music.apple.com/v1/catalog/${storefront}/search`,
-          {
-            params: {
-              term: keyword,
-              types: 'songs',
-              limit: APPLE_MUSIC_API_PAGE_LIMIT,
-              offset,
-              l: APPLE_MUSIC_LANGUAGE,
-            },
-            headers: this.getAuthHeaders(),
-          },
-        ),
+        this.appleMusicGet<AppleMusicSearchResponse>('/search', {
+          term: keyword,
+          types: 'songs',
+          limit: APPLE_MUSIC_API_PAGE_LIMIT,
+          offset,
+          l: APPLE_MUSIC_LANGUAGE,
+        }),
       ),
     );
 
+    // 앞 페이지가 빠지면 순서가 어긋나므로, 첫 실패 이전까지의 연속된 페이지만 사용한다.
+    const firstFailedIndex = results.findIndex((r) => r.status === 'rejected');
+    const succeeded = (
+      firstFailedIndex === -1 ? results : results.slice(0, firstFailedIndex)
+    ) as PromiseFulfilledResult<AppleMusicSearchResponse>[];
+
+    if (succeeded.length === 0) {
+      throw new BadGatewayException('Apple Music 검색에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    }
+
     const itemMap = new Map<string, MusicSearchItem>();
 
-    for (const page of pages) {
-      const songs = page.data.results?.songs?.data ?? [];
+    for (const { value: page } of succeeded) {
+      const songs = page.results?.songs?.data ?? [];
 
       for (const song of songs) {
         if (!itemMap.has(song.id)) {
@@ -234,7 +270,10 @@ export class MusicService {
 
     const items = Array.from(itemMap.values());
 
-    this.setSearchCache(cacheKey, items);
+    // 일부 페이지가 실패한 결과는 캐시하지 않아 다음 요청에서 다시 전체를 시도하게 한다.
+    if (firstFailedIndex === -1) {
+      this.setSearchCache(cacheKey, items);
+    }
 
     return items;
   }
@@ -346,23 +385,15 @@ export class MusicService {
   }
 
   async refreshPopularMusics() {
-    const storefront = this.getStorefront();
-
     // 장르 구분 없이 스토어프런트 전체의 '가장 많이 재생된 곡' 차트를 순위대로 받는다.
-    const response = await axios.get<AppleMusicChartsResponse>(
-      `https://api.music.apple.com/v1/catalog/${storefront}/charts`,
-      {
-        params: {
-          types: 'songs',
-          chart: 'most-played',
-          limit: POPULAR_MUSIC_TOTAL,
-          l: APPLE_MUSIC_LANGUAGE,
-        },
-        headers: this.getAuthHeaders(),
-      },
-    );
+    const response = await this.appleMusicGet<AppleMusicChartsResponse>('/charts', {
+      types: 'songs',
+      chart: 'most-played',
+      limit: POPULAR_MUSIC_TOTAL,
+      l: APPLE_MUSIC_LANGUAGE,
+    });
 
-    const songs = response.data.results?.songs?.[0]?.data ?? [];
+    const songs = response.results?.songs?.[0]?.data ?? [];
 
     // 빈 응답으로 테이블을 비우면 인기곡 목록이 통째로 사라지니 기존 목록을 그대로 둔다.
     if (songs.length === 0) {
@@ -428,23 +459,19 @@ export class MusicService {
       return { message: '갱신할 음악이 없습니다.', refreshedCount: 0 };
     }
 
-    const storefront = this.getStorefront();
     const chunks = this.chunkArray(staleMusics, APPLE_MUSIC_LOOKUP_CHUNK_SIZE);
     let refreshedCount = 0;
 
     for (const chunk of chunks) {
       const ids = chunk.map((music) => music.externalId).join(',');
 
-      const response = await axios.get<AppleMusicLookupResponse>(
-        `https://api.music.apple.com/v1/catalog/${storefront}/songs`,
-        {
-          params: { ids, l: APPLE_MUSIC_LANGUAGE },
-          headers: this.getAuthHeaders(),
-        },
-      );
+      const response = await this.appleMusicGet<AppleMusicLookupResponse>('/songs', {
+        ids,
+        l: APPLE_MUSIC_LANGUAGE,
+      });
 
       const songsById = new Map(
-        (response.data.data ?? []).map((song) => [song.id, song]),
+        (response.data ?? []).map((song) => [song.id, song]),
       );
 
       for (const music of chunk) {
